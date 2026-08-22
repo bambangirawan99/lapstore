@@ -116,13 +116,13 @@
 #bk-root .bk-body { padding: 24px 28px 30px; background: var(--paper); min-height: 320px; }
 
 /* Dashboard */
-#bk-root .bk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin-bottom: 22px; }
-#bk-root .bk-stat { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 14px; background: var(--paper); }
+#bk-root .bk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px,1fr)); gap: 12px; margin-bottom: 22px; }
+#bk-root .bk-stat { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; padding: 14px 14px 12px; background: var(--paper); min-width: 0; }
 #bk-root .bk-stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent2); }
 #bk-root .bk-stat.in::before { background: var(--money-in); }
 #bk-root .bk-stat.out::before { background: var(--money-out); }
-#bk-root .bk-stat .lbl { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; font-weight: 600; }
-#bk-root .bk-stat .val { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 600; }
+#bk-root .bk-stat .lbl { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 600; overflow-wrap: break-word; }
+#bk-root .bk-stat .val { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 600; line-height: 1.3; overflow-wrap: break-word; word-break: break-word; }
 #bk-root .bk-stat.in .val { color: var(--money-in); }
 #bk-root .bk-stat.out .val { color: var(--money-out); }
 
@@ -310,8 +310,8 @@
   #bk-root .bk-tab { padding: 10px 12px; font-size: 12px; }
   #bk-root .bk-body { padding: 16px 16px 22px; min-height: 260px; }
   #bk-root .bk-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
-  #bk-root .bk-stat { padding: 13px 12px 11px; }
-  #bk-root .bk-stat .val { font-size: 16px; }
+  #bk-root .bk-stat { padding: 12px 11px 10px; }
+  #bk-root .bk-stat .val { font-size: 14px; }
   #bk-root .bk-two-col { grid-template-columns: 1fr; }
   #bk-root .bk-quickai { flex-direction: column; }
   #bk-root .bk-quickai input { width: 100%; }
@@ -681,22 +681,18 @@ window.storage = {
     const t = totals();
     const hpp = computeHPP();
     const margin = hpp.totalRevenue > 0 ? (hpp.labaKotor / hpp.totalRevenue * 100) : 0;
-    const totalBebanSemua = bebanList.reduce((s,b) => s + (Number(b.nominal)||0), 0);
-    const labaBersih = hpp.labaKotor - totalBebanSemua;
     const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0);
     const recent = txns.slice(0, 6);
     bodyEl.innerHTML = `
       <div class="bk-stats">
         <div class="bk-stat in"><div class="lbl">Laba kotor</div><div class="val" style="color:${hpp.labaKotor>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(hpp.labaKotor)}</div></div>
-        <div class="bk-stat out"><div class="lbl">Beban operasional</div><div class="val">${rupiah(totalBebanSemua)}</div></div>
-        <div class="bk-stat ${labaBersih>=0?'in':'out'}"><div class="lbl">Laba bersih</div><div class="val" style="color:${labaBersih>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(labaBersih)}</div></div>
         <div class="bk-stat out"><div class="lbl">HPP (estimasi)</div><div class="val">${rupiah(hpp.totalHPP)}</div></div>
         <div class="bk-stat in"><div class="lbl">Pemasukan (penjualan)</div><div class="val">${rupiah(t.masuk)}</div></div>
         <div class="bk-stat out"><div class="lbl">Pengeluaran (bahan baku)</div><div class="val">${rupiah(t.keluar)}</div></div>
         <div class="bk-stat"><div class="lbl">Saldo (arus kas)</div><div class="val" style="color:${t.saldo>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(t.saldo)}</div></div>
         <div class="bk-stat out"><div class="lbl">Piutang belum lunas</div><div class="val">${rupiah(piutangTotal)}</div></div>
       </div>
-      <div class="bk-stok-note" style="margin-top:-10px;">HPP dihitung otomatis pakai metode rata-rata bergerak dari harga beli &amp; biaya produksi. Margin kotor saat ini: <strong>${margin.toFixed(1)}%</strong>. Laba bersih = Laba kotor &minus; Beban operasional (lihat rincian di tab Laporan).</div>
+      <div class="bk-stok-note" style="margin-top:-10px;">HPP dihitung otomatis pakai metode rata-rata bergerak dari harga beli &amp; biaya produksi. Margin kotor saat ini: <strong>${margin.toFixed(1)}%</strong>.</div>
       <div class="bk-ai-box">
         <div class="ai-head">
           <div class="ai-title">Analisis AI</div>
@@ -1237,6 +1233,157 @@ window.storage = {
     modalSlot.innerHTML = '';
     activeTab = 'dashboard';
     renderTabs(); renderBody();
+  }
+  function closeModalOnly() {
+    modalSlot.innerHTML = '';
+  }
+
+  // ---------- NOTA SERVICE LAPTOP (cetak/kirim saat pelunasan) ----------
+  function serviceReceiptText(s) {
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    const lines = [];
+    lines.push(storeName);
+    lines.push('='.repeat(24));
+    lines.push('Nota Service Laptop');
+    lines.push('');
+    lines.push(`Pelanggan: ${s.customerName || '-'}`);
+    lines.push(`Perangkat: ${s.device || '-'}`);
+    lines.push(`Keluhan: ${s.complaint || '-'}`);
+    lines.push('-'.repeat(24));
+    lines.push(`Biaya final: ${rupiah(s.biayaFinal)}`);
+    if (s.dpAmount) {
+      lines.push(`DP: ${rupiah(s.dpAmount)}`);
+      lines.push(`Sisa dibayar: ${rupiah(sisa)}`);
+    }
+    lines.push(new Date().toLocaleString('id-ID'));
+    lines.push('-'.repeat(24));
+    lines.push('Pembayaran transfer ke:');
+    lines.push(bankAccountLabel(s.rekening) || bankAccountLabel(BANK_ACCOUNTS[0].id));
+    lines.push('-'.repeat(24));
+    lines.push('Terima kasih sudah mempercayakan laptop Anda ke kami!');
+    return lines.join('\n');
+  }
+
+  function showServiceReceipt(s) {
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const acc = BANK_ACCOUNTS.find(a => a.id === s.rekening) || BANK_ACCOUNTS[0];
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    modalSlot.innerHTML = `
+      <div class="bk-overlay" id="bk-overlay">
+        <div class="bk-receipt-wrap">
+          <div class="bk-close-x" id="bk-receipt-close">&times;</div>
+          <div class="bk-receipt" id="bk-receipt-card">
+            <div class="r-store">${storeName}</div>
+            <div class="r-sub">Nota Service Laptop</div>
+            <hr/>
+            <div class="r-item">
+              <div class="r-item-top"><span>Pelanggan</span><span>${s.customerName || '-'}</span></div>
+              <div class="r-item-sub">Perangkat: ${s.device || '-'}</div>
+              <div class="r-item-sub">Keluhan: ${s.complaint || '-'}</div>
+            </div>
+            <hr/>
+            <div class="r-item-top"><span>Biaya final</span><span>${rupiah(s.biayaFinal)}</span></div>
+            ${s.dpAmount ? `
+            <div class="r-item-top"><span>DP</span><span>${rupiah(s.dpAmount)}</span></div>
+            <div class="r-item-top"><span>Sisa dibayar</span><span>${rupiah(sisa)}</span></div>
+            ` : ''}
+            <hr/>
+            <div class="r-total"><span>Total dibayar</span><span>${rupiah(s.biayaFinal)}</span></div>
+            <div class="r-note">${new Date().toLocaleString('id-ID')}</div>
+            <hr/>
+            <div style="text-align:center; font-size:11px; line-height:1.6;">
+              <div style="color:var(--ink-soft);">Pembayaran transfer ke:</div>
+              <div style="font-weight:600;">${acc.label}</div>
+              <div>${acc.nomor}</div>
+            </div>
+            <hr/>
+            <div class="r-note">Terima kasih sudah mempercayakan laptop Anda ke kami!</div>
+          </div>
+          <div class="zigzag" style="width:300px;"></div>
+          <div class="bk-receipt-actions">
+            <button class="bk-btn primary" id="bk-wa-btn">Kirim via WhatsApp</button>
+            <button class="bk-btn ghost" id="bk-print-btn">Cetak nota</button>
+            <button class="bk-btn ghost" id="bk-copy-btn">Salin teks</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('bk-receipt-close').addEventListener('click', closeModalOnly);
+    document.getElementById('bk-overlay').addEventListener('click', (e) => { if (e.target.id === 'bk-overlay') closeModalOnly(); });
+    document.getElementById('bk-print-btn').addEventListener('click', () => window.print());
+    document.getElementById('bk-wa-btn').addEventListener('click', () => {
+      const phoneRaw = (s.customerPhone || '').replace(/[^0-9]/g, '');
+      const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
+      const text = encodeURIComponent(serviceReceiptText(s));
+      const url = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
+      window.open(url, '_blank');
+    });
+    document.getElementById('bk-copy-btn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(serviceReceiptText(s));
+        const b = document.getElementById('bk-copy-btn');
+        b.textContent = 'Tersalin!'; setTimeout(() => b.textContent = 'Salin teks', 1500);
+      } catch (e) { console.error(e); }
+    });
+  }
+
+  // ---------- BUKTI PENGELUARAN (cetak/kirim untuk Beban Operasional) ----------
+  function bebanVoucherText(b) {
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const label = (b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori;
+    const lines = [];
+    lines.push(storeName);
+    lines.push('='.repeat(24));
+    lines.push('Bukti Pengeluaran Kas');
+    lines.push('');
+    lines.push(`Kategori: ${label}`);
+    if (b.keterangan) lines.push(`Keterangan: ${b.keterangan}`);
+    lines.push(`Tanggal: ${new Date(b.createdAt).toLocaleString('id-ID')}`);
+    lines.push('-'.repeat(24));
+    lines.push(`Nominal: ${rupiah(b.nominal)}`);
+    lines.push('-'.repeat(24));
+    lines.push('Dokumen internal, bukan untuk pelanggan.');
+    return lines.join('\n');
+  }
+
+  function showBebanVoucher(b) {
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const label = (b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori;
+    modalSlot.innerHTML = `
+      <div class="bk-overlay" id="bk-overlay">
+        <div class="bk-receipt-wrap">
+          <div class="bk-close-x" id="bk-receipt-close">&times;</div>
+          <div class="bk-receipt" id="bk-receipt-card">
+            <div class="r-store">${storeName}</div>
+            <div class="r-sub">Bukti Pengeluaran Kas</div>
+            <hr/>
+            <div class="r-item-top"><span>Kategori</span><span>${label}</span></div>
+            ${b.keterangan ? `<div class="r-item-sub">${b.keterangan}</div>` : ''}
+            <div class="r-note">${new Date(b.createdAt).toLocaleString('id-ID')}</div>
+            <hr/>
+            <div class="r-total"><span>Nominal</span><span>${rupiah(b.nominal)}</span></div>
+            <hr/>
+            <div class="r-note">Dokumen internal, bukan untuk pelanggan.</div>
+          </div>
+          <div class="zigzag" style="width:300px;"></div>
+          <div class="bk-receipt-actions">
+            <button class="bk-btn primary" id="bk-print-btn">Cetak bukti</button>
+            <button class="bk-btn ghost" id="bk-copy-btn">Salin teks</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.getElementById('bk-receipt-close').addEventListener('click', closeModalOnly);
+    document.getElementById('bk-overlay').addEventListener('click', (e) => { if (e.target.id === 'bk-overlay') closeModalOnly(); });
+    document.getElementById('bk-print-btn').addEventListener('click', () => window.print());
+    document.getElementById('bk-copy-btn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(bebanVoucherText(b));
+        const btn = document.getElementById('bk-copy-btn');
+        btn.textContent = 'Tersalin!'; setTimeout(() => btn.textContent = 'Salin teks', 1500);
+      } catch (e) { console.error(e); }
+    });
   }
 
   // ---------- CONFIRM MODAL & TOAST (pengganti window.confirm/alert yang bisa diblokir sandbox) ----------
@@ -1917,7 +2064,10 @@ window.storage = {
         </div>`;
     } else if (s.status === 'diambil') {
       const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
-      actionHtml = `<div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''} &middot; <span class="bk-badge ${s.paid===false?'belum':'lunas'}">${s.paid===false?(s.dpAmount?'Sisa belum lunas':'Belum lunas'):'Lunas'}</span>${s.parts && s.parts.some(p=>p.name) ? `<br/><span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}</div>`;
+      actionHtml = `<div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''} &middot; <span class="bk-badge ${s.paid===false?'belum':'lunas'}">${s.paid===false?(s.dpAmount?'Sisa belum lunas':'Belum lunas'):'Lunas'}</span>${s.parts && s.parts.some(p=>p.name) ? `<br/><span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}</div>
+        <div class="bk-svc-actions">
+          <button class="bk-btn ghost act-print-nota" data-id="${s.id}">Cetak nota</button>
+        </div>`;
     }
 
     const waBtn = s.customerPhone ? `<button class="bk-btn ghost act-wa" data-id="${s.id}">Kirim update WhatsApp</button>` : '';
@@ -2173,6 +2323,11 @@ window.storage = {
 
     list.querySelectorAll('.act-wa').forEach(b => b.addEventListener('click', () => sendServiceWhatsapp(b.dataset.id, 'manual')));
 
+    list.querySelectorAll('.act-print-nota').forEach(b => b.addEventListener('click', () => {
+      const s = services.find(x => x.id === b.dataset.id);
+      if (s) showServiceReceipt(s);
+    }));
+
     list.querySelectorAll('.svc-del-btn').forEach(b => b.addEventListener('click', () => removeService(b.dataset.id)));
   }
 
@@ -2230,7 +2385,7 @@ window.storage = {
         s.history.push({ status: 'diambil', at: Date.now() });
         await saveService(s);
         renderService();
-        showToast('Service selesai, biaya tercatat di pemasukan.');
+        showServiceReceipt(s);
       } catch (e) {
         console.error(e);
         showToast('Gagal menyelesaikan data service, coba lagi.');
@@ -3058,6 +3213,7 @@ window.storage = {
         <div class="bk-list-amt out">-${rupiah(b.nominal)}</div>
       </div>
       <div class="bk-row-actions">
+        <div class="bk-icon-btn beban-print-btn" title="Cetak bukti pengeluaran">&#9099;</div>
         <div class="bk-icon-btn danger beban-del-btn" title="Hapus beban">&times;</div>
       </div>
     </div>`;
@@ -3084,13 +3240,18 @@ window.storage = {
         bebanList.unshift(b);
         bebanFormState = blankBebanForm();
         renderLaporan();
-        showToast('Beban operasional tercatat.');
+        showBebanVoucher(b);
       } catch (e) { console.error(e); errEl.style.display='block'; errEl.textContent = 'Gagal menyimpan beban, coba lagi.'; }
     });
     const monthSel = document.getElementById('bk-lap-month');
     if (monthSel) monthSel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
     document.querySelectorAll('#bk-beban-list .bk-list-row-wrap').forEach(w => {
       const id = w.dataset.beban;
+      const printBtn = w.querySelector('.beban-print-btn');
+      if (printBtn) printBtn.addEventListener('click', () => {
+        const b = bebanList.find(x => x.id === id);
+        if (b) showBebanVoucher(b);
+      });
       w.querySelector('.beban-del-btn').addEventListener('click', () => {
         showConfirm('Hapus catatan beban ini?', async () => {
           try {
