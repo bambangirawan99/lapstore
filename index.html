@@ -168,13 +168,13 @@
 #bk-root .bk-btn:active { opacity: .85; }
 #bk-root .bk-btn:disabled { opacity: .5; cursor: default; }
 
-#bk-root .bk-item-row { display: grid; grid-template-columns: 1fr 70px 100px 110px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
+#bk-root .bk-item-row { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-item-row input {
   border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
 }
 #bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
-#bk-root .bk-item-head { display: grid; grid-template-columns: 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
+#bk-root .bk-item-head { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-prod-item-row { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-prod-item-row input {
@@ -318,9 +318,10 @@
   #bk-root .bk-quickai .bk-btn { width: 100%; }
   #bk-root .bk-item-row {
     grid-template-columns: 1fr 1fr;
-    grid-template-areas: "name name" "qty unit" "price price" ;
+    grid-template-areas: "code code" "name name" "qty unit" "price price" ;
     row-gap: 6px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed var(--line); position: relative;
   }
+  #bk-root .bk-item-row .f-code { grid-area: code; }
   #bk-root .bk-item-row .f-name { grid-area: name; }
   #bk-root .bk-item-row .f-qty { grid-area: qty; }
   #bk-root .bk-item-row .f-unit { grid-area: unit; }
@@ -924,7 +925,7 @@ window.storage = {
   }
 
   // ---------- FORM (pembelian / penjualan) ----------
-  function blankItem() { return { id: uid(), name: '', qty: '', price: '' }; }
+  function blankItem() { return { id: uid(), name: '', qty: '', price: '', code: '' }; }
   let formState = {
     pembelian: { items: [blankItem()], party: '', note: '' },
     penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id },
@@ -938,6 +939,7 @@ window.storage = {
 
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
+      ${itemCodesDatalistHtml()}
       ${isEdit ? `<div class="bk-cancel-edit" id="bk-cancel-edit">&larr; Batal edit, kembali ke riwayat</div>` : ''}
       ${!isEdit ? `<div class="bk-quickai">
         <input id="bk-quick-input" placeholder="${isJual ? 'Tulis bebas, mis: jual 2 kopi susu 15000, 1 roti bakar 12000' : 'Tulis bebas, mis: beli tepung 5kg 12000, gula 3kg 15000'}" />
@@ -957,7 +959,8 @@ window.storage = {
           ${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${st.rekening===a.id?'selected':''}>${escapeAttr(a.label)} (${escapeAttr(a.nomor)})</option>`).join('')}
         </select>
       </div>` : ''}
-      <div class="bk-item-head"><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
+      <div class="bk-stok-note" style="margin-top:-6px;">${isJual ? 'Ketik/scan Kode barang untuk otomatis mengisi nama sesuai stok yang sudah tercatat &mdash; hindari salah nama/beda kode.' : 'Isi Kode barang sekali saat pertama beli. Kode ini akan dipakai otomatis saat item ini dijual nanti (cocok untuk barcode scanner).'}</div>
+      <div class="bk-item-head"><div>Kode</div><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
       <div id="bk-items">${st.items.map(itemRowHtml).join('')}</div>
       <button class="bk-btn ghost" id="bk-add-item" style="margin-bottom:8px;">+ Tambah item</button>
       <div class="bk-total-line">
@@ -1005,6 +1008,12 @@ window.storage = {
     document.getElementById('bk-items').querySelectorAll('.bk-item-row').forEach(row => {
       const id = row.dataset.id;
       const item = st.items.find(i => i.id === id);
+      const codeInput = row.querySelector('.f-code');
+      if (codeInput) {
+        codeInput.addEventListener('input', e => item.code = e.target.value);
+        codeInput.addEventListener('change', () => applyItemCodeLookup(item, type));
+        codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyItemCodeLookup(item, type); } });
+      }
       row.querySelector('.f-name').addEventListener('input', e => item.name = e.target.value);
       row.querySelector('.f-qty').addEventListener('input', e => { item.qty = e.target.value; refreshTotal(type); });
       row.querySelector('.f-unit') && row.querySelector('.f-unit').addEventListener('input', e => item.unit = e.target.value);
@@ -1020,6 +1029,40 @@ window.storage = {
     if (!isEdit) document.getElementById('bk-quick-btn').addEventListener('click', () => runQuickAi(type));
     document.getElementById('bk-save-btn').addEventListener('click', () => saveTransaction(type, true));
     if (!isEdit && isJual) document.getElementById('bk-save-noresi-btn').addEventListener('click', () => saveTransaction(type, false));
+  }
+
+  // ---------- KODE BARANG (barcode) ----------
+  function getItemCodeRegistry() {
+    const byCode = {};
+    const byName = {};
+    const sorted = [...txns].filter(t => t.type === 'pembelian').sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+    sorted.forEach(t => {
+      (t.items || []).forEach(i => {
+        if (i.code && i.code.trim()) {
+          const code = i.code.trim();
+          byCode[code.toLowerCase()] = { name: i.name, unit: i.unit || '', code };
+          if (i.name) byName[i.name.trim().toLowerCase()] = code;
+        }
+      });
+    });
+    return { byCode, byName };
+  }
+  function itemCodesDatalistHtml() {
+    const reg = getItemCodeRegistry();
+    const codes = Object.values(reg.byCode).map(v => v.code);
+    return `<datalist id="bk-item-codes">${codes.map(c => `<option value="${escapeAttr(c)}"></option>`).join('')}</datalist>`;
+  }
+  function applyItemCodeLookup(item, type) {
+    const codeVal = (item.code || '').trim();
+    if (!codeVal) return;
+    const reg = getItemCodeRegistry();
+    const match = reg.byCode[codeVal.toLowerCase()];
+    if (match) {
+      item.name = match.name;
+      item.unit = match.unit;
+      renderForm(type);
+      showToast(`Kode ditemukan: ${match.name}`);
+    }
   }
 
   function getKnownItemNames() {
@@ -1040,6 +1083,7 @@ window.storage = {
 
   function itemRowHtml(item) {
     return `<div class="bk-item-row" data-id="${item.id}">
+      <input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />
       <input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama item" list="bk-item-names" />
       <input class="f-qty" type="number" min="0" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit||'')}" placeholder="pcs/kg" />
@@ -1102,7 +1146,7 @@ window.storage = {
     const txn = {
       id: isEdit ? editingTxnId : uid(),
       type,
-      items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price) })),
+      items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim() })),
       total,
       customerName: type === 'penjualan' ? st.party : '',
       customerPhone: type === 'penjualan' ? st.phone : '',
@@ -1167,8 +1211,8 @@ window.storage = {
       return;
     }
     formState[t.type] = t.type === 'penjualan'
-      ? { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price })), party: t.customerName || '', phone: t.customerPhone || '', paid: t.paid !== false, note: '', rekening: t.rekening || BANK_ACCOUNTS[0].id }
-      : { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price })), party: t.supplierName || '', note: '' };
+      ? { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '' })), party: t.customerName || '', phone: t.customerPhone || '', paid: t.paid !== false, note: '', rekening: t.rekening || BANK_ACCOUNTS[0].id }
+      : { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '' })), party: t.supplierName || '', note: '' };
     activeTab = t.type;
     renderTabs(); renderBody();
   }
@@ -1752,18 +1796,22 @@ window.storage = {
     const stockMap = computeStock();
     const rows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.qty - b.qty);
     const adaProduksi = txns.some(t => t.type === 'produksi');
+    const codeReg = getItemCodeRegistry();
     bodyEl.innerHTML = `
-      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}.${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
+      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual.${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
       <div class="bk-stok-row" style="font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">
         <div>Nama item</div><div style="text-align:right;">Satuan</div><div style="text-align:right;">Sisa stok</div>
       </div>
-      ${rows.length ? rows.map(r => `
+      ${rows.length ? rows.map(r => {
+        const code = codeReg.byName[r.name.trim().toLowerCase()];
+        return `
         <div class="bk-stok-row ${r.qty <= 0 ? 'low' : (r.qty < STOK_AMBANG_DEFAULT ? 'low' : '')}">
-          <div>${r.name}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}</div>
+          <div>${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}</div>
           <div style="text-align:right; color:var(--ink-soft);">${r.unit || '-'}</div>
           <div class="qty">${r.qty.toLocaleString('id-ID')}</div>
         </div>
-      `).join('') : '<div class="bk-empty">Belum ada data stok. Catat pembelian, penjualan, atau produksi dulu.</div>'}
+      `;
+      }).join('') : '<div class="bk-empty">Belum ada data stok. Catat pembelian, penjualan, atau produksi dulu.</div>'}
     `;
   }
 
