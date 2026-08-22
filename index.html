@@ -643,7 +643,7 @@ window.storage = {
   function blankServiceForm() {
     return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '', rekening: BANK_ACCOUNTS[0].id };
   }
-  function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: '' }; }
+  function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs' }; }
   let serviceFormState = blankServiceForm();
 
   function monthKey(ts) {
@@ -925,7 +925,7 @@ window.storage = {
   }
 
   // ---------- FORM (pembelian / penjualan) ----------
-  function blankItem() { return { id: uid(), name: '', qty: '', price: '', code: '' }; }
+  function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '' }; }
   let formState = {
     pembelian: { items: [blankItem()], party: '', note: '' },
     penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id },
@@ -1816,7 +1816,7 @@ window.storage = {
   }
 
   // ---------- PRODUKSI (konversi nyata bahan baku menjadi produk jadi) ----------
-  function blankProdItem() { return { id: uid(), name: '', qty: '', unit: '' }; }
+  function blankProdItem() { return { id: uid(), name: '', qty: '', unit: 'pcs' }; }
   let produksiFormState = { bahan: [blankProdItem()], hasil: [blankProdItem()] };
 
   function renderProdEstimateHtml() {
