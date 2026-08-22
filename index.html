@@ -1825,18 +1825,27 @@ window.storage = {
     const rows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.qty - b.qty);
     const adaProduksi = txns.some(t => t.type === 'produksi');
     const codeReg = getItemCodeRegistry();
+    const hpp = computeHPP();
+    const totalNilaiSemua = rows.reduce((s,r) => s + (r.qty > 0 ? r.qty * hpp.getCurrentUnitCost(r.name) : 0), 0);
     bodyEl.innerHTML = `
-      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual.${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
-      <div class="bk-stok-row" style="font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">
-        <div>Nama item</div><div style="text-align:right;">Satuan</div><div style="text-align:right;">Sisa stok</div>
+      <div class="bk-stats" style="margin-bottom:16px; grid-template-columns: 1fr;">
+        <div class="bk-stat"><div class="lbl">Total nilai stok saat ini (HPP)</div><div class="val">${rupiah(totalNilaiSemua)}</div></div>
+      </div>
+      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
+      <div class="bk-stok-row" style="grid-template-columns: 1fr 60px 70px 100px 120px; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700;">
+        <div>Nama item</div><div style="text-align:right;">Satuan</div><div style="text-align:right;">Sisa stok</div><div style="text-align:right;">HPP/unit</div><div style="text-align:right;">Total nilai</div>
       </div>
       ${rows.length ? rows.map(r => {
         const code = codeReg.byName[r.name.trim().toLowerCase()];
+        const unitCost = hpp.getCurrentUnitCost(r.name);
+        const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
         return `
-        <div class="bk-stok-row ${r.qty <= 0 ? 'low' : (r.qty < STOK_AMBANG_DEFAULT ? 'low' : '')}">
+        <div class="bk-stok-row ${r.qty <= 0 ? 'low' : (r.qty < STOK_AMBANG_DEFAULT ? 'low' : '')}" style="grid-template-columns: 1fr 60px 70px 100px 120px;">
           <div>${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}</div>
           <div style="text-align:right; color:var(--ink-soft);">${r.unit || '-'}</div>
           <div class="qty">${r.qty.toLocaleString('id-ID')}</div>
+          <div class="qty" style="color:var(--ink-soft);">${rupiah(unitCost)}</div>
+          <div class="qty" style="font-weight:700;">${rupiah(totalNilai)}</div>
         </div>
       `;
       }).join('') : '<div class="bk-empty">Belum ada data stok. Catat pembelian, penjualan, atau produksi dulu.</div>'}
