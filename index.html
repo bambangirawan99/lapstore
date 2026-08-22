@@ -866,12 +866,13 @@ window.storage = {
     const isIn = t.type === 'penjualan';
     const names = t.items.map(i => i.name).join(', ');
     const badge = isIn ? `<span class="bk-badge ${t.paid===false?'belum':'lunas'}">${t.paid===false?'Belum lunas':'Lunas'}</span>` : '';
+    const ongkirNote = (!isIn && Number(t.ongkosKirim) > 0) ? ` &middot; Ongkir ${rupiah(t.ongkosKirim)}` : '';
     return `<div class="bk-list-row-wrap" data-txn="${t.id}">
       <input type="checkbox" class="bk-row-check" ${checked} />
       <div class="bk-list-row">
         <div class="bk-list-left">
           <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}</div>
-          <div class="sub">${names}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
+          <div class="sub">${names}${ongkirNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
         </div>
         <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
       </div>
@@ -927,7 +928,7 @@ window.storage = {
   // ---------- FORM (pembelian / penjualan) ----------
   function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '' }; }
   let formState = {
-    pembelian: { items: [blankItem()], party: '', note: '' },
+    pembelian: { items: [blankItem()], party: '', note: '', ongkosKirim: '' },
     penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id },
   };
 
@@ -935,7 +936,9 @@ window.storage = {
     const st = formState[type];
     const isJual = type === 'penjualan';
     const isEdit = !!editingTxnId;
-    const total = st.items.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+    const itemsTotal = st.items.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+    const ongkosKirim = !isJual ? (Number(st.ongkosKirim) || 0) : 0;
+    const total = itemsTotal + ongkosKirim;
 
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
@@ -963,6 +966,11 @@ window.storage = {
       <div class="bk-item-head"><div>Kode</div><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
       <div id="bk-items">${st.items.map(itemRowHtml).join('')}</div>
       <button class="bk-btn ghost" id="bk-add-item" style="margin-bottom:8px;">+ Tambah item</button>
+      ${!isJual ? `<div class="bk-field">
+        <label>Ongkos kirim (opsional)</label>
+        <input id="bk-ongkir" type="number" min="0" value="${escapeAttr(st.ongkosKirim)}" placeholder="0" />
+      </div>
+      <div class="bk-stok-note" style="margin-top:-6px;">Ongkos kirim otomatis dialokasikan proporsional ke tiap item sebagai penambah HPP (harga pokok), dan ikut menambah total kas keluar untuk pembelian ini.</div>` : ''}
       <div class="bk-total-line">
         <div class="t-lbl">Total ${isJual ? 'penjualan' : 'pembelian'}</div>
         <div class="t-val">${rupiah(total)}</div>
@@ -988,7 +996,7 @@ window.storage = {
       editingTxnId = null;
       formState[type] = type === 'penjualan'
         ? { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id }
-        : { items: [blankItem()], party: '', note: '' };
+        : { items: [blankItem()], party: '', note: '', ongkosKirim: '' };
       activeTab = 'riwayat';
       renderTabs(); renderBody();
     });
@@ -998,6 +1006,8 @@ window.storage = {
       document.getElementById('bk-phone').addEventListener('input', e => st.phone = e.target.value);
       document.getElementById('bk-paid').addEventListener('change', e => st.paid = e.target.checked);
       document.getElementById('bk-rekening').addEventListener('change', e => st.rekening = e.target.value);
+    } else {
+      document.getElementById('bk-ongkir').addEventListener('input', e => { st.ongkosKirim = e.target.value; refreshTotal(type); });
     }
 
     document.getElementById('bk-add-item').addEventListener('click', () => {
@@ -1094,9 +1104,10 @@ window.storage = {
 
   function refreshTotal(type) {
     const st = formState[type];
-    const total = st.items.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+    const itemsTotal = st.items.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+    const ongkosKirim = type === 'pembelian' ? (Number(st.ongkosKirim) || 0) : 0;
     const tv = bodyEl.querySelector('.t-val');
-    if (tv) tv.textContent = rupiah(total);
+    if (tv) tv.textContent = rupiah(itemsTotal + ongkosKirim);
   }
 
   function escapeAttr(s) {
@@ -1140,7 +1151,9 @@ window.storage = {
       return;
     }
     errEl.style.display = 'none';
-    const total = validItems.reduce((s,i) => s + Number(i.qty) * Number(i.price), 0);
+    const itemsTotal = validItems.reduce((s,i) => s + Number(i.qty) * Number(i.price), 0);
+    const ongkosKirim = type === 'pembelian' ? (Number(st.ongkosKirim) || 0) : 0;
+    const total = itemsTotal + ongkosKirim;
     const isEdit = !!editingTxnId;
     const existing = isEdit ? txns.find(x => x.id === editingTxnId) : null;
     const txn = {
@@ -1148,6 +1161,7 @@ window.storage = {
       type,
       items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim() })),
       total,
+      ongkosKirim: type === 'pembelian' ? ongkosKirim : undefined,
       customerName: type === 'penjualan' ? st.party : '',
       customerPhone: type === 'penjualan' ? st.phone : '',
       supplierName: type === 'pembelian' ? st.party : '',
@@ -1174,7 +1188,7 @@ window.storage = {
       editingTxnId = null;
       formState[type] = type === 'penjualan'
         ? { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id }
-        : { items: [blankItem()], party: '', note: '' };
+        : { items: [blankItem()], party: '', note: '', ongkosKirim: '' };
       if (wasEdit) {
         activeTab = 'riwayat';
         renderTabs(); renderBody();
@@ -1212,7 +1226,7 @@ window.storage = {
     }
     formState[t.type] = t.type === 'penjualan'
       ? { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '' })), party: t.customerName || '', phone: t.customerPhone || '', paid: t.paid !== false, note: '', rekening: t.rekening || BANK_ACCOUNTS[0].id }
-      : { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '' })), party: t.supplierName || '', note: '' };
+      : { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '' })), party: t.supplierName || '', note: '', ongkosKirim: t.ongkosKirim || '' };
     activeTab = t.type;
     renderTabs(); renderBody();
   }
@@ -1693,7 +1707,14 @@ window.storage = {
 
     sorted.forEach(t => {
       if (t.type === 'pembelian') {
-        t.items.forEach(i => addStock(i.name, Number(i.qty) || 0, (Number(i.qty) || 0) * (Number(i.price) || 0)));
+        const shipping = Number(t.ongkosKirim) || 0;
+        const subtotal = t.items.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+        t.items.forEach(i => {
+          const qty = Number(i.qty) || 0;
+          const itemValue = qty * (Number(i.price) || 0);
+          const allocShipping = shipping > 0 ? (subtotal > 0 ? shipping * (itemValue / subtotal) : shipping / t.items.length) : 0;
+          addStock(i.name, qty, itemValue + allocShipping);
+        });
       } else if (t.type === 'produksi') {
         let batchCost = 0;
         (t.bahan || []).forEach(i => {
@@ -1755,7 +1776,14 @@ window.storage = {
     }
     sorted.forEach(t => {
       if (t.type === 'pembelian') {
-        t.items.forEach(i => addStock(i.name, Number(i.qty) || 0, (Number(i.qty) || 0) * (Number(i.price) || 0)));
+        const shipping = Number(t.ongkosKirim) || 0;
+        const subtotal = t.items.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+        t.items.forEach(i => {
+          const qty = Number(i.qty) || 0;
+          const itemValue = qty * (Number(i.price) || 0);
+          const allocShipping = shipping > 0 ? (subtotal > 0 ? shipping * (itemValue / subtotal) : shipping / t.items.length) : 0;
+          addStock(i.name, qty, itemValue + allocShipping);
+        });
       } else if (t.type === 'produksi') {
         let batchCost = 0;
         (t.bahan || []).forEach(i => {
