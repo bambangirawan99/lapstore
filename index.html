@@ -1,29 +1,29 @@
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 #bk-root {
   --paper: #FFFFFF;
-  --bg-page: #EAF3FF;
-  --ink: #1E1B4B;
-  --ink-soft: #6B6F9E;
-  --line: #DCE4F7;
-  --money-in: #12A876;
-  --money-in-bg: #DEF7EC;
-  --money-out: #FF5A5F;
-  --money-out-bg: #FFE7E6;
-  --accent: #6C5CE7;
-  --accent-ink: #2C1F87;
-  --accent-bg: #EFEAFF;
-  --accent2: #FFC94D;
-  --accent2-ink: #7A5300;
-  --accent2-bg: #FFF3D6;
-  --accent3: #00B8AC;
-  --accent3-ink: #01615A;
-  --accent3-bg: #DCF7F4;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  --bg-page: #F7F5F0;
+  --ink: #1F2937;
+  --ink-soft: #6B7280;
+  --line: #E3E0D8;
+  --money-in: #2F6F4E;
+  --money-in-bg: #E6F1EC;
+  --money-out: #A6423A;
+  --money-out-bg: #F5E9E7;
+  --accent: #1B2A4A;
+  --accent-ink: #0F1B33;
+  --accent-bg: #E9EDF3;
+  --accent2: #B08D57;
+  --accent2-ink: #6B4F24;
+  --accent2-bg: #F3EAD9;
+  --accent3: #3F6B77;
+  --accent3-ink: #1F3A40;
+  --accent3-bg: #E4EEEF;
+  font-family: 'Inter', sans-serif;
   color: var(--ink);
   background: var(--bg-page);
-  border-radius: 22px;
+  border-radius: 12px;
   padding: 0;
   max-width: 860px;
   margin: 0 auto;
@@ -31,30 +31,32 @@
   overflow: hidden;
 }
 #bk-root * { box-sizing: border-box; }
-#bk-root .disp { font-family: 'Baloo 2', sans-serif; }
+#bk-root .disp { font-family: 'Playfair Display', serif; }
 #bk-root .mono { font-family: 'IBM Plex Mono', monospace; }
 
 /* Header */
 #bk-root .bk-header {
-  background: linear-gradient(135deg, #6C5CE7 0%, #8C6FF0 45%, #FF7FB4 100%);
+  background: var(--accent);
   color: #fff;
-  padding: 22px 28px 26px;
+  padding: 20px 28px 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   position: relative;
+  border-bottom: 2px solid var(--accent2);
 }
 #bk-root .bk-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
 #bk-root .bk-logo-mark {
-  width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
-  background: rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center;
-  color: #fff;
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent2);
 }
 #bk-root .bk-header input {
-  font-family: 'Baloo 2', sans-serif;
-  font-weight: 700;
-  font-size: 23px;
+  font-family: 'Playfair Display', serif;
+  font-weight: 600;
+  font-size: 22px;
   background: transparent;
   border: none;
   color: #fff;
@@ -65,25 +67,25 @@
   min-width: 0;
   flex: 1;
 }
-#bk-root .bk-header input:focus { border-bottom: 1px dashed rgba(255,255,255,.7); }
+#bk-root .bk-header input:focus { border-bottom: 1px dashed rgba(255,255,255,.6); }
 #bk-root .bk-header .bk-date {
-  font-size: 11px; font-weight: 600; color: var(--accent2-ink);
+  font-size: 11px; font-weight: 500; color: var(--accent2);
   font-family: 'IBM Plex Mono', monospace;
-  background: var(--accent2);
+  background: transparent;
+  border: 1px solid rgba(176,141,87,.55);
   padding: 5px 11px;
-  border-radius: 7px;
-  transform: rotate(-3deg);
-  box-shadow: 2px 2px 0 rgba(30,27,75,.25);
+  border-radius: 6px;
   white-space: nowrap;
 }
 #bk-root #bk-refresh-btn {
   transition: transform .4s ease, background .15s ease;
-  color: rgba(255,255,255,.9) !important;
-  width: 30px; height: 30px; border-radius: 999px;
-  background: rgba(255,255,255,.18);
+  color: rgba(255,255,255,.85) !important;
+  width: 30px; height: 30px; border-radius: 6px;
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
   display: flex; align-items: center; justify-content: center;
 }
-#bk-root #bk-refresh-btn:hover { background: rgba(255,255,255,.3); }
+#bk-root #bk-refresh-btn:hover { background: rgba(255,255,255,.2); }
 #bk-root .bk-shared-banner {
   background: var(--accent2-bg); color: var(--accent2-ink); font-size: 11.5px; font-weight: 500;
   padding: 7px 28px; border-bottom: 1px solid var(--line); line-height: 1.5;
@@ -93,30 +95,30 @@
 #bk-root .bk-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
-  padding: 12px 20px;
+  padding: 0 20px;
 }
 #bk-root .bk-tab {
-  padding: 9px 16px;
+  padding: 13px 15px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink-soft);
   cursor: pointer;
-  border-radius: 999px;
+  border-bottom: 2px solid transparent;
   user-select: none;
-  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
+  transition: color .15s ease, border-color .15s ease;
 }
-#bk-root .bk-tab.active { background: var(--accent); color: #fff; box-shadow: 2px 2px 0 var(--ink); }
-#bk-root .bk-tab:hover:not(.active) { background: var(--accent-bg); color: var(--accent-ink); }
+#bk-root .bk-tab.active { color: var(--accent); border-bottom-color: var(--accent2); }
+#bk-root .bk-tab:hover:not(.active) { color: var(--ink); }
 
 #bk-root .bk-body { padding: 24px 28px 30px; background: var(--paper); min-height: 320px; }
 
 /* Dashboard */
 #bk-root .bk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin-bottom: 22px; }
-#bk-root .bk-stat { position: relative; overflow: hidden; border: 1.5px solid var(--line); border-radius: 16px; padding: 16px 16px 14px; background: var(--paper); }
-#bk-root .bk-stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--accent); }
+#bk-root .bk-stat { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; padding: 16px 16px 14px; background: var(--paper); }
+#bk-root .bk-stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--accent2); }
 #bk-root .bk-stat.in::before { background: var(--money-in); }
 #bk-root .bk-stat.out::before { background: var(--money-out); }
 #bk-root .bk-stat .lbl { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; font-weight: 600; }
@@ -124,13 +126,13 @@
 #bk-root .bk-stat.in .val { color: var(--money-in); }
 #bk-root .bk-stat.out .val { color: var(--money-out); }
 
-#bk-root .bk-ai-box { border: 1.5px dashed var(--accent3); background: var(--accent3-bg); border-radius: 16px; padding: 16px 18px; margin-bottom: 22px; }
+#bk-root .bk-ai-box { border: 1px solid var(--accent3); background: var(--accent3-bg); border-radius: 10px; padding: 16px 18px; margin-bottom: 22px; }
 #bk-root .bk-ai-box .ai-head { display:flex; align-items:center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 #bk-root .bk-ai-box .ai-title { font-size: 13px; font-weight: 700; color: var(--accent3-ink); }
 #bk-root .bk-ai-box .ai-body { font-size: 13.5px; color: var(--ink); line-height: 1.6; white-space: pre-wrap; }
 #bk-root .bk-ai-box .ai-body ul { margin: 6px 0 0 18px; padding: 0; }
 
-#bk-root .bk-section-title { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 17px; margin: 0 0 12px; color: var(--ink); }
+#bk-root .bk-section-title { font-family: 'Playfair Display', serif; font-weight: 600; font-size: 18px; margin: 0 0 12px; color: var(--ink); }
 
 #bk-root .bk-list-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -138,7 +140,7 @@
 }
 #bk-root .bk-list-row:last-child { border-bottom: none; }
 #bk-root .bk-list-left { display:flex; flex-direction:column; gap: 2px; min-width: 0; }
-#bk-root .bk-list-left .nm { font-weight: 700; }
+#bk-root .bk-list-left .nm { font-weight: 600; }
 #bk-root .bk-list-left .sub { font-size: 11.5px; color: var(--ink-soft); }
 #bk-root .bk-list-amt { font-family: 'IBM Plex Mono', monospace; font-weight: 600; white-space: nowrap; }
 #bk-root .bk-list-amt.in { color: var(--money-in); }
@@ -148,44 +150,44 @@
 /* Forms */
 #bk-root .bk-quickai { display: flex; gap: 8px; margin-bottom: 18px; }
 #bk-root .bk-quickai input {
-  flex: 1; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13.5px;
-  font-family: 'Plus Jakarta Sans', sans-serif; background: #fff;
+  flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13.5px;
+  font-family: 'Inter', sans-serif; background: #fff;
 }
-#bk-root .bk-quickai input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+#bk-root .bk-quickai input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-btn {
-  border: none; border-radius: 999px; padding: 11px 20px; font-size: 13.5px; font-weight: 700;
-  cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; white-space: nowrap;
-  transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
+  border: none; border-radius: 8px; padding: 10px 18px; font-size: 13.5px; font-weight: 600;
+  cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap;
+  transition: background .15s ease, opacity .15s ease;
 }
-#bk-root .bk-btn.primary { background: var(--ink); color: #fff; box-shadow: 3px 3px 0 var(--accent2); }
-#bk-root .bk-btn.primary:hover { background: #2a2564; }
-#bk-root .bk-btn.accent { background: var(--accent); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
-#bk-root .bk-btn.accent:hover { background: #5b49d9; }
-#bk-root .bk-btn.ghost { background: transparent; color: var(--ink-soft); border: 1.5px solid var(--line); }
+#bk-root .bk-btn.primary { background: var(--accent); color: #fff; }
+#bk-root .bk-btn.primary:hover { background: #142035; }
+#bk-root .bk-btn.accent { background: var(--accent2); color: #3B2A0E; }
+#bk-root .bk-btn.accent:hover { background: #9c7a48; }
+#bk-root .bk-btn.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
 #bk-root .bk-btn.ghost:hover { border-color: var(--accent); color: var(--accent-ink); }
-#bk-root .bk-btn:active { transform: translate(2px, 2px); box-shadow: none !important; }
-#bk-root .bk-btn:disabled { opacity: .55; cursor: default; transform: none; }
+#bk-root .bk-btn:active { opacity: .85; }
+#bk-root .bk-btn:disabled { opacity: .5; cursor: default; }
 
 #bk-root .bk-item-row { display: grid; grid-template-columns: 1fr 70px 100px 110px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-item-row input {
-  border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 9px; font-size: 13px; font-family: 'Plus Jakarta Sans', sans-serif;
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
 }
-#bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+#bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
 #bk-root .bk-item-head { display: grid; grid-template-columns: 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-prod-item-row { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-prod-item-row input {
-  border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 9px; font-size: 13px; font-family: 'Plus Jakarta Sans', sans-serif;
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
 }
-#bk-root .bk-prod-item-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+#bk-root .bk-prod-item-row input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-prod-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
 #bk-root .bk-prod-item-head { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-field { margin-bottom: 14px; }
 #bk-root .bk-field label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 5px; font-weight: 600; }
-#bk-root .bk-field input { width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 9px 12px; font-size: 13.5px; font-family: 'Plus Jakarta Sans', sans-serif; }
-#bk-root .bk-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+#bk-root .bk-field input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font-size: 13.5px; font-family: 'Inter', sans-serif; }
+#bk-root .bk-field input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 #bk-root .bk-total-line { display: flex; justify-content: space-between; align-items: center; margin: 16px 0 18px; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -196,8 +198,8 @@
 
 /* Riwayat filter */
 #bk-root .bk-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-#bk-root .bk-chip { padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--line); font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--ink-soft); background: #fff; }
-#bk-root .bk-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 2px 2px 0 var(--ink); }
+#bk-root .bk-chip { padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--ink-soft); background: #fff; }
+#bk-root .bk-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* Row actions + badges */
 #bk-root .bk-badge { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; display: inline-block; }
@@ -205,7 +207,7 @@
 #bk-root .bk-badge.belum { background: var(--money-out-bg); color: var(--money-out); }
 #bk-root .bk-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
 #bk-root .bk-icon-btn {
-  border: 1.5px solid var(--line); background: #fff; border-radius: 10px; width: 28px; height: 28px;
+  border: 1px solid var(--line); background: #fff; border-radius: 8px; width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; color: var(--ink-soft);
   transition: border-color .15s ease, color .15s ease;
 }
@@ -218,7 +220,7 @@
 #bk-root .bk-select-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 #bk-root .bk-select-all { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); cursor: pointer; user-select: none; font-weight: 600; }
 #bk-root .bk-select-all input { width: 16px; height: 16px; cursor: pointer; }
-#bk-root .bk-bulk-del { display: none; background: var(--money-out); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+#bk-root .bk-bulk-del { display: none; background: var(--money-out); color: #fff; }
 #bk-root .bk-bulk-del.show { display: inline-flex; }
 #bk-root .bk-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; }
 #bk-root .bk-checkbox-row input { width: 16px; height: 16px; }
@@ -242,22 +244,22 @@
 
 /* Receipt modal */
 #bk-root .bk-overlay {
-  position: fixed; inset: 0; background: rgba(20,20,40,.55); display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; background: rgba(15,27,51,.5); display: flex; align-items: center; justify-content: center;
   z-index: 999; padding: 24px;
 }
 #bk-root .bk-receipt {
-  width: 300px; background: var(--paper); padding: 30px 20px 4px;
+  width: 300px; background: var(--paper); padding: 26px 20px 4px;
   font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink);
-  box-shadow: 0 16px 34px rgba(30,27,75,.3);
-  border-radius: 14px 14px 0 0;
+  box-shadow: 0 12px 28px rgba(15,27,51,.22);
+  border-radius: 10px 10px 0 0;
   position: relative;
   overflow: hidden;
 }
 #bk-root .bk-receipt::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px;
-  background: linear-gradient(90deg, var(--accent), var(--accent3), var(--accent2));
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--accent2);
 }
-#bk-root .bk-receipt .r-store { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 17px; text-align: center; color: var(--accent-ink); }
+#bk-root .bk-receipt .r-store { font-family: 'Playfair Display', serif; font-weight: 600; font-size: 17px; text-align: center; color: var(--accent-ink); }
 #bk-root .bk-receipt .r-sub { text-align: center; color: var(--ink-soft); font-size: 10.5px; margin-top: 2px; }
 #bk-root .bk-receipt hr { border: none; border-top: 1px dashed var(--line); margin: 12px 0; }
 #bk-root .bk-receipt .r-item { margin-bottom: 6px; }
@@ -279,9 +281,9 @@
 
 /* Service Laptop */
 #bk-root .bk-service-status-bar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
-#bk-root .bk-svc-card { border:1.5px solid var(--line); border-radius:16px; padding:16px 18px; margin-bottom:14px; background:#fff; }
+#bk-root .bk-svc-card { border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin-bottom:14px; background:#fff; }
 #bk-root .bk-svc-top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
-#bk-root .bk-svc-top .nm { font-weight:700; font-size:14.5px; font-family:'Baloo 2', sans-serif; }
+#bk-root .bk-svc-top .nm { font-weight:600; font-size:14.5px; font-family:'Playfair Display', serif; }
 #bk-root .bk-svc-top .sub { font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
 #bk-root .bk-svc-badge { font-size:10.5px; font-weight:700; padding:4px 11px; border-radius:999px; white-space:nowrap; display:inline-block; }
 #bk-root .bk-svc-badge.diterima { background:var(--accent-bg); color:var(--accent-ink); }
@@ -289,23 +291,23 @@
 #bk-root .bk-svc-badge.menunggu_konfirmasi { background:var(--money-out-bg); color:var(--money-out); }
 #bk-root .bk-svc-badge.dikerjakan { background:var(--accent3-bg); color:var(--accent3-ink); }
 #bk-root .bk-svc-badge.selesai { background:var(--money-in-bg); color:var(--money-in); }
-#bk-root .bk-svc-badge.diambil { background:#ECEAF7; color:var(--ink-soft); }
+#bk-root .bk-svc-badge.diambil { background:#EDEBE6; color:var(--ink-soft); }
 #bk-root .bk-svc-detail { font-size:12.5px; color:var(--ink); line-height:1.6; margin:8px 0; }
 #bk-root .bk-svc-detail .lbl { color:var(--ink-soft); font-weight: 600; }
 #bk-root .bk-svc-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
 #bk-root .bk-svc-row-actions { display:flex; gap:4px; flex-shrink:0; }
 #bk-root .bk-svc-timeline { font-size:10.5px; color:var(--ink-soft); margin-top:8px; border-top:1px dashed var(--line); padding-top:8px; }
-#bk-root .bk-svc-dp-box { background: var(--accent2-bg); border: 1.5px dashed var(--accent2); border-radius: 12px; padding: 12px 14px; margin: 10px 0; font-size: 13px; }
+#bk-root .bk-svc-dp-box { background: var(--accent2-bg); border: 1px solid var(--accent2); border-radius: 8px; padding: 12px 14px; margin: 10px 0; font-size: 13px; }
 
 @media (max-width: 560px) {
   #bk-root { border-radius: 0; max-width: 100%; overflow: visible; }
-  #bk-root .bk-header { padding: 16px 16px 20px; flex-wrap: wrap; }
+  #bk-root .bk-header { padding: 16px 16px 16px; flex-wrap: wrap; }
   #bk-root .bk-header-left { min-width: 0; }
-  #bk-root .bk-logo-mark { width: 32px; height: 32px; border-radius: 10px; }
+  #bk-root .bk-logo-mark { width: 32px; height: 32px; border-radius: 8px; }
   #bk-root .bk-header input { font-size: 18px; max-width: 100%; }
   #bk-root .bk-header .bk-date { font-size: 10px; padding: 4px 9px; }
-  #bk-root .bk-tabs { padding: 10px 10px; }
-  #bk-root .bk-tab { padding: 8px 12px; font-size: 12px; }
+  #bk-root .bk-tabs { padding: 0 10px; }
+  #bk-root .bk-tab { padding: 10px 12px; font-size: 12px; }
   #bk-root .bk-body { padding: 16px 16px 22px; min-height: 260px; }
   #bk-root .bk-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
   #bk-root .bk-stat { padding: 13px 12px 11px; }
@@ -442,7 +444,7 @@ window.storage = {
 (function(){
   if (!SUPABASE_CONFIGURED) {
     document.getElementById('bk-body').innerHTML = `
-      <div style="padding:20px; border:1.5px dashed var(--money-out,#FF5A5F); border-radius:14px; background:#FFE7E6; color:#7A1418; font-size:13.5px; line-height:1.7; font-family:'Plus Jakarta Sans', sans-serif;">
+      <div style="padding:20px; border:1px dashed var(--money-out,#A6423A); border-radius:10px; background:#F5E9E7; color:#6B2620; font-size:13.5px; line-height:1.7; font-family:'Inter', sans-serif;">
         <strong>Supabase belum dikonfigurasi.</strong><br/>
         Buka file <code>index.html</code>, cari bagian <code>SUPABASE_URL</code> dan <code>SUPABASE_ANON_KEY</code> di dekat awal kode, lalu isi dengan data dari project Supabase kamu.<br/>
         Lihat <code>README.md</code> untuk langkah lengkapnya.
@@ -868,7 +870,7 @@ window.storage = {
       </div>` : ''}
       ${isJual ? `<div class="bk-field">
         <label>Rekening tujuan pembayaran</label>
-        <select id="bk-rekening" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+        <select id="bk-rekening" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
           ${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${st.rekening===a.id?'selected':''}>${escapeAttr(a.label)} (${escapeAttr(a.nomor)})</option>`).join('')}
         </select>
       </div>` : ''}
@@ -1254,7 +1256,7 @@ window.storage = {
   function showToast(msg) {
     const t = document.createElement('div');
     t.textContent = msg;
-    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1E1B4B;color:#fff;padding:10px 20px;border-radius:999px;font-size:13px;font-weight:600;font-family:\'Plus Jakarta Sans\',sans-serif;z-index:1000;box-shadow:0 4px 16px rgba(30,27,75,.35);max-width:90%;text-align:center;';
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1B2A4A;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;font-family:\'Inter\',sans-serif;z-index:1000;box-shadow:0 4px 16px rgba(15,27,51,.35);max-width:90%;text-align:center;';
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2500);
   }
@@ -1273,7 +1275,7 @@ window.storage = {
     bodyEl.innerHTML = `
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
-        <select id="bk-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 11px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+        <select id="bk-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 11px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
           <option value="semua" ${riwayatMonth==='semua'?'selected':''}>Semua bulan</option>
           ${months.map(m => `<option value="${m}" ${riwayatMonth===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
@@ -1690,7 +1692,7 @@ window.storage = {
       <div class="bk-field"><label>Kelengkapan yang dititipkan (opsional)</label><input id="bk-svc-accessories" value="${escapeAttr(serviceFormState.accessories)}" placeholder="Contoh: charger, tas" /></div>
       <div class="bk-field">
         <label>Rekening tujuan pembayaran</label>
-        <select id="bk-svc-rekening" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+        <select id="bk-svc-rekening" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
           ${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${serviceFormState.rekening===a.id?'selected':''}>${escapeAttr(a.label)} (${escapeAttr(a.nomor)})</option>`).join('')}
         </select>
       </div>
@@ -1746,7 +1748,7 @@ window.storage = {
       <div class="bk-two-col" style="margin-bottom:16px;">
         <div class="bk-field" style="margin-bottom:0;">
           <label>Bulan selesai</label>
-          <select id="bk-svc-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+          <select id="bk-svc-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
             <option value="semua" ${svcRiwayatMonth==='semua'?'selected':''}>Semua bulan</option>
             ${months.map(m => `<option value="${m}" ${svcRiwayatMonth===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
           </select>
@@ -1921,8 +1923,8 @@ window.storage = {
         <input class="svc-edit-device" data-id="${s.id}" value="${escapeAttr(s.device)}" placeholder="Merk/tipe laptop" />
         <input class="svc-edit-accessories" data-id="${s.id}" value="${escapeAttr(s.accessories)}" placeholder="Kelengkapan (opsional)" />
       </div>
-      <input class="svc-edit-complaint" data-id="${s.id}" value="${escapeAttr(s.complaint)}" placeholder="Keluhan" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif;" />
-      <select class="svc-edit-rekening" data-id="${s.id}" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+      <input class="svc-edit-complaint" data-id="${s.id}" value="${escapeAttr(s.complaint)}" placeholder="Keluhan" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif;" />
+      <select class="svc-edit-rekening" data-id="${s.id}" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
         ${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${(s.rekening||BANK_ACCOUNTS[0].id)===a.id?'selected':''}>${escapeAttr(a.label)} (${escapeAttr(a.nomor)})</option>`).join('')}
       </select>
       <div id="bk-svc-edit-err-${s.id}" class="bk-err" style="display:none;"></div>
@@ -1968,7 +1970,7 @@ window.storage = {
     return `<div class="bk-svc-dp-box">
       <div style="font-size:12px; font-weight:700; color:var(--accent2-ink); margin-bottom:8px;">Uang muka (DP) &mdash; opsional</div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <input class="svc-dp-input" type="number" min="0" data-id="${s.id}" placeholder="Jumlah DP diterima" style="flex:1; min-width:140px; border:1.5px solid var(--line); border-radius:10px; padding:8px 11px; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif;" />
+        <input class="svc-dp-input" type="number" min="0" data-id="${s.id}" placeholder="Jumlah DP diterima" style="flex:1; min-width:140px; border:1.5px solid var(--line); border-radius:10px; padding:8px 11px; font-size:13px; font-family:'Inter',sans-serif;" />
         <button class="bk-btn ghost svc-dp-save" data-id="${s.id}" style="padding:8px 16px;">Catat DP</button>
       </div>
     </div>`;
@@ -2577,7 +2579,7 @@ window.storage = {
     return `
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
-        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
           <option value="semua" ${mKey==='semua'?'selected':''}>Semua bulan</option>
           ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
@@ -2693,7 +2695,7 @@ window.storage = {
       <div class="bk-two-col">
         <div class="bk-field">
           <label>Kategori</label>
-          <select id="bk-beban-kategori" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+          <select id="bk-beban-kategori" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
             ${BEBAN_KATEGORI.map(k => `<option value="${k}" ${bebanFormState.kategori===k?'selected':''}>${k}</option>`).join('')}
           </select>
         </div>
@@ -2707,7 +2709,7 @@ window.storage = {
       <div class="bk-section-title">Riwayat beban operasional</div>
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
-        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
           <option value="semua" ${mKey==='semua'?'selected':''}>Semua bulan</option>
           ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
@@ -2781,7 +2783,7 @@ window.storage = {
     return `
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
-        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
           ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
       </div>
