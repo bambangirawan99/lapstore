@@ -1023,8 +1023,10 @@ window.storage = {
       const item = st.items.find(i => i.id === id);
       const codeInput = row.querySelector('.f-code');
       if (codeInput) {
-        codeInput.addEventListener('input', e => item.code = e.target.value);
-        codeInput.addEventListener('change', () => applyItemCodeLookup(item, type));
+        codeInput.addEventListener('input', e => {
+          item.code = e.target.value;
+          applyItemCodeLookup(item, type);
+        });
         codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyItemCodeLookup(item, type); } });
       }
       row.querySelector('.f-name').addEventListener('input', e => item.name = e.target.value);
