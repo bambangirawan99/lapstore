@@ -378,13 +378,14 @@
       </div>
       <input id="bk-storename" value="LAPSTORE" />
     </div>
-    <div style="display:flex; align-items:center; gap:10px;">
+    <div id="bk-header-actions" style="display:none; align-items:center; gap:10px;">
       <div class="bk-date" id="bk-today"></div>
       <div id="bk-refresh-btn" title="Muat ulang data terbaru" style="cursor:pointer; font-size:15px; user-select:none;">&#8635;</div>
+      <div id="bk-logout-btn" title="Keluar dari akun" style="cursor:pointer; font-size:11.5px; font-weight:600; color:rgba(255,255,255,.9); padding:6px 11px; border:1px solid rgba(255,255,255,.3); border-radius:6px; white-space:nowrap;">Keluar</div>
     </div>
   </div>
-  <div class="bk-shared-banner">
-    Data dibagikan &middot; semua orang yang membuka situs ini melihat &amp; mencatat ke database Supabase yang sama.
+  <div class="bk-shared-banner" id="bk-shared-banner">
+    Data dibagikan &middot; hanya akun yang terdaftar yang bisa melihat &amp; mencatat data toko ini.
   </div>
   <div class="bk-tabs" id="bk-tabs"></div>
   <div class="bk-body" id="bk-body"></div>
@@ -840,6 +841,9 @@ window.storage = {
     </div>`;
   }
 
+  function auditNoteHtml(record) {
+    return record.createdBy ? ` &middot; oleh ${record.createdBy}` : '';
+  }
   function riwayatRowHtml(t) {
     const checked = selectedTxnIds.has(t.id) ? 'checked' : '';
     if (t.type === 'produksi') {
@@ -848,7 +852,7 @@ window.storage = {
         <div class="bk-list-row">
           <div class="bk-list-left">
             <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span></div>
-            <div class="sub">${summarizeProduksi(t)}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
+            <div class="sub">${summarizeProduksi(t)}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
           </div>
           <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>
         </div>
@@ -866,7 +870,7 @@ window.storage = {
       <div class="bk-list-row">
         <div class="bk-list-left">
           <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}</div>
-          <div class="sub">${names}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
+          <div class="sub">${names}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
         </div>
         <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
       </div>
@@ -1106,6 +1110,7 @@ window.storage = {
       paid: type === 'penjualan' ? (st.paid !== false) : undefined,
       rekening: type === 'penjualan' ? st.rekening : undefined,
       createdAt: isEdit && existing ? existing.createdAt : Date.now(),
+      createdBy: isEdit && existing ? existing.createdBy : (currentUser ? currentUser.email : null),
     };
     const clickedBtnId = withReceipt === false ? 'bk-save-noresi-btn' : 'bk-save-btn';
     const saveBtn = document.getElementById(clickedBtnId) || document.getElementById('bk-save-btn');
@@ -1927,6 +1932,7 @@ window.storage = {
       hasil: validHasil.map(i => ({ name: i.name.trim(), qty: Number(i.qty), unit: i.unit.trim() })),
       total: 0,
       createdAt: isEdit && existing ? existing.createdAt : Date.now(),
+      createdBy: isEdit && existing ? existing.createdBy : (currentUser ? currentUser.email : null),
     };
     const btn = document.getElementById('bk-prod-save-btn');
     btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -2145,6 +2151,7 @@ window.storage = {
       status: 'diterima',
       linkedTxnId: null,
       createdAt: Date.now(),
+      createdBy: currentUser ? currentUser.email : null,
       updatedAt: Date.now(),
       history: [{ status: 'diterima', at: Date.now() }],
     };
@@ -2239,7 +2246,7 @@ window.storage = {
     ` : `
       <div class="nm">${s.customerName} &middot; ${s.device}</div>
       <div class="sub">${s.complaint}${s.accessories ? ' &middot; Kelengkapan: '+s.accessories : ''}</div>
-      <div class="sub">${new Date(s.createdAt).toLocaleDateString('id-ID')}</div>
+      <div class="sub">${new Date(s.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(s)}</div>
     `;
 
     return `<div class="bk-svc-card" data-svc="${s.id}">
@@ -3395,7 +3402,7 @@ window.storage = {
       const nominal = Number(modalEntryFormState.nominal) || 0;
       if (nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nominal setoran modal yang valid.'; return; }
       errEl.style.display = 'none';
-      const m = { id: uid(), keterangan: modalEntryFormState.keterangan.trim(), nominal, createdAt: Date.now() };
+      const m = { id: uid(), keterangan: modalEntryFormState.keterangan.trim(), nominal, createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null };
       try {
         await saveModalEntry(m);
         modalEntries.push(m);
@@ -3480,7 +3487,7 @@ window.storage = {
       <div class="bk-svc-top">
         <div>
           <div class="nm">${u.kreditur || 'Tanpa nama'}</div>
-          <div class="sub">${u.jenis}${u.keterangan ? ' - '+u.keterangan : ''} &middot; ${new Date(u.createdAt).toLocaleDateString('id-ID')}</div>
+          <div class="sub">${u.jenis}${u.keterangan ? ' - '+u.keterangan : ''} &middot; ${new Date(u.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(u)}</div>
         </div>
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
           <span class="bk-badge ${lunas?'lunas':'belum'}">${lunas?'Lunas':'Aktif'}</span>
@@ -3509,7 +3516,7 @@ window.storage = {
       const nominal = Number(utangFormState.nominal) || 0;
       if (!kreditur || nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nama kreditur dan nominal pinjaman yang valid.'; return; }
       errEl.style.display = 'none';
-      const u = { id: uid(), kreditur, jenis: utangFormState.jenis, keterangan: utangFormState.keterangan.trim(), nominalAwal: nominal, sisaUtang: nominal, createdAt: Date.now() };
+      const u = { id: uid(), kreditur, jenis: utangFormState.jenis, keterangan: utangFormState.keterangan.trim(), nominalAwal: nominal, sisaUtang: nominal, createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null };
       try {
         await saveUtangItem(u);
         utangList.unshift(u);
@@ -3542,7 +3549,7 @@ window.storage = {
         const u = utangList.find(x => x.id === id);
         if (!u) return;
         try {
-          const p = { id: uid(), utangId: id, nominal, createdAt: Date.now() };
+          const p = { id: uid(), utangId: id, nominal, createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null };
           await saveUtangPayment(p);
           utangPayments.unshift(p);
           u.sisaUtang = Math.max(0, (Number(u.sisaUtang)||0) - nominal);
@@ -3596,7 +3603,7 @@ window.storage = {
       <div class="bk-list-row">
         <div class="bk-list-left">
           <div class="nm">${label}</div>
-          <div class="sub">${b.keterangan || '-'} &middot; ${new Date(b.createdAt).toLocaleDateString('id-ID')}</div>
+          <div class="sub">${b.keterangan || '-'} &middot; ${new Date(b.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(b)}</div>
         </div>
         <div class="bk-list-amt out">-${rupiah(b.nominal)}</div>
       </div>
@@ -3622,7 +3629,7 @@ window.storage = {
       if (nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nominal beban yang valid.'; return; }
       if (bebanFormState.kategori === 'Lainnya' && !bebanFormState.kategoriCustom.trim()) { errEl.style.display = 'block'; errEl.textContent = 'Isi nama akun custom untuk kategori Lainnya.'; return; }
       errEl.style.display = 'none';
-      const b = { id: uid(), kategori: bebanFormState.kategori, kategoriCustom: bebanFormState.kategoriCustom.trim(), nominal, keterangan: bebanFormState.keterangan.trim(), createdAt: Date.now() };
+      const b = { id: uid(), kategori: bebanFormState.kategori, kategoriCustom: bebanFormState.kategoriCustom.trim(), nominal, keterangan: bebanFormState.keterangan.trim(), createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null };
       try {
         await saveBebanItem(b);
         bebanList.unshift(b);
@@ -3884,6 +3891,84 @@ window.storage = {
     }
   }
   document.getElementById('bk-refresh-btn').addEventListener('click', () => refreshData(true));
+  document.getElementById('bk-logout-btn').addEventListener('click', handleLogout);
+
+  // ---------- LOGIN / AUTH GATE ----------
+  let currentUser = null;
+
+  function renderLoginScreen(errorMsg) {
+    document.getElementById('bk-header-actions').style.display = 'none';
+    tabsEl.innerHTML = '';
+    bodyEl.innerHTML = `
+      <div style="max-width:340px; margin:16px auto 8px;">
+        <div style="text-align:center; margin-bottom:22px;">
+          <div style="font-family:'Playfair Display',serif; font-weight:600; font-size:22px; color:var(--accent); margin-bottom:6px;">Masuk</div>
+          <div style="color:var(--ink-soft); font-size:13px;">Gunakan akun yang sudah didaftarkan admin untuk toko ini.</div>
+        </div>
+        <div class="bk-field"><label>Email</label><input id="bk-login-email" type="email" placeholder="nama@email.com" /></div>
+        <div class="bk-field"><label>Kata sandi</label><input id="bk-login-password" type="password" placeholder="Kata sandi" /></div>
+        <div id="bk-login-err" class="bk-err" style="display:${errorMsg ? 'block' : 'none'};">${errorMsg ? escapeAttr(errorMsg) : ''}</div>
+        <button class="bk-btn primary" id="bk-login-btn" style="width:100%;">Masuk</button>
+      </div>
+    `;
+    document.getElementById('bk-login-btn').addEventListener('click', handleLoginSubmit);
+    document.getElementById('bk-login-password').addEventListener('keydown', e => { if (e.key === 'Enter') handleLoginSubmit(); });
+    document.getElementById('bk-login-email').focus();
+  }
+
+  async function handleLoginSubmit() {
+    const email = document.getElementById('bk-login-email').value.trim();
+    const password = document.getElementById('bk-login-password').value;
+    const errEl = document.getElementById('bk-login-err');
+    const btn = document.getElementById('bk-login-btn');
+    if (!email || !password) {
+      errEl.style.display = 'block'; errEl.textContent = 'Isi email dan kata sandi.';
+      return;
+    }
+    errEl.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Memproses...';
+    try {
+      const { data, error } = await sbClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      currentUser = data.user;
+      document.getElementById('bk-header-actions').style.display = 'flex';
+      init();
+    } catch (e) {
+      console.error(e);
+      errEl.style.display = 'block';
+      errEl.textContent = 'Email atau kata sandi salah, coba lagi.';
+      btn.disabled = false; btn.textContent = 'Masuk';
+    }
+  }
+
+  function handleLogout() {
+    if (!currentUser) return;
+    showConfirm('Keluar dari akun ini?', async () => {
+      try { await sbClient.auth.signOut(); } catch (e) { console.error(e); }
+    });
+  }
+
+  async function bootstrapAuth() {
+    try {
+      const { data } = await sbClient.auth.getSession();
+      if (data && data.session) {
+        currentUser = data.session.user;
+        document.getElementById('bk-header-actions').style.display = 'flex';
+        init();
+      } else {
+        renderLoginScreen();
+      }
+    } catch (e) {
+      console.error(e);
+      renderLoginScreen('Gagal memeriksa sesi login, coba refresh halaman.');
+    }
+    sbClient.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        currentUser = null;
+        renderLoginScreen();
+      }
+    });
+  }
 
   async function init() {
     bodyEl.innerHTML = '<div class="bk-empty">Memuat data...</div>';
@@ -3903,6 +3988,6 @@ window.storage = {
       if (document.visibilityState === 'visible') refreshData(false);
     });
   }
-  init();
+  bootstrapAuth();
 })();
 </script>
