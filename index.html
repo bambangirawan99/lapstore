@@ -1597,6 +1597,73 @@ window.storage = {
     return { hppByTxn, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf };
   }
 
+  // Sama seperti computeHPP, tapi hanya memproses transaksi sampai tanggal cutoff tertentu.
+  // Dipakai untuk menghitung nilai stok pakai HPP "pada saat itu", bukan harga sekarang.
+  function computeHPPUpTo(cutoffTs) {
+    const sorted = [...txns].filter(t => (t.createdAt || 0) <= cutoffTs).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const avg = {};
+    const keyOf = n => (n || '').trim().toLowerCase();
+    function addStock(name, qty, cost) {
+      const k = keyOf(name);
+      if (!k || qty <= 0) return;
+      if (!avg[k]) avg[k] = { name: (name || '').trim(), qty: 0, cost: 0 };
+      avg[k].qty += qty;
+      avg[k].cost += cost;
+    }
+    function unitCostOf(name) {
+      const k = keyOf(name);
+      const r = avg[k];
+      return (r && r.qty > 0) ? r.cost / r.qty : 0;
+    }
+    function removeStock(name, qty) {
+      const k = keyOf(name);
+      const r = avg[k];
+      const uc = unitCostOf(name);
+      if (r) {
+        r.qty -= qty;
+        r.cost -= qty * uc;
+        if (r.qty < 0.0000001) { r.qty = 0; r.cost = 0; }
+      }
+      return uc;
+    }
+    sorted.forEach(t => {
+      if (t.type === 'pembelian') {
+        t.items.forEach(i => addStock(i.name, Number(i.qty) || 0, (Number(i.qty) || 0) * (Number(i.price) || 0)));
+      } else if (t.type === 'produksi') {
+        let batchCost = 0;
+        (t.bahan || []).forEach(i => {
+          const qty = Number(i.qty) || 0;
+          batchCost += qty * removeStock(i.name, qty);
+        });
+        const totalHasilQty = (t.hasil || []).reduce((s, i) => s + (Number(i.qty) || 0), 0) || 1;
+        (t.hasil || []).forEach(i => {
+          const qty = Number(i.qty) || 0;
+          addStock(i.name, qty, batchCost * (qty / totalHasilQty));
+        });
+      } else if (t.type === 'penjualan') {
+        t.items.forEach(i => removeStock(i.name, Number(i.qty) || 0));
+      }
+    });
+    return { getUnitCostAt: unitCostOf };
+  }
+  function monthEndTimestamp(mKey) {
+    const [y, m] = mKey.split('-').map(Number);
+    return new Date(y, m, 0, 23, 59, 59, 999).getTime();
+  }
+  function computeStokValueForMonth(mKey) {
+    const rows = computeStokBulanan(mKey);
+    const cutoff = mKey === 'semua' ? Date.now() : monthEndTimestamp(mKey);
+    const snap = computeHPPUpTo(cutoff);
+    let totalValue = 0;
+    const withValue = rows.map(r => {
+      const uc = snap.getUnitCostAt(r.name);
+      const value = r.akhir > 0 ? r.akhir * uc : 0;
+      totalValue += value;
+      return { ...r, unitCost: uc, value };
+    });
+    return { rows: withValue, totalValue };
+  }
+
 
   function renderStok() {
     const stockMap = computeStock();
@@ -2655,16 +2722,17 @@ window.storage = {
   function downloadStokBulananExcel(mKey) {
     if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
-    const rows = computeStokBulanan(mKey);
+    const { rows, totalValue } = computeStokValueForMonth(mKey);
     const wb = XLSX.utils.book_new();
     const aoa = [
       [storeName],
       ['Stok Bulanan'],
       ['Periode', monthLabel(mKey)],
       ['Dicetak', new Date().toLocaleString('id-ID')],
+      ['Total nilai stok akhir (HPP saat itu)', totalValue],
       [],
-      ['Nama item', 'Satuan', 'Stok awal', 'Masuk', 'Keluar', 'Stok akhir'],
-      ...rows.map(r => [r.name, r.unit, r.awal, r.masuk, r.keluar, r.akhir]),
+      ['Nama item', 'Satuan', 'Stok awal', 'Masuk', 'Keluar', 'Stok akhir', 'Nilai stok akhir (Rp)'],
+      ...rows.map(r => [r.name, r.unit, r.awal, r.masuk, r.keluar, r.akhir, r.value]),
     ];
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Stok Bulanan');
     XLSX.writeFile(wb, `stok-bulanan-${mKey}.xlsx`);
@@ -2784,12 +2852,13 @@ window.storage = {
     ]), 'Beban Operasional');
 
     const stokMonthForExport = mKey === 'semua' ? (laporanAvailableMonths()[0] || monthKey(Date.now())) : mKey;
-    const stokRows = computeStokBulanan(stokMonthForExport);
+    const stokValueData = computeStokValueForMonth(stokMonthForExport);
     XLSX.utils.book_append_sheet(wb, sheetFromAOA([
       ['STOK BULANAN', monthLabel(stokMonthForExport)],
+      ['Total nilai stok akhir (HPP saat itu)', stokValueData.totalValue],
       [],
-      ['Nama item', 'Satuan', 'Stok awal', 'Masuk', 'Keluar', 'Stok akhir'],
-      ...stokRows.map(r => [r.name, r.unit, r.awal, r.masuk, r.keluar, r.akhir]),
+      ['Nama item', 'Satuan', 'Stok awal', 'Masuk', 'Keluar', 'Stok akhir', 'Nilai stok akhir (Rp)'],
+      ...stokValueData.rows.map(r => [r.name, r.unit, r.awal, r.masuk, r.keluar, r.akhir, r.value]),
     ]), 'Stok Bulanan');
 
     const byAccount = computeRekeningReport();
@@ -3268,7 +3337,7 @@ window.storage = {
   function renderStokBulananHtml() {
     const months = laporanAvailableMonths();
     const mKey = laporanBulan === 'semua' ? (months[0] || monthKey(Date.now())) : laporanBulan;
-    const rows = computeStokBulanan(mKey);
+    const { rows, totalValue } = computeStokValueForMonth(mKey);
     return `
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
@@ -3277,17 +3346,21 @@ window.storage = {
         </select>
       </div>
       <button class="bk-btn ghost" id="bk-stokbulanan-excel" data-month="${mKey}" style="margin-bottom:14px;">Unduh Excel</button>
-      <div class="bk-stok-note">Stok awal bulan dihitung dari seluruh riwayat transaksi sebelum bulan ini. Kolom Masuk (pembelian &amp; hasil produksi) dan Keluar (penjualan &amp; bahan produksi) khusus bulan yang dipilih.</div>
-      <div class="bk-stok-row" style="grid-template-columns: 1fr 70px 70px 70px 70px; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700;">
-        <div>Nama item</div><div style="text-align:right;">Awal</div><div style="text-align:right;">Masuk</div><div style="text-align:right;">Keluar</div><div style="text-align:right;">Akhir</div>
+      <div class="bk-stats" style="margin-bottom:16px; grid-template-columns: 1fr;">
+        <div class="bk-stat"><div class="lbl">Nilai stok akhir bulan (HPP saat itu)</div><div class="val">${rupiah(totalValue)}</div></div>
+      </div>
+      <div class="bk-stok-note">Stok awal bulan dihitung dari seluruh riwayat transaksi sebelum bulan ini. Kolom Masuk (pembelian &amp; hasil produksi) dan Keluar (penjualan &amp; bahan produksi) khusus bulan yang dipilih. Nilai (Rp) dihitung pakai HPP rata-rata bergerak per akhir bulan tersebut, bukan harga hari ini.</div>
+      <div class="bk-stok-row" style="grid-template-columns: 1fr 60px 60px 60px 60px 110px; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700;">
+        <div>Nama item</div><div style="text-align:right;">Awal</div><div style="text-align:right;">Masuk</div><div style="text-align:right;">Keluar</div><div style="text-align:right;">Akhir</div><div style="text-align:right;">Nilai (Rp)</div>
       </div>
       ${rows.length ? rows.map(r => `
-        <div class="bk-stok-row" style="grid-template-columns: 1fr 70px 70px 70px 70px;">
+        <div class="bk-stok-row" style="grid-template-columns: 1fr 60px 60px 60px 60px 110px;">
           <div>${r.name}<span style="color:var(--ink-soft); font-size:11px;"> ${r.unit||''}</span></div>
           <div class="qty">${r.awal.toLocaleString('id-ID')}</div>
           <div class="qty" style="color:var(--money-in);">+${r.masuk.toLocaleString('id-ID')}</div>
           <div class="qty" style="color:var(--money-out);">-${r.keluar.toLocaleString('id-ID')}</div>
           <div class="qty" style="font-weight:700;">${r.akhir.toLocaleString('id-ID')}</div>
+          <div class="qty">${rupiah(r.value)}</div>
         </div>
       `).join('') : '<div class="bk-empty">Belum ada data stok untuk bulan ini.</div>'}
     `;
