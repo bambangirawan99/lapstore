@@ -470,8 +470,10 @@ window.storage = {
     { id: 'piutang', label: 'Piutang' },
     { id: 'riwayat', label: 'Riwayat' },
     { id: 'laporan', label: 'Laporan' },
+    { id: 'cari', label: 'Cari' },
   ];
   let activeTab = 'dashboard';
+  let cariQuery = '';
   let txns = [];
   let riwayatFilter = 'semua';
   let riwayatMonth = 'semua';
@@ -749,6 +751,7 @@ window.storage = {
     if (activeTab === 'piutang') return renderPiutang();
     if (activeTab === 'riwayat') return renderRiwayat();
     if (activeTab === 'laporan') return renderLaporan();
+    if (activeTab === 'cari') return renderCari();
   }
 
   // ---------- DASHBOARD ----------
@@ -3712,6 +3715,147 @@ window.storage = {
     document.getElementById('bk-rekening-excel').addEventListener('click', downloadRekeningExcel);
   }
 
+  // ---------- CARI (pencarian lintas modul) ----------
+  function renderCari() {
+    bodyEl.innerHTML = `
+      <div class="bk-section-title">Cari transaksi, pelanggan, atau catatan lain</div>
+      <div class="bk-field">
+        <input id="bk-cari-input" value="${escapeAttr(cariQuery)}" placeholder="Ketik nama pelanggan/supplier, nama barang, kreditur, dll..." style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:10px 14px; font-size:14px; font-family:'Inter',sans-serif;" />
+      </div>
+      <div id="bk-cari-results">${renderCariResultsHtml()}</div>
+    `;
+    wireCariEvents();
+  }
+
+  function renderCariResultsHtml() {
+    const q = cariQuery.trim().toLowerCase();
+    if (!q) {
+      return '<div class="bk-empty">Ketik kata kunci di atas untuk mulai mencari. Bisa cari nama pelanggan, nama supplier, nama barang, kreditur utang, atau keterangan beban.</div>';
+    }
+
+    const matchedTxns = txns.filter(t => {
+      const nameField = t.type === 'penjualan' ? t.customerName : t.supplierName;
+      const itemNames = (t.items||[]).map(i=>i.name).join(' ');
+      const bahanNames = (t.bahan||[]).map(i=>i.name).join(' ');
+      const hasilNames = (t.hasil||[]).map(i=>i.name).join(' ');
+      const haystack = `${nameField||''} ${itemNames} ${bahanNames} ${hasilNames}`.toLowerCase();
+      return haystack.includes(q);
+    }).sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
+
+    const matchedServices = services.filter(s => `${s.customerName||''} ${s.device||''} ${s.complaint||''}`.toLowerCase().includes(q))
+      .sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
+
+    const matchedBeban = bebanList.filter(b => {
+      const label = (b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori;
+      return `${label||''} ${b.keterangan||''}`.toLowerCase().includes(q);
+    }).sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
+
+    const matchedUtang = utangList.filter(u => `${u.kreditur||''} ${u.jenis||''} ${u.keterangan||''}`.toLowerCase().includes(q))
+      .sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
+
+    const total = matchedTxns.length + matchedServices.length + matchedBeban.length + matchedUtang.length;
+    if (total === 0) {
+      return `<div class="bk-empty">Tidak ada hasil untuk "${escapeAttr(cariQuery)}".</div>`;
+    }
+
+    let html = `<div class="bk-stok-note">Ditemukan ${total} hasil untuk "${escapeAttr(cariQuery)}".</div>`;
+    if (matchedTxns.length) {
+      html += `<div class="bk-section-title" style="margin-top:16px; font-size:15px;">Transaksi (${matchedTxns.length})</div>`;
+      html += matchedTxns.map(cariTxnRowHtml).join('');
+    }
+    if (matchedServices.length) {
+      html += `<div class="bk-section-title" style="margin-top:16px; font-size:15px;">Service Laptop (${matchedServices.length})</div>`;
+      html += matchedServices.map(cariServiceRowHtml).join('');
+    }
+    if (matchedBeban.length) {
+      html += `<div class="bk-section-title" style="margin-top:16px; font-size:15px;">Beban Operasional (${matchedBeban.length})</div>`;
+      html += matchedBeban.map(cariBebanRowHtml).join('');
+    }
+    if (matchedUtang.length) {
+      html += `<div class="bk-section-title" style="margin-top:16px; font-size:15px;">Utang/Kewajiban (${matchedUtang.length})</div>`;
+      html += matchedUtang.map(cariUtangRowHtml).join('');
+    }
+    return html;
+  }
+
+  function cariTxnRowHtml(t) {
+    const isProd = t.type === 'produksi';
+    const isIn = t.type === 'penjualan';
+    const label = isProd ? 'Produksi' : (isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian'));
+    const names = isProd ? summarizeProduksi(t) : (t.items||[]).map(i=>i.name).join(', ');
+    const amt = isProd ? '<div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>' : `<div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>`;
+    return `<div class="bk-list-row-wrap">
+      <div class="bk-list-row">
+        <div class="bk-list-left"><div class="nm">${label}</div><div class="sub">${names} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div></div>
+        ${amt}
+      </div>
+      <div class="bk-row-actions"><button class="bk-btn ghost cari-open-txn" data-id="${t.id}" style="padding:6px 12px; font-size:12px;">Buka</button></div>
+    </div>`;
+  }
+  function cariServiceRowHtml(s) {
+    return `<div class="bk-list-row-wrap">
+      <div class="bk-list-row">
+        <div class="bk-list-left"><div class="nm">${s.customerName || 'Tanpa nama'} &middot; ${s.device || '-'}</div><div class="sub">${s.complaint || ''} &middot; ${serviceStatusLabel(s.status)}</div></div>
+      </div>
+      <div class="bk-row-actions"><button class="bk-btn ghost cari-open-service" data-id="${s.id}" data-status="${s.status}" style="padding:6px 12px; font-size:12px;">Buka</button></div>
+    </div>`;
+  }
+  function cariBebanRowHtml(b) {
+    const label = (b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori;
+    return `<div class="bk-list-row-wrap">
+      <div class="bk-list-row">
+        <div class="bk-list-left"><div class="nm">${label}</div><div class="sub">${b.keterangan || ''} &middot; ${new Date(b.createdAt).toLocaleDateString('id-ID')}</div></div>
+        <div class="bk-list-amt out">-${rupiah(b.nominal)}</div>
+      </div>
+      <div class="bk-row-actions"><button class="bk-btn ghost cari-open-beban" style="padding:6px 12px; font-size:12px;">Buka</button></div>
+    </div>`;
+  }
+  function cariUtangRowHtml(u) {
+    return `<div class="bk-list-row-wrap">
+      <div class="bk-list-row">
+        <div class="bk-list-left"><div class="nm">${u.kreditur}</div><div class="sub">${u.jenis} &middot; Sisa ${rupiah(u.sisaUtang)}</div></div>
+      </div>
+      <div class="bk-row-actions"><button class="bk-btn ghost cari-open-utang" style="padding:6px 12px; font-size:12px;">Buka</button></div>
+    </div>`;
+  }
+
+  function wireCariEvents() {
+    const input = document.getElementById('bk-cari-input');
+    input.addEventListener('input', e => {
+      cariQuery = e.target.value;
+      const resultsEl = document.getElementById('bk-cari-results');
+      if (resultsEl) resultsEl.innerHTML = renderCariResultsHtml();
+      wireCariResultButtons();
+    });
+    wireCariResultButtons();
+  }
+  function wireCariResultButtons() {
+    document.querySelectorAll('.cari-open-txn').forEach(b => b.addEventListener('click', () => startEdit(b.dataset.id)));
+    document.querySelectorAll('.cari-open-service').forEach(b => b.addEventListener('click', () => {
+      const s = services.find(x => x.id === b.dataset.id);
+      activeTab = 'service';
+      if (s && s.status === 'diambil') {
+        svcView = 'riwayat';
+        svcSearchQuery = s.customerName || '';
+      } else {
+        svcView = 'aktif';
+        svcFilter = 'semua';
+      }
+      renderTabs(); renderBody();
+    }));
+    document.querySelectorAll('.cari-open-beban').forEach(b => b.addEventListener('click', () => {
+      activeTab = 'laporan';
+      laporanView = 'beban';
+      laporanBulan = 'semua';
+      renderTabs(); renderBody();
+    }));
+    document.querySelectorAll('.cari-open-utang').forEach(b => b.addEventListener('click', () => {
+      activeTab = 'laporan';
+      laporanView = 'utang';
+      renderTabs(); renderBody();
+    }));
+  }
+
   // ---------- REFRESH DATA (agar transaksi dari user lain ikut muncul) ----------
   let isRefreshing = false;
   async function refreshData(manual) {
@@ -3728,7 +3872,7 @@ window.storage = {
       await loadUtang();
       await loadUtangPayments();
       await loadModalEntries();
-      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && activeTab !== 'laporan' && !editingTxnId && modalSlot.innerHTML.trim() === '';
+      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && activeTab !== 'laporan' && activeTab !== 'cari' && !editingTxnId && modalSlot.innerHTML.trim() === '';
       if (safeToRerender) renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
     } catch (e) {
