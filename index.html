@@ -662,7 +662,7 @@ window.storage = {
 
   function rupiah(n) {
     n = Number(n) || 0;
-    return 'Rp' + n.toLocaleString('id-ID');
+    return 'Rp' + Math.round(n).toLocaleString('id-ID', { maximumFractionDigits: 0 });
   }
   function uid() {
     return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
