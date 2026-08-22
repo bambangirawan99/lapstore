@@ -353,6 +353,16 @@
 @media (min-width: 561px) {
   #bk-root { box-shadow: 0 1px 3px rgba(0,0,0,.06); }
 }
+@media print {
+  body * { visibility: hidden; }
+  #bk-receipt-card, #bk-receipt-card * { visibility: visible; }
+  .bk-overlay { position: static !important; background: none !important; padding: 0 !important; }
+  .bk-receipt-wrap { position: static !important; }
+  #bk-receipt-card {
+    position: absolute; left: 0; top: 0; width: 300px; box-shadow: none !important; border: none !important;
+  }
+  .bk-receipt-actions, .bk-close-x, .zigzag { display: none !important; }
+}
 </style>
 
 <div id="bk-root">
@@ -456,6 +466,7 @@ window.storage = {
     { id: 'service', label: 'Service Laptop' },
     { id: 'piutang', label: 'Piutang' },
     { id: 'riwayat', label: 'Riwayat' },
+    { id: 'laporan', label: 'Laporan' },
   ];
   let activeTab = 'dashboard';
   let txns = [];
@@ -464,6 +475,69 @@ window.storage = {
   let editingTxnId = null;
   let selectedTxnIds = new Set();
   const STOK_AMBANG_DEFAULT = 5;
+
+  // ---------- REKENING TUJUAN PEMBAYARAN ----------
+  // Ganti/tambah rekening di sini sesuai kebutuhan. Isi nomor rekening M Yusuf sebelum dipakai.
+  const BANK_ACCOUNTS = [
+    { id: 'ogi', label: 'BCA a.n. Ogi Iskandar', nomor: '8907099401' },
+    { id: 'yusuf', label: 'BCA a.n. M Yusuf', nomor: 'ISI_NOMOR_REKENING_YUSUF' },
+  ];
+  function bankAccountLabel(id) {
+    const a = BANK_ACCOUNTS.find(x => x.id === id);
+    return a ? `${a.label} (${a.nomor})` : '';
+  }
+
+  // ---------- BEBAN OPERASIONAL & KEUANGAN ----------
+  const BEBAN_KATEGORI = ['Gaji', 'Garansi Service', 'Sewa Tempat', 'Listrik/Air/Internet', 'Lainnya'];
+  let bebanList = [];
+  let modalAwal = 0;
+  let closings = [];
+  let laporanView = 'aruskas'; // aruskas | neraca | beban | stokbulanan | rekening
+  let laporanBulan = 'semua';
+  function blankBebanForm() { return { kategori: BEBAN_KATEGORI[0], kategoriCustom: '', nominal: '', keterangan: '' }; }
+  let bebanFormState = blankBebanForm();
+
+  async function loadBeban() {
+    bebanList = [];
+    try {
+      const listRes = await window.storage.list('beban:', true);
+      const keys = (listRes && listRes.keys) || [];
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) bebanList.push(JSON.parse(r.value));
+        } catch (e) { /* skip */ }
+      }
+      bebanList.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    } catch (e) { console.error('Gagal memuat beban operasional', e); }
+  }
+  async function saveBebanItem(b) { await window.storage.set('beban:' + b.id, JSON.stringify(b), true); }
+  async function deleteBebanFromStore(id) { await window.storage.delete('beban:' + id, true); }
+
+  async function loadModalAwal() {
+    try {
+      const r = await window.storage.get('modal-awal', true);
+      modalAwal = (r && r.value) ? Number(r.value) || 0 : 0;
+    } catch (e) { modalAwal = 0; }
+  }
+  async function saveModalAwal(v) { await window.storage.set('modal-awal', String(v), true); }
+
+  async function loadClosings() {
+    closings = [];
+    try {
+      const listRes = await window.storage.list('closing:', true);
+      const keys = (listRes && listRes.keys) || [];
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) closings.push(JSON.parse(r.value));
+        } catch (e) { /* skip */ }
+      }
+      closings.sort((a,b) => (b.savedAt||0) - (a.savedAt||0));
+    } catch (e) { console.error('Gagal memuat riwayat tutup buku', e); }
+  }
+  async function saveClosingSnapshot(c) { await window.storage.set('closing:' + c.id, JSON.stringify(c), true); }
+  async function deleteClosingFromStore(id) { await window.storage.delete('closing:' + id, true); }
 
   // ---------- SERVICE LAPTOP: state & konstanta ----------
   const SERVICE_STATUSES = [
@@ -485,7 +559,7 @@ window.storage = {
   let svcSearchQuery = '';
   let editingServiceDetailId = null;
   function blankServiceForm() {
-    return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '' };
+    return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '', rekening: BANK_ACCOUNTS[0].id };
   }
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: '' }; }
   let serviceFormState = blankServiceForm();
@@ -596,6 +670,7 @@ window.storage = {
     if (activeTab === 'service') return renderService();
     if (activeTab === 'piutang') return renderPiutang();
     if (activeTab === 'riwayat') return renderRiwayat();
+    if (activeTab === 'laporan') return renderLaporan();
   }
 
   // ---------- DASHBOARD ----------
@@ -767,7 +842,7 @@ window.storage = {
   function blankItem() { return { id: uid(), name: '', qty: '', price: '' }; }
   let formState = {
     pembelian: { items: [blankItem()], party: '', note: '' },
-    penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '' },
+    penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id },
   };
 
   function renderForm(type) {
@@ -790,6 +865,12 @@ window.storage = {
       ${isJual ? `<div class="bk-field">
         <label>No. WhatsApp pembeli (untuk kirim resi)</label>
         <input id="bk-phone" value="${escapeAttr(st.phone)}" placeholder="Contoh: 081234567890" />
+      </div>` : ''}
+      ${isJual ? `<div class="bk-field">
+        <label>Rekening tujuan pembayaran</label>
+        <select id="bk-rekening" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+          ${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${st.rekening===a.id?'selected':''}>${escapeAttr(a.label)} (${escapeAttr(a.nomor)})</option>`).join('')}
+        </select>
       </div>` : ''}
       <div class="bk-item-head"><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
       <div id="bk-items">${st.items.map(itemRowHtml).join('')}</div>
@@ -818,7 +899,7 @@ window.storage = {
     if (isEdit) document.getElementById('bk-cancel-edit').addEventListener('click', () => {
       editingTxnId = null;
       formState[type] = type === 'penjualan'
-        ? { items: [blankItem()], party: '', phone: '', paid: true, note: '' }
+        ? { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id }
         : { items: [blankItem()], party: '', note: '' };
       activeTab = 'riwayat';
       renderTabs(); renderBody();
@@ -828,6 +909,7 @@ window.storage = {
     if (isJual) {
       document.getElementById('bk-phone').addEventListener('input', e => st.phone = e.target.value);
       document.getElementById('bk-paid').addEventListener('change', e => st.paid = e.target.checked);
+      document.getElementById('bk-rekening').addEventListener('change', e => st.rekening = e.target.value);
     }
 
     document.getElementById('bk-add-item').addEventListener('click', () => {
@@ -941,6 +1023,7 @@ window.storage = {
       customerPhone: type === 'penjualan' ? st.phone : '',
       supplierName: type === 'pembelian' ? st.party : '',
       paid: type === 'penjualan' ? (st.paid !== false) : undefined,
+      rekening: type === 'penjualan' ? st.rekening : undefined,
       createdAt: isEdit && existing ? existing.createdAt : Date.now(),
     };
     const clickedBtnId = withReceipt === false ? 'bk-save-noresi-btn' : 'bk-save-btn';
@@ -960,7 +1043,7 @@ window.storage = {
       const wasEdit = isEdit;
       editingTxnId = null;
       formState[type] = type === 'penjualan'
-        ? { items: [blankItem()], party: '', phone: '', paid: true, note: '' }
+        ? { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id }
         : { items: [blankItem()], party: '', note: '' };
       if (wasEdit) {
         activeTab = 'riwayat';
@@ -998,7 +1081,7 @@ window.storage = {
       return;
     }
     formState[t.type] = t.type === 'penjualan'
-      ? { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price })), party: t.customerName || '', phone: t.customerPhone || '', paid: t.paid !== false, note: '' }
+      ? { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price })), party: t.customerName || '', phone: t.customerPhone || '', paid: t.paid !== false, note: '', rekening: t.rekening || BANK_ACCOUNTS[0].id }
       : { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price })), party: t.supplierName || '', note: '' };
     activeTab = t.type;
     renderTabs(); renderBody();
@@ -1082,8 +1165,7 @@ window.storage = {
     if (t.customerName) lines.push(`Untuk: ${t.customerName}`);
     lines.push('-'.repeat(24));
     lines.push('Pembayaran transfer ke:');
-    lines.push('BCA 6760677301');
-    lines.push('a.n. Rodiyati');
+    lines.push(bankAccountLabel(t.rekening) || bankAccountLabel(BANK_ACCOUNTS[0].id));
     lines.push('-'.repeat(24));
     lines.push('Terima kasih sudah belanja, semoga rejeki kakak selalu lancar yaa :)');
     return lines.join('\n');
@@ -1091,6 +1173,7 @@ window.storage = {
 
   function showReceipt(t) {
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const acc = BANK_ACCOUNTS.find(a => a.id === t.rekening) || BANK_ACCOUNTS[0];
     modalSlot.innerHTML = `
       <div class="bk-overlay" id="bk-overlay">
         <div class="bk-receipt-wrap">
@@ -1110,8 +1193,8 @@ window.storage = {
             <hr/>
             <div style="text-align:center; font-size:11px; line-height:1.6;">
               <div style="color:var(--ink-soft);">Pembayaran transfer ke:</div>
-              <div style="font-weight:600;">BCA 6760677301</div>
-              <div>a.n. Rodiyati</div>
+              <div style="font-weight:600;">${acc.label}</div>
+              <div>${acc.nomor}</div>
             </div>
             <hr/>
             <div class="r-note">Terima kasih sudah belanja, semoga rejeki kakak selalu lancar yaa :)</div>
@@ -1119,6 +1202,7 @@ window.storage = {
           <div class="zigzag" style="width:300px;"></div>
           <div class="bk-receipt-actions">
             <button class="bk-btn primary" id="bk-wa-btn">Kirim via WhatsApp</button>
+            <button class="bk-btn ghost" id="bk-print-btn">Cetak nota</button>
             <button class="bk-btn ghost" id="bk-copy-btn">Salin teks</button>
           </div>
         </div>
@@ -1126,6 +1210,7 @@ window.storage = {
     `;
     document.getElementById('bk-receipt-close').addEventListener('click', closeReceipt);
     document.getElementById('bk-overlay').addEventListener('click', (e) => { if (e.target.id === 'bk-overlay') closeReceipt(); });
+    document.getElementById('bk-print-btn').addEventListener('click', () => { window.print(); });
     document.getElementById('bk-wa-btn').addEventListener('click', () => {
       const phoneRaw = (t.customerPhone || '').replace(/[^0-9]/g, '');
       const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
@@ -1365,8 +1450,8 @@ window.storage = {
         <div>Nama item</div><div style="text-align:right;">Satuan</div><div style="text-align:right;">Sisa stok</div>
       </div>
       ${rows.length ? rows.map(r => `
-        <div class="bk-stok-row ${r.qty < STOK_AMBANG_DEFAULT ? 'low' : ''}">
-          <div>${r.name}${r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : ''}</div>
+        <div class="bk-stok-row ${r.qty <= 0 ? 'low' : (r.qty < STOK_AMBANG_DEFAULT ? 'low' : '')}">
+          <div>${r.name}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}</div>
           <div style="text-align:right; color:var(--ink-soft);">${r.unit || '-'}</div>
           <div class="qty">${r.qty.toLocaleString('id-ID')}</div>
         </div>
@@ -1603,6 +1688,12 @@ window.storage = {
       </div>
       <div class="bk-field"><label>Keluhan</label><input id="bk-svc-complaint" value="${escapeAttr(serviceFormState.complaint)}" placeholder="Contoh: Laptop mati total, tidak bisa cas" /></div>
       <div class="bk-field"><label>Kelengkapan yang dititipkan (opsional)</label><input id="bk-svc-accessories" value="${escapeAttr(serviceFormState.accessories)}" placeholder="Contoh: charger, tas" /></div>
+      <div class="bk-field">
+        <label>Rekening tujuan pembayaran</label>
+        <select id="bk-svc-rekening" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+          ${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${serviceFormState.rekening===a.id?'selected':''}>${escapeAttr(a.label)} (${escapeAttr(a.nomor)})</option>`).join('')}
+        </select>
+      </div>
       <div id="bk-svc-form-err" class="bk-err" style="display:none;"></div>
       <button class="bk-btn primary" id="bk-svc-save-btn" style="margin-bottom:26px;">Terima service masuk</button>
 
@@ -1622,6 +1713,7 @@ window.storage = {
     document.getElementById('bk-svc-est').addEventListener('input', e => serviceFormState.estimasiBiaya = e.target.value);
     document.getElementById('bk-svc-complaint').addEventListener('input', e => serviceFormState.complaint = e.target.value);
     document.getElementById('bk-svc-accessories').addEventListener('input', e => serviceFormState.accessories = e.target.value);
+    document.getElementById('bk-svc-rekening').addEventListener('change', e => serviceFormState.rekening = e.target.value);
     document.getElementById('bk-svc-save-btn').addEventListener('click', saveNewService);
     document.getElementById('bk-svc-quick-btn').addEventListener('click', runQuickAiService);
     bodyEl.querySelectorAll('.bk-service-status-bar .bk-chip').forEach(c => c.addEventListener('click', () => { svcFilter = c.dataset.f; renderService(); }));
@@ -1741,6 +1833,7 @@ window.storage = {
       complaint,
       accessories: serviceFormState.accessories.trim(),
       estimasiBiaya: Number(serviceFormState.estimasiBiaya) || 0,
+      rekening: serviceFormState.rekening || BANK_ACCOUNTS[0].id,
       catatanDiagnosa: '',
       biayaFinal: 0,
       dpAmount: 0,
@@ -1829,6 +1922,9 @@ window.storage = {
         <input class="svc-edit-accessories" data-id="${s.id}" value="${escapeAttr(s.accessories)}" placeholder="Kelengkapan (opsional)" />
       </div>
       <input class="svc-edit-complaint" data-id="${s.id}" value="${escapeAttr(s.complaint)}" placeholder="Keluhan" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif;" />
+      <select class="svc-edit-rekening" data-id="${s.id}" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+        ${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${(s.rekening||BANK_ACCOUNTS[0].id)===a.id?'selected':''}>${escapeAttr(a.label)} (${escapeAttr(a.nomor)})</option>`).join('')}
+      </select>
       <div id="bk-svc-edit-err-${s.id}" class="bk-err" style="display:none;"></div>
       <div class="bk-svc-actions" style="margin-top:0; margin-bottom:10px;">
         <button class="bk-btn primary svc-save-detail" data-id="${s.id}">Simpan info</button>
@@ -1906,12 +2002,13 @@ window.storage = {
       const device = list.querySelector(`.svc-edit-device[data-id="${id}"]`).value.trim();
       const accessories = list.querySelector(`.svc-edit-accessories[data-id="${id}"]`).value.trim();
       const complaint = list.querySelector(`.svc-edit-complaint[data-id="${id}"]`).value.trim();
+      const rekening = list.querySelector(`.svc-edit-rekening[data-id="${id}"]`).value;
       const errEl = document.getElementById(`bk-svc-edit-err-${id}`);
       if (!name || !device || !complaint) {
         if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Nama pelanggan, merk/tipe laptop, dan keluhan wajib diisi.'; }
         return;
       }
-      await updateService(id, { customerName: name, customerPhone: phone, device, accessories, complaint });
+      await updateService(id, { customerName: name, customerPhone: phone, device, accessories, complaint, rekening });
       editingServiceDetailId = null;
       renderService();
       showToast('Info service diperbarui.');
@@ -1935,6 +2032,7 @@ window.storage = {
           customerPhone: s.customerPhone,
           supplierName: '',
           paid: true,
+          rekening: s.rekening || BANK_ACCOUNTS[0].id,
           createdAt: Date.now(),
         };
         await saveTxn(txn);
@@ -2016,7 +2114,7 @@ window.storage = {
       renderService();
     }));
 
-    list.querySelectorAll('.act-selesai').forEach(b => b.addEventListener('click', async () => {
+    list.querySelectorAll('.act-selesai').forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.id;
       const s = services.find(x => x.id === id);
       if (!s) return;
@@ -2024,7 +2122,8 @@ window.storage = {
       const biaya = Number(biayaEl.value) || 0;
       const validParts = (s.parts || []).filter(p => p.name && Number(p.qty) > 0)
         .map(p => ({ name: p.name.trim(), qty: Number(p.qty), unit: (p.unit||'').trim() }));
-
+      const partsInfo = validParts.length ? ` Sparepart yang dipakai (${validParts.map(p=>p.name).join(', ')}) akan otomatis mengurangi Stok.` : '';
+      showConfirm(`Tandai service "${s.customerName}" (${s.device}) selesai dikerjakan dengan biaya final ${rupiah(biaya)}?${partsInfo}`, async () => {
       let serviceItemName = s.serviceItemName;
       if (validParts.length) {
         serviceItemName = `Jasa Service Laptop - ${s.device} (${id.slice(0,6)})`;
@@ -2051,6 +2150,7 @@ window.storage = {
       await advanceServiceStatus(id, 'selesai', false);
       renderService();
       sendServiceWhatsapp(id, 'selesai');
+      });
     }));
 
     list.querySelectorAll('.svc-paid-check').forEach(chk => chk.addEventListener('change', () => {
@@ -2106,6 +2206,7 @@ window.storage = {
           customerPhone: s.customerPhone,
           supplierName: '',
           paid: sisa <= 0 ? true : (s.paid !== false),
+          rekening: s.rekening || BANK_ACCOUNTS[0].id,
           createdAt: Date.now(),
         };
         await saveTxn(txn);
@@ -2227,7 +2328,7 @@ window.storage = {
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const phoneRaw = (t.customerPhone || '').replace(/[^0-9]/g, '');
     const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
-    const msg = `Halo${t.customerName ? ' ' + t.customerName : ''}, mengingatkan pembayaran belanja di ${storeName} sebesar ${rupiah(t.total)} pada ${new Date(t.createdAt).toLocaleDateString('id-ID')} masih belum lunas. Transfer ke BCA 6760677301 a.n. Rodiyati ya, terima kasih!`;
+    const msg = `Halo${t.customerName ? ' ' + t.customerName : ''}, mengingatkan pembayaran belanja di ${storeName} sebesar ${rupiah(t.total)} pada ${new Date(t.createdAt).toLocaleDateString('id-ID')} masih belum lunas. Transfer ke ${bankAccountLabel(t.rekening) || bankAccountLabel(BANK_ACCOUNTS[0].id)} ya, terima kasih!`;
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
     window.open(url, '_blank');
   }
@@ -2311,6 +2412,419 @@ window.storage = {
     doc.save(fname);
   }
 
+  // ---------- LAPORAN: Arus Kas, Neraca, Beban Operasional, Stok Bulanan, Per Rekening ----------
+  function laporanAvailableMonths() {
+    const set = new Set();
+    txns.forEach(t => set.add(monthKey(t.createdAt)));
+    bebanList.forEach(b => set.add(monthKey(b.createdAt)));
+    return Array.from(set).sort().reverse();
+  }
+
+  function computeKasTotal() {
+    let kas = 0;
+    txns.forEach(t => {
+      if (t.type === 'penjualan' && t.paid !== false) kas += t.total;
+      if (t.type === 'pembelian') kas -= t.total;
+    });
+    bebanList.forEach(b => { kas -= Number(b.nominal) || 0; });
+    return kas;
+  }
+  function computePiutangTotalLap() {
+    return txns.filter(t => t.type === 'penjualan' && t.paid === false).reduce((s,t) => s + t.total, 0);
+  }
+  function computePersediaanTotal() {
+    const stockMap = computeStock();
+    const hpp = computeHPP();
+    let total = 0;
+    Object.values(stockMap).forEach(r => {
+      if (/^Jasa Service Laptop/i.test(r.name)) return;
+      if (r.qty > 0) total += r.qty * hpp.getCurrentUnitCost(r.name);
+    });
+    return total;
+  }
+  function computeNeraca() {
+    const kas = computeKasTotal();
+    const piutang = computePiutangTotalLap();
+    const persediaan = computePersediaanTotal();
+    const totalAset = kas + piutang + persediaan;
+    const labaDitahan = totalAset - modalAwal;
+    return { kas, piutang, persediaan, totalAset, modalAwal, labaDitahan, totalModal: totalAset };
+  }
+
+  function computeArusKasForMonth(mKey) {
+    const inflow = [];
+    const outflow = [];
+    txns.forEach(t => {
+      const inMonth = mKey === 'semua' ? true : monthKey(t.createdAt) === mKey;
+      if (!inMonth) return;
+      if (t.type === 'penjualan' && t.paid !== false) {
+        inflow.push({ label: `${t.customerName || 'Penjualan'} &middot; ${(t.items||[]).map(i=>i.name).join(', ')}`, amount: t.total, date: t.createdAt });
+      }
+      if (t.type === 'pembelian') {
+        outflow.push({ label: `${t.supplierName || 'Pembelian'} &middot; ${(t.items||[]).map(i=>i.name).join(', ')}`, amount: t.total, date: t.createdAt });
+      }
+    });
+    bebanList.forEach(b => {
+      const inMonth = mKey === 'semua' ? true : monthKey(b.createdAt) === mKey;
+      if (!inMonth) return;
+      const kategoriLabel = b.kategori === 'Lainnya' && b.kategoriCustom ? b.kategoriCustom : b.kategori;
+      outflow.push({ label: `Beban: ${kategoriLabel}${b.keterangan ? ' - '+b.keterangan : ''}`, amount: Number(b.nominal)||0, date: b.createdAt });
+    });
+    inflow.sort((a,b)=>b.date-a.date);
+    outflow.sort((a,b)=>b.date-a.date);
+    const totalMasuk = inflow.reduce((s,x)=>s+x.amount,0);
+    const totalKeluar = outflow.reduce((s,x)=>s+x.amount,0);
+    return { inflow, outflow, totalMasuk, totalKeluar, netKas: totalMasuk - totalKeluar };
+  }
+  function computeSaldoKasSebelum(mKey) {
+    if (mKey === 'semua') return 0;
+    let saldo = 0;
+    txns.forEach(t => {
+      if (monthKey(t.createdAt) < mKey) {
+        if (t.type === 'penjualan' && t.paid !== false) saldo += t.total;
+        if (t.type === 'pembelian') saldo -= t.total;
+      }
+    });
+    bebanList.forEach(b => { if (monthKey(b.createdAt) < mKey) saldo -= (Number(b.nominal)||0); });
+    return saldo;
+  }
+
+  function computeStokBulanan(mKey) {
+    const items = {};
+    function ensure(name, unit) {
+      const k = (name||'').trim().toLowerCase();
+      if (!k || /^jasa service laptop/i.test(name||'')) return null;
+      if (!items[k]) items[k] = { name: name.trim(), unit: unit||'', awal:0, masuk:0, keluar:0 };
+      if (unit) items[k].unit = unit;
+      return items[k];
+    }
+    const sorted = [...txns].sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+    sorted.forEach(t => {
+      const tMonth = monthKey(t.createdAt);
+      if (mKey !== 'semua' && tMonth > mKey) return;
+      const isBefore = mKey !== 'semua' && tMonth < mKey;
+      if (t.type === 'pembelian') {
+        t.items.forEach(i => {
+          const it = ensure(i.name, i.unit); if (!it) return;
+          if (isBefore) it.awal += Number(i.qty)||0; else it.masuk += Number(i.qty)||0;
+        });
+      } else if (t.type === 'penjualan') {
+        t.items.forEach(i => {
+          const it = ensure(i.name, i.unit); if (!it) return;
+          if (isBefore) it.awal -= Number(i.qty)||0; else it.keluar += Number(i.qty)||0;
+        });
+      } else if (t.type === 'produksi') {
+        (t.bahan||[]).forEach(i => {
+          const it = ensure(i.name, i.unit); if (!it) return;
+          if (isBefore) it.awal -= Number(i.qty)||0; else it.keluar += Number(i.qty)||0;
+        });
+        (t.hasil||[]).forEach(i => {
+          const it = ensure(i.name, i.unit); if (!it) return;
+          if (isBefore) it.awal += Number(i.qty)||0; else it.masuk += Number(i.qty)||0;
+        });
+      }
+    });
+    return Object.values(items).map(it => ({ ...it, akhir: it.awal + it.masuk - it.keluar })).sort((a,b) => a.name.localeCompare(b.name));
+  }
+
+  function computeRekeningReport() {
+    const byAccount = {};
+    BANK_ACCOUNTS.forEach(acc => byAccount[acc.id] = { ...acc, total: 0, transactions: [] });
+    txns.forEach(t => {
+      if (t.type === 'penjualan' && t.paid !== false && t.rekening && byAccount[t.rekening]) {
+        byAccount[t.rekening].total += t.total;
+        byAccount[t.rekening].transactions.push(t);
+      }
+    });
+    Object.values(byAccount).forEach(a => a.transactions.sort((x,y) => (y.createdAt||0) - (x.createdAt||0)));
+    return byAccount;
+  }
+
+  function renderLaporan() {
+    bodyEl.innerHTML = `
+      <div class="bk-filter" style="margin-bottom:18px;">
+        <div class="bk-chip ${laporanView==='aruskas'?'active':''}" data-lv="aruskas">Arus Kas</div>
+        <div class="bk-chip ${laporanView==='neraca'?'active':''}" data-lv="neraca">Neraca &amp; Tutup Buku</div>
+        <div class="bk-chip ${laporanView==='beban'?'active':''}" data-lv="beban">Beban Operasional</div>
+        <div class="bk-chip ${laporanView==='stokbulanan'?'active':''}" data-lv="stokbulanan">Stok Bulanan</div>
+        <div class="bk-chip ${laporanView==='rekening'?'active':''}" data-lv="rekening">Per Rekening</div>
+      </div>
+      <div id="bk-laporan-slot">${
+        laporanView === 'aruskas' ? renderArusKasHtml() :
+        laporanView === 'neraca' ? renderNeracaHtml() :
+        laporanView === 'beban' ? renderBebanHtml() :
+        laporanView === 'stokbulanan' ? renderStokBulananHtml() :
+        renderRekeningHtml()
+      }</div>
+    `;
+    bodyEl.querySelectorAll('.bk-filter [data-lv]').forEach(c => c.addEventListener('click', () => { laporanView = c.dataset.lv; laporanBulan = 'semua'; renderLaporan(); }));
+    wireLaporanEvents();
+  }
+
+  function wireLaporanEvents() {
+    if (laporanView === 'aruskas') wireArusKasEvents();
+    else if (laporanView === 'neraca') wireNeracaEvents();
+    else if (laporanView === 'beban') wireBebanEvents();
+    else if (laporanView === 'stokbulanan') wireStokBulananEvents();
+  }
+
+  function renderArusKasHtml() {
+    const months = laporanAvailableMonths();
+    const mKey = laporanBulan;
+    const data = computeArusKasForMonth(mKey);
+    const saldoAwal = computeSaldoKasSebelum(mKey);
+    const saldoAkhir = saldoAwal + data.netKas;
+    return `
+      <div class="bk-field" style="max-width:260px;">
+        <label>Bulan</label>
+        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+          <option value="semua" ${mKey==='semua'?'selected':''}>Semua bulan</option>
+          ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bk-stats" style="margin-bottom:18px;">
+        <div class="bk-stat"><div class="lbl">Saldo awal</div><div class="val">${rupiah(saldoAwal)}</div></div>
+        <div class="bk-stat in"><div class="lbl">Kas masuk</div><div class="val">${rupiah(data.totalMasuk)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Kas keluar</div><div class="val">${rupiah(data.totalKeluar)}</div></div>
+        <div class="bk-stat"><div class="lbl">Saldo akhir</div><div class="val" style="color:${saldoAkhir>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(saldoAkhir)}</div></div>
+      </div>
+      <div class="bk-section-title">Rincian kas masuk</div>
+      ${data.inflow.length ? data.inflow.map(x => `
+        <div class="bk-list-row"><div class="bk-list-left"><div class="nm">${x.label}</div><div class="sub">${new Date(x.date).toLocaleDateString('id-ID')}</div></div><div class="bk-list-amt in">+${rupiah(x.amount)}</div></div>
+      `).join('') : '<div class="bk-empty">Tidak ada kas masuk pada periode ini.</div>'}
+      <div class="bk-section-title" style="margin-top:18px;">Rincian kas keluar</div>
+      ${data.outflow.length ? data.outflow.map(x => `
+        <div class="bk-list-row"><div class="bk-list-left"><div class="nm">${x.label}</div><div class="sub">${new Date(x.date).toLocaleDateString('id-ID')}</div></div><div class="bk-list-amt out">-${rupiah(x.amount)}</div></div>
+      `).join('') : '<div class="bk-empty">Tidak ada kas keluar pada periode ini.</div>'}
+    `;
+  }
+  function wireArusKasEvents() {
+    const sel = document.getElementById('bk-lap-month');
+    if (sel) sel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
+  }
+
+  function renderNeracaHtml() {
+    const n = computeNeraca();
+    return `
+      <div class="bk-ai-box" style="margin-bottom:20px;">
+        <div class="ai-head"><div class="ai-title">Modal awal</div></div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <input id="bk-modal-awal-input" type="number" min="0" value="${escapeAttr(modalAwal)}" placeholder="0" style="flex:1; min-width:160px; border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px;" />
+          <button class="bk-btn accent" id="bk-modal-awal-save">Simpan modal awal</button>
+        </div>
+        <div class="ai-body" style="margin-top:8px;">Modal awal dipakai untuk menghitung laba/rugi akumulasi (laba ditahan) di neraca. Isi sekali sesuai modal yang kamu tanam di awal usaha, atau saat mulai pakai sistem ini.</div>
+      </div>
+
+      <div class="bk-section-title">Aset</div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Kas</div><div class="sub">Saldo tunai riil (penjualan lunas + DP &minus; pembelian &minus; beban)</div></div><div class="bk-list-amt in">${rupiah(n.kas)}</div></div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Piutang</div><div class="sub">Penjualan/service yang belum lunas</div></div><div class="bk-list-amt out">${rupiah(n.piutang)}</div></div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Persediaan (nilai stok)</div><div class="sub">Modal yang mengendap di stok bahan/laptop/sparepart</div></div><div class="bk-list-amt">${rupiah(n.persediaan)}</div></div>
+      <div class="bk-total-line"><div class="t-lbl">Total Aset</div><div class="t-val">${rupiah(n.totalAset)}</div></div>
+
+      <div class="bk-section-title" style="margin-top:18px;">Modal</div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Modal awal</div></div><div class="bk-list-amt">${rupiah(n.modalAwal)}</div></div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Laba ditahan (akumulasi)</div><div class="sub">Total Aset &minus; Modal awal</div></div><div class="bk-list-amt ${n.labaDitahan>=0?'in':'out'}">${rupiah(n.labaDitahan)}</div></div>
+      <div class="bk-total-line"><div class="t-lbl">Total Modal</div><div class="t-val">${rupiah(n.totalModal)}</div></div>
+
+      <button class="bk-btn primary" id="bk-tutup-buku-btn" style="margin:20px 0 18px;">Simpan snapshot tutup buku bulan ini</button>
+
+      <div class="bk-section-title">Riwayat tutup buku</div>
+      <div id="bk-closing-list">${closings.length ? closings.map(closingRowHtml).join('') : '<div class="bk-empty">Belum ada snapshot tutup buku.</div>'}</div>
+    `;
+  }
+  function closingRowHtml(c) {
+    return `<div class="bk-list-row-wrap" data-closing="${c.id}">
+      <div class="bk-list-row">
+        <div class="bk-list-left">
+          <div class="nm">${monthLabel(c.month)}</div>
+          <div class="sub">Total Aset ${rupiah(c.totalAset)} &middot; Laba ditahan ${rupiah(c.labaDitahan)} &middot; disimpan ${new Date(c.savedAt).toLocaleDateString('id-ID')}</div>
+        </div>
+      </div>
+      <div class="bk-row-actions">
+        <div class="bk-icon-btn danger closing-del-btn" title="Hapus snapshot">&times;</div>
+      </div>
+    </div>`;
+  }
+  function wireNeracaEvents() {
+    document.getElementById('bk-modal-awal-save').addEventListener('click', async () => {
+      const val = Number(document.getElementById('bk-modal-awal-input').value) || 0;
+      try {
+        await saveModalAwal(val);
+        modalAwal = val;
+        renderLaporan();
+        showToast('Modal awal disimpan.');
+      } catch (e) { console.error(e); showToast('Gagal menyimpan modal awal, coba lagi.'); }
+    });
+    document.getElementById('bk-tutup-buku-btn').addEventListener('click', () => {
+      const n = computeNeraca();
+      const mKey = monthKey(Date.now());
+      showConfirm(`Simpan snapshot tutup buku untuk ${monthLabel(mKey)}? Total Aset saat ini ${rupiah(n.totalAset)}.`, async () => {
+        const c = { id: uid(), month: mKey, ...n, savedAt: Date.now() };
+        try {
+          await saveClosingSnapshot(c);
+          closings.unshift(c);
+          renderLaporan();
+          showToast('Snapshot tutup buku tersimpan.');
+        } catch (e) { console.error(e); showToast('Gagal menyimpan snapshot, coba lagi.'); }
+      });
+    });
+    document.querySelectorAll('#bk-closing-list .bk-list-row-wrap').forEach(w => {
+      const id = w.dataset.closing;
+      w.querySelector('.closing-del-btn').addEventListener('click', () => {
+        showConfirm('Hapus snapshot tutup buku ini?', async () => {
+          try {
+            await deleteClosingFromStore(id);
+            closings = closings.filter(c => c.id !== id);
+            renderLaporan();
+            showToast('Snapshot dihapus.');
+          } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+        });
+      });
+    });
+  }
+
+  function renderBebanHtml() {
+    const months = laporanAvailableMonths();
+    const mKey = laporanBulan;
+    const filtered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey);
+    const total = filtered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
+    return `
+      <div class="bk-section-title">Catat beban operasional baru</div>
+      <div class="bk-two-col">
+        <div class="bk-field">
+          <label>Kategori</label>
+          <select id="bk-beban-kategori" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+            ${BEBAN_KATEGORI.map(k => `<option value="${k}" ${bebanFormState.kategori===k?'selected':''}>${k}</option>`).join('')}
+          </select>
+        </div>
+        <div class="bk-field"><label>Nominal</label><input id="bk-beban-nominal" type="number" min="0" value="${escapeAttr(bebanFormState.nominal)}" placeholder="0" /></div>
+      </div>
+      ${bebanFormState.kategori === 'Lainnya' ? `<div class="bk-field"><label>Nama akun custom</label><input id="bk-beban-custom" value="${escapeAttr(bebanFormState.kategoriCustom)}" placeholder="Contoh: Iuran keamanan" /></div>` : ''}
+      <div class="bk-field"><label>Keterangan (opsional)</label><input id="bk-beban-ket" value="${escapeAttr(bebanFormState.keterangan)}" placeholder="Contoh: Gaji bulan Agustus - 2 karyawan" /></div>
+      <div id="bk-beban-err" class="bk-err" style="display:none;"></div>
+      <button class="bk-btn primary" id="bk-beban-save" style="margin-bottom:26px;">Simpan beban</button>
+
+      <div class="bk-section-title">Riwayat beban operasional</div>
+      <div class="bk-field" style="max-width:260px;">
+        <label>Bulan</label>
+        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+          <option value="semua" ${mKey==='semua'?'selected':''}>Semua bulan</option>
+          ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bk-stats" style="margin-bottom:16px;">
+        <div class="bk-stat out"><div class="lbl">Total beban ${mKey==='semua'?'(semua waktu)':('&middot; '+monthLabel(mKey))}</div><div class="val">${rupiah(total)}</div></div>
+      </div>
+      <div id="bk-beban-list">${filtered.length ? filtered.map(bebanRowHtml).join('') : '<div class="bk-empty">Belum ada catatan beban pada periode ini.</div>'}</div>
+    `;
+  }
+  function bebanRowHtml(b) {
+    const label = b.kategori === 'Lainnya' && b.kategoriCustom ? b.kategoriCustom : b.kategori;
+    return `<div class="bk-list-row-wrap" data-beban="${b.id}">
+      <div class="bk-list-row">
+        <div class="bk-list-left">
+          <div class="nm">${label}</div>
+          <div class="sub">${b.keterangan || '-'} &middot; ${new Date(b.createdAt).toLocaleDateString('id-ID')}</div>
+        </div>
+        <div class="bk-list-amt out">-${rupiah(b.nominal)}</div>
+      </div>
+      <div class="bk-row-actions">
+        <div class="bk-icon-btn danger beban-del-btn" title="Hapus beban">&times;</div>
+      </div>
+    </div>`;
+  }
+  function wireBebanEvents() {
+    const katSel = document.getElementById('bk-beban-kategori');
+    katSel.addEventListener('change', e => { bebanFormState.kategori = e.target.value; renderLaporan(); });
+    if (bebanFormState.kategori === 'Lainnya') {
+      const customEl = document.getElementById('bk-beban-custom');
+      if (customEl) customEl.addEventListener('input', e => bebanFormState.kategoriCustom = e.target.value);
+    }
+    document.getElementById('bk-beban-nominal').addEventListener('input', e => bebanFormState.nominal = e.target.value);
+    document.getElementById('bk-beban-ket').addEventListener('input', e => bebanFormState.keterangan = e.target.value);
+    document.getElementById('bk-beban-save').addEventListener('click', async () => {
+      const errEl = document.getElementById('bk-beban-err');
+      const nominal = Number(bebanFormState.nominal) || 0;
+      if (nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nominal beban yang valid.'; return; }
+      if (bebanFormState.kategori === 'Lainnya' && !bebanFormState.kategoriCustom.trim()) { errEl.style.display = 'block'; errEl.textContent = 'Isi nama akun custom untuk kategori Lainnya.'; return; }
+      errEl.style.display = 'none';
+      const b = { id: uid(), kategori: bebanFormState.kategori, kategoriCustom: bebanFormState.kategoriCustom.trim(), nominal, keterangan: bebanFormState.keterangan.trim(), createdAt: Date.now() };
+      try {
+        await saveBebanItem(b);
+        bebanList.unshift(b);
+        bebanFormState = blankBebanForm();
+        renderLaporan();
+        showToast('Beban operasional tercatat.');
+      } catch (e) { console.error(e); errEl.style.display='block'; errEl.textContent = 'Gagal menyimpan beban, coba lagi.'; }
+    });
+    const monthSel = document.getElementById('bk-lap-month');
+    if (monthSel) monthSel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
+    document.querySelectorAll('#bk-beban-list .bk-list-row-wrap').forEach(w => {
+      const id = w.dataset.beban;
+      w.querySelector('.beban-del-btn').addEventListener('click', () => {
+        showConfirm('Hapus catatan beban ini?', async () => {
+          try {
+            await deleteBebanFromStore(id);
+            bebanList = bebanList.filter(b => b.id !== id);
+            renderLaporan();
+            showToast('Beban dihapus.');
+          } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+        });
+      });
+    });
+  }
+
+  function renderStokBulananHtml() {
+    const months = laporanAvailableMonths();
+    const mKey = laporanBulan === 'semua' ? (months[0] || monthKey(Date.now())) : laporanBulan;
+    const rows = computeStokBulanan(mKey);
+    return `
+      <div class="bk-field" style="max-width:260px;">
+        <label>Bulan</label>
+        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+          ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bk-stok-note">Stok awal bulan dihitung dari seluruh riwayat transaksi sebelum bulan ini. Kolom Masuk (pembelian &amp; hasil produksi) dan Keluar (penjualan &amp; bahan produksi) khusus bulan yang dipilih.</div>
+      <div class="bk-stok-row" style="grid-template-columns: 1fr 70px 70px 70px 70px; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700;">
+        <div>Nama item</div><div style="text-align:right;">Awal</div><div style="text-align:right;">Masuk</div><div style="text-align:right;">Keluar</div><div style="text-align:right;">Akhir</div>
+      </div>
+      ${rows.length ? rows.map(r => `
+        <div class="bk-stok-row" style="grid-template-columns: 1fr 70px 70px 70px 70px;">
+          <div>${r.name}<span style="color:var(--ink-soft); font-size:11px;"> ${r.unit||''}</span></div>
+          <div class="qty">${r.awal.toLocaleString('id-ID')}</div>
+          <div class="qty" style="color:var(--money-in);">+${r.masuk.toLocaleString('id-ID')}</div>
+          <div class="qty" style="color:var(--money-out);">-${r.keluar.toLocaleString('id-ID')}</div>
+          <div class="qty" style="font-weight:700;">${r.akhir.toLocaleString('id-ID')}</div>
+        </div>
+      `).join('') : '<div class="bk-empty">Belum ada data stok untuk bulan ini.</div>'}
+    `;
+  }
+  function wireStokBulananEvents() {
+    const sel = document.getElementById('bk-lap-month');
+    if (sel) sel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
+  }
+
+  function renderRekeningHtml() {
+    const byAccount = computeRekeningReport();
+    return `
+      <div class="bk-stok-note">Total uang masuk dihitung dari penjualan/service yang sudah lunas dan tercatat dibayar ke rekening terkait.</div>
+      ${BANK_ACCOUNTS.map(acc => {
+        const data = byAccount[acc.id];
+        return `
+          <div class="bk-section-title">${acc.label} <span style="color:var(--ink-soft); font-weight:500; font-size:13px;">(${acc.nomor})</span></div>
+          <div class="bk-stats" style="margin-bottom:14px; grid-template-columns: 1fr;">
+            <div class="bk-stat in"><div class="lbl">Total uang masuk</div><div class="val">${rupiah(data.total)}</div></div>
+          </div>
+          ${data.transactions.length ? data.transactions.slice(0, 100).map(t => `
+            <div class="bk-list-row"><div class="bk-list-left"><div class="nm">${t.customerName || 'Tanpa nama'}</div><div class="sub">${new Date(t.createdAt).toLocaleDateString('id-ID')}</div></div><div class="bk-list-amt in">+${rupiah(t.total)}</div></div>
+          `).join('') : '<div class="bk-empty">Belum ada pemasukan lewat rekening ini.</div>'}
+          <div style="margin-bottom:20px;"></div>
+        `;
+      }).join('')}
+    `;
+  }
+
   // ---------- REFRESH DATA (agar transaksi dari user lain ikut muncul) ----------
   let isRefreshing = false;
   async function refreshData(manual) {
@@ -2322,7 +2836,9 @@ window.storage = {
       const before = txns.length;
       await loadTxns();
       await loadServices();
-      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && !editingTxnId && modalSlot.innerHTML.trim() === '';
+      await loadBeban();
+      await loadClosings();
+      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && activeTab !== 'laporan' && !editingTxnId && modalSlot.innerHTML.trim() === '';
       if (safeToRerender) renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
     } catch (e) {
@@ -2340,6 +2856,9 @@ window.storage = {
     await loadStoreName();
     await loadTxns();
     await loadServices();
+    await loadBeban();
+    await loadModalAwal();
+    await loadClosings();
     renderTabs();
     renderBody();
     setInterval(() => refreshData(false), 20000);
