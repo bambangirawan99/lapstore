@@ -681,18 +681,22 @@ window.storage = {
     const t = totals();
     const hpp = computeHPP();
     const margin = hpp.totalRevenue > 0 ? (hpp.labaKotor / hpp.totalRevenue * 100) : 0;
+    const totalBebanSemua = bebanList.reduce((s,b) => s + (Number(b.nominal)||0), 0);
+    const labaBersih = hpp.labaKotor - totalBebanSemua;
     const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0);
     const recent = txns.slice(0, 6);
     bodyEl.innerHTML = `
       <div class="bk-stats">
         <div class="bk-stat in"><div class="lbl">Laba kotor</div><div class="val" style="color:${hpp.labaKotor>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(hpp.labaKotor)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Beban operasional</div><div class="val">${rupiah(totalBebanSemua)}</div></div>
+        <div class="bk-stat ${labaBersih>=0?'in':'out'}"><div class="lbl">Laba bersih</div><div class="val" style="color:${labaBersih>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(labaBersih)}</div></div>
         <div class="bk-stat out"><div class="lbl">HPP (estimasi)</div><div class="val">${rupiah(hpp.totalHPP)}</div></div>
         <div class="bk-stat in"><div class="lbl">Pemasukan (penjualan)</div><div class="val">${rupiah(t.masuk)}</div></div>
         <div class="bk-stat out"><div class="lbl">Pengeluaran (bahan baku)</div><div class="val">${rupiah(t.keluar)}</div></div>
         <div class="bk-stat"><div class="lbl">Saldo (arus kas)</div><div class="val" style="color:${t.saldo>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(t.saldo)}</div></div>
         <div class="bk-stat out"><div class="lbl">Piutang belum lunas</div><div class="val">${rupiah(piutangTotal)}</div></div>
       </div>
-      <div class="bk-stok-note" style="margin-top:-10px;">HPP dihitung otomatis pakai metode rata-rata bergerak dari harga beli &amp; biaya produksi. Margin kotor saat ini: <strong>${margin.toFixed(1)}%</strong>.</div>
+      <div class="bk-stok-note" style="margin-top:-10px;">HPP dihitung otomatis pakai metode rata-rata bergerak dari harga beli &amp; biaya produksi. Margin kotor saat ini: <strong>${margin.toFixed(1)}%</strong>. Laba bersih = Laba kotor &minus; Beban operasional (lihat rincian di tab Laporan).</div>
       <div class="bk-ai-box">
         <div class="ai-head">
           <div class="ai-title">Analisis AI</div>
