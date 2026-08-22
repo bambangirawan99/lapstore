@@ -48,10 +48,21 @@ database backend, dan bisa di-hosting gratis lewat **GitHub Pages**.
 
 ---
 
-## 4. Push ke GitHub & deploy dengan GitHub Pages
+## 4. Push ke GitHub & deploy otomatis lewat GitHub Actions
+
+Project ini sudah dilengkapi alur otomatis (`.github/workflows/deploy.yml`) yang akan
+mem-build & men-deploy situs ke GitHub Pages **setiap kali kamu push ke branch `main`** —
+jadi setelah setup awal ini, update berikutnya tinggal `git push`, tidak perlu klak-klik lagi
+di menu Settings.
+
+**Setup awal (sekali saja):**
 
 1. Buat repo baru di GitHub (bisa privat atau publik).
-2. Upload semua file di folder ini ke repo (lewat GitHub Desktop, web upload, atau command line):
+2. Pastikan `index.html` sudah diisi `SUPABASE_URL` & `SUPABASE_ANON_KEY` (langkah 3) —
+   alur otomatis ini akan **menolak deploy** kalau nilainya masih placeholder, supaya kamu
+   tidak tidak sadar men-deploy situs yang belum tersambung ke database.
+3. Upload semua file di folder ini ke repo (termasuk folder `.github/`), lewat GitHub Desktop,
+   web upload, atau command line:
    ```bash
    git init
    git add .
@@ -60,11 +71,24 @@ database backend, dan bisa di-hosting gratis lewat **GitHub Pages**.
    git remote add origin https://github.com/USERNAME/NAMA_REPO.git
    git push -u origin main
    ```
-3. Di GitHub, buka repo → **Settings > Pages**.
-4. Di bagian **Source**, pilih branch `main` dan folder `/ (root)`, lalu **Save**.
-5. Tunggu 1-2 menit, GitHub akan memberi alamat situs seperti:
+4. Di GitHub, buka repo → **Settings > Pages**.
+5. Di bagian **Source**, pilih **GitHub Actions** (bukan "Deploy from a branch").
+6. Buka tab **Actions** di repo — workflow "Deploy Buku Kas ke GitHub Pages" akan otomatis
+   berjalan. Tunggu sampai selesai (tanda centang hijau), lalu GitHub akan memberi alamat
+   situs seperti:
    `https://USERNAME.github.io/NAMA_REPO/`
-6. Buka alamat itu — aplikasi kamu sudah online dan bisa diakses siapa saja yang tahu link-nya (mirip cara kerja artifact Claude sebelumnya, tapi sekarang datanya di Supabase milikmu sendiri).
+7. Buka alamat itu — aplikasi kamu sudah online dan bisa diakses siapa saja yang tahu link-nya (mirip cara kerja artifact Claude sebelumnya, tapi sekarang datanya di Supabase milikmu sendiri).
+
+**Update berikutnya:** cukup edit file (misalnya `index.html`), lalu:
+```bash
+git add .
+git commit -m "Update fitur X"
+git push
+```
+Tab **Actions** akan otomatis menjalankan validasi (cek konfigurasi Supabase & sintaks
+JavaScript) sebelum men-deploy. Kalau validasi gagal, situs lama tetap online (tidak
+tertimpa versi yang rusak) dan kamu akan lihat tanda silang merah di tab Actions — klik untuk
+lihat detail errornya.
 
 > Kalau repo-nya publik, kode `index.html` (termasuk `SUPABASE_URL` dan `SUPABASE_ANON_KEY`) akan terlihat siapa saja. Ini **normal dan aman** untuk anon key Supabase (asal kebijakan RLS-nya sudah kamu atur sesuai kebutuhan). Yang **tidak boleh** pernah dimasukkan ke `index.html` adalah API key Anthropic — lihat bagian 5.
 
@@ -117,6 +141,7 @@ Kalau `AI_PROXY_URL` dikosongkan, fitur AI akan menampilkan pesan yang jelas ("F
 ## 7. Struktur file
 
 ```
+├── .github/workflows/deploy.yml        # Alur otomatis: validasi & deploy ke GitHub Pages
 ├── index.html                          # Aplikasi utama (satu file, HTML+CSS+JS)
 ├── supabase-schema.sql                 # Skrip setup tabel & keamanan Supabase
 ├── supabase/functions/ai-proxy/        # Edge Function proxy AI (opsional)
@@ -129,3 +154,4 @@ Kalau `AI_PROXY_URL` dikosongkan, fitur AI akan menampilkan pesan yang jelas ("F
 - Tidak ada sistem login/peran pengguna — siapa pun dengan link situs bisa mencatat & menghapus data.
 - HPP dihitung dari riwayat transaksi secara berurutan waktu — data yang tidak lengkap atau tidak berurutan akan membuat perhitungan kurang akurat.
 - WhatsApp memakai `wa.me` (membuka chat manual), bukan pengiriman otomatis tanpa klik.
+- GitHub Pages gratis untuk repo publik. Kalau repo-nya privat, publish ke GitHub Pages butuh paket GitHub Pro/Team/Enterprise — kalau repo gratis & privat, deploy otomatis lewat Actions akan tetap berjalan tapi situsnya tidak bisa diakses publik sampai repo dijadikan publik atau di-upgrade.

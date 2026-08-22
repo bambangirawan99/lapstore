@@ -1,23 +1,29 @@
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 #bk-root {
-  --paper: #FBF9F3;
-  --bg-page: #EFEADC;
-  --ink: #22293A;
-  --ink-soft: #5B6072;
-  --line: #D9D2BC;
-  --money-in: #2F6F4E;
-  --money-in-bg: #E4EEE6;
-  --money-out: #A8402F;
-  --money-out-bg: #F3E4DF;
-  --accent: #B4832A;
-  --accent-ink: #4A3308;
-  --accent-bg: #F1E4C6;
-  font-family: 'Inter', sans-serif;
+  --paper: #FFFFFF;
+  --bg-page: #EAF3FF;
+  --ink: #1E1B4B;
+  --ink-soft: #6B6F9E;
+  --line: #DCE4F7;
+  --money-in: #12A876;
+  --money-in-bg: #DEF7EC;
+  --money-out: #FF5A5F;
+  --money-out-bg: #FFE7E6;
+  --accent: #6C5CE7;
+  --accent-ink: #2C1F87;
+  --accent-bg: #EFEAFF;
+  --accent2: #FFC94D;
+  --accent2-ink: #7A5300;
+  --accent2-bg: #FFF3D6;
+  --accent3: #00B8AC;
+  --accent3-ink: #01615A;
+  --accent3-bg: #DCF7F4;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   color: var(--ink);
   background: var(--bg-page);
-  border-radius: 14px;
+  border-radius: 22px;
   padding: 0;
   max-width: 860px;
   margin: 0 auto;
@@ -25,77 +31,106 @@
   overflow: hidden;
 }
 #bk-root * { box-sizing: border-box; }
-#bk-root .disp { font-family: 'Fraunces', serif; }
+#bk-root .disp { font-family: 'Baloo 2', sans-serif; }
 #bk-root .mono { font-family: 'IBM Plex Mono', monospace; }
 
 /* Header */
 #bk-root .bk-header {
-  background: var(--ink);
-  color: var(--paper);
-  padding: 22px 28px 18px;
+  background: linear-gradient(135deg, #6C5CE7 0%, #8C6FF0 45%, #FF7FB4 100%);
+  color: #fff;
+  padding: 22px 28px 26px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 3px solid var(--accent);
+  position: relative;
+}
+#bk-root .bk-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+#bk-root .bk-logo-mark {
+  width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
+  background: rgba(255,255,255,.22); display: flex; align-items: center; justify-content: center;
+  color: #fff;
 }
 #bk-root .bk-header input {
-  font-family: 'Fraunces', serif;
-  font-weight: 600;
-  font-size: 22px;
+  font-family: 'Baloo 2', sans-serif;
+  font-weight: 700;
+  font-size: 23px;
   background: transparent;
   border: none;
-  color: var(--paper);
+  color: #fff;
   outline: none;
   padding: 2px 0;
   border-bottom: 1px dashed transparent;
-  max-width: 60%;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1;
 }
-#bk-root .bk-header input:focus { border-bottom: 1px dashed var(--accent); }
-#bk-root .bk-header .bk-date { font-size: 12px; color: #C9CCD8; font-family: 'IBM Plex Mono', monospace; }
-#bk-root #bk-refresh-btn { transition: transform .4s ease; }
+#bk-root .bk-header input:focus { border-bottom: 1px dashed rgba(255,255,255,.7); }
+#bk-root .bk-header .bk-date {
+  font-size: 11px; font-weight: 600; color: var(--accent2-ink);
+  font-family: 'IBM Plex Mono', monospace;
+  background: var(--accent2);
+  padding: 5px 11px;
+  border-radius: 7px;
+  transform: rotate(-3deg);
+  box-shadow: 2px 2px 0 rgba(30,27,75,.25);
+  white-space: nowrap;
+}
+#bk-root #bk-refresh-btn {
+  transition: transform .4s ease, background .15s ease;
+  color: rgba(255,255,255,.9) !important;
+  width: 30px; height: 30px; border-radius: 999px;
+  background: rgba(255,255,255,.18);
+  display: flex; align-items: center; justify-content: center;
+}
+#bk-root #bk-refresh-btn:hover { background: rgba(255,255,255,.3); }
 #bk-root .bk-shared-banner {
-  background: var(--accent-bg); color: var(--accent-ink); font-size: 11.5px;
-  padding: 6px 28px; border-bottom: 1px solid var(--line); line-height: 1.5;
+  background: var(--accent2-bg); color: var(--accent2-ink); font-size: 11.5px; font-weight: 500;
+  padding: 7px 28px; border-bottom: 1px solid var(--line); line-height: 1.5;
 }
 
 /* Tabs */
 #bk-root .bk-tabs {
   display: flex;
   flex-wrap: wrap;
+  gap: 6px;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
-  padding: 0 20px;
+  padding: 12px 20px;
 }
 #bk-root .bk-tab {
-  padding: 13px 16px;
-  font-size: 13.5px;
-  font-weight: 500;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--ink-soft);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  border-radius: 999px;
   user-select: none;
+  transition: background .15s ease, color .15s ease, box-shadow .15s ease;
 }
-#bk-root .bk-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
-#bk-root .bk-tab:hover:not(.active) { color: var(--ink); }
+#bk-root .bk-tab.active { background: var(--accent); color: #fff; box-shadow: 2px 2px 0 var(--ink); }
+#bk-root .bk-tab:hover:not(.active) { background: var(--accent-bg); color: var(--accent-ink); }
 
 #bk-root .bk-body { padding: 24px 28px 30px; background: var(--paper); min-height: 320px; }
 
 /* Dashboard */
 #bk-root .bk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin-bottom: 22px; }
-#bk-root .bk-stat { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-#bk-root .bk-stat .lbl { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
-#bk-root .bk-stat .val { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 500; }
+#bk-root .bk-stat { position: relative; overflow: hidden; border: 1.5px solid var(--line); border-radius: 16px; padding: 16px 16px 14px; background: var(--paper); }
+#bk-root .bk-stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--accent); }
+#bk-root .bk-stat.in::before { background: var(--money-in); }
+#bk-root .bk-stat.out::before { background: var(--money-out); }
+#bk-root .bk-stat .lbl { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; font-weight: 600; }
+#bk-root .bk-stat .val { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 600; }
 #bk-root .bk-stat.in .val { color: var(--money-in); }
 #bk-root .bk-stat.out .val { color: var(--money-out); }
 
-#bk-root .bk-ai-box { border: 1px dashed var(--accent); background: var(--accent-bg); border-radius: 10px; padding: 16px 18px; margin-bottom: 22px; }
+#bk-root .bk-ai-box { border: 1.5px dashed var(--accent3); background: var(--accent3-bg); border-radius: 16px; padding: 16px 18px; margin-bottom: 22px; }
 #bk-root .bk-ai-box .ai-head { display:flex; align-items:center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
-#bk-root .bk-ai-box .ai-title { font-size: 13px; font-weight: 600; color: var(--accent-ink); }
+#bk-root .bk-ai-box .ai-title { font-size: 13px; font-weight: 700; color: var(--accent3-ink); }
 #bk-root .bk-ai-box .ai-body { font-size: 13.5px; color: var(--ink); line-height: 1.6; white-space: pre-wrap; }
 #bk-root .bk-ai-box .ai-body ul { margin: 6px 0 0 18px; padding: 0; }
 
-#bk-root .bk-section-title { font-family: 'Fraunces', serif; font-weight: 600; font-size: 16px; margin: 0 0 12px; }
+#bk-root .bk-section-title { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 17px; margin: 0 0 12px; color: var(--ink); }
 
 #bk-root .bk-list-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -103,9 +138,9 @@
 }
 #bk-root .bk-list-row:last-child { border-bottom: none; }
 #bk-root .bk-list-left { display:flex; flex-direction:column; gap: 2px; min-width: 0; }
-#bk-root .bk-list-left .nm { font-weight: 500; }
+#bk-root .bk-list-left .nm { font-weight: 700; }
 #bk-root .bk-list-left .sub { font-size: 11.5px; color: var(--ink-soft); }
-#bk-root .bk-list-amt { font-family: 'IBM Plex Mono', monospace; font-weight: 500; white-space: nowrap; }
+#bk-root .bk-list-amt { font-family: 'IBM Plex Mono', monospace; font-weight: 600; white-space: nowrap; }
 #bk-root .bk-list-amt.in { color: var(--money-in); }
 #bk-root .bk-list-amt.out { color: var(--money-out); }
 #bk-root .bk-empty { color: var(--ink-soft); font-size: 13px; padding: 18px 0; text-align: center; }
@@ -113,77 +148,81 @@
 /* Forms */
 #bk-root .bk-quickai { display: flex; gap: 8px; margin-bottom: 18px; }
 #bk-root .bk-quickai input {
-  flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13.5px;
-  font-family: 'Inter', sans-serif; background: #fff;
+  flex: 1; border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 13.5px;
+  font-family: 'Plus Jakarta Sans', sans-serif; background: #fff;
 }
-#bk-root .bk-quickai input:focus { outline: none; border-color: var(--accent); }
+#bk-root .bk-quickai input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 #bk-root .bk-btn {
-  border: none; border-radius: 8px; padding: 10px 16px; font-size: 13px; font-weight: 600;
-  cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap;
+  border: none; border-radius: 999px; padding: 11px 20px; font-size: 13.5px; font-weight: 700;
+  cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; white-space: nowrap;
+  transition: transform .12s ease, box-shadow .12s ease, background .15s ease;
 }
-#bk-root .bk-btn.primary { background: var(--ink); color: var(--paper); }
-#bk-root .bk-btn.primary:hover { background: #333c53; }
-#bk-root .bk-btn.accent { background: var(--accent); color: #fff; }
-#bk-root .bk-btn.accent:hover { background: #a17624; }
-#bk-root .bk-btn.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
-#bk-root .bk-btn:disabled { opacity: .55; cursor: default; }
+#bk-root .bk-btn.primary { background: var(--ink); color: #fff; box-shadow: 3px 3px 0 var(--accent2); }
+#bk-root .bk-btn.primary:hover { background: #2a2564; }
+#bk-root .bk-btn.accent { background: var(--accent); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+#bk-root .bk-btn.accent:hover { background: #5b49d9; }
+#bk-root .bk-btn.ghost { background: transparent; color: var(--ink-soft); border: 1.5px solid var(--line); }
+#bk-root .bk-btn.ghost:hover { border-color: var(--accent); color: var(--accent-ink); }
+#bk-root .bk-btn:active { transform: translate(2px, 2px); box-shadow: none !important; }
+#bk-root .bk-btn:disabled { opacity: .55; cursor: default; transform: none; }
 
 #bk-root .bk-item-row { display: grid; grid-template-columns: 1fr 70px 100px 110px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-item-row input {
-  border: 1px solid var(--line); border-radius: 7px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
+  border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 9px; font-size: 13px; font-family: 'Plus Jakarta Sans', sans-serif;
 }
-#bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent); }
+#bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 #bk-root .bk-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
-#bk-root .bk-item-head { display: grid; grid-template-columns: 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; }
+#bk-root .bk-item-head { display: grid; grid-template-columns: 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-prod-item-row { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-prod-item-row input {
-  border: 1px solid var(--line); border-radius: 7px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
+  border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 9px; font-size: 13px; font-family: 'Plus Jakarta Sans', sans-serif;
 }
-#bk-root .bk-prod-item-row input:focus { outline: none; border-color: var(--accent); }
+#bk-root .bk-prod-item-row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 #bk-root .bk-prod-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
-#bk-root .bk-prod-item-head { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; }
+#bk-root .bk-prod-item-head { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-field { margin-bottom: 14px; }
-#bk-root .bk-field label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 5px; }
-#bk-root .bk-field input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; font-size: 13.5px; font-family: 'Inter', sans-serif; }
-#bk-root .bk-field input:focus { outline: none; border-color: var(--accent); }
+#bk-root .bk-field label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 5px; font-weight: 600; }
+#bk-root .bk-field input { width: 100%; border: 1.5px solid var(--line); border-radius: 12px; padding: 9px 12px; font-size: 13.5px; font-family: 'Plus Jakarta Sans', sans-serif; }
+#bk-root .bk-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 #bk-root .bk-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 #bk-root .bk-total-line { display: flex; justify-content: space-between; align-items: center; margin: 16px 0 18px; padding-top: 12px; border-top: 1px solid var(--line); }
-#bk-root .bk-total-line .t-lbl { font-size: 13px; color: var(--ink-soft); }
-#bk-root .bk-total-line .t-val { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 600; }
-#bk-root .bk-err { color: var(--money-out); font-size: 12px; margin-top: -8px; margin-bottom: 12px; }
+#bk-root .bk-total-line .t-lbl { font-size: 13px; color: var(--ink-soft); font-weight: 600; }
+#bk-root .bk-total-line .t-val { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 700; color: var(--accent-ink); }
+#bk-root .bk-err { color: var(--money-out); font-size: 12px; margin-top: -8px; margin-bottom: 12px; font-weight: 600; }
 #bk-root .bk-msg { font-size: 12px; color: var(--ink-soft); margin-left: 4px; }
 
 /* Riwayat filter */
-#bk-root .bk-filter { display: flex; gap: 8px; margin-bottom: 16px; }
-#bk-root .bk-chip { padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line); font-size: 12.5px; cursor: pointer; color: var(--ink-soft); }
-#bk-root .bk-chip.active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+#bk-root .bk-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+#bk-root .bk-chip { padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--line); font-size: 12.5px; font-weight: 600; cursor: pointer; color: var(--ink-soft); background: #fff; }
+#bk-root .bk-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 2px 2px 0 var(--ink); }
 
 /* Row actions + badges */
-#bk-root .bk-badge { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; display: inline-block; }
+#bk-root .bk-badge { font-size: 10.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; display: inline-block; }
 #bk-root .bk-badge.lunas { background: var(--money-in-bg); color: var(--money-in); }
 #bk-root .bk-badge.belum { background: var(--money-out-bg); color: var(--money-out); }
 #bk-root .bk-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
 #bk-root .bk-icon-btn {
-  border: 1px solid var(--line); background: #fff; border-radius: 6px; width: 26px; height: 26px;
+  border: 1.5px solid var(--line); background: #fff; border-radius: 10px; width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; color: var(--ink-soft);
+  transition: border-color .15s ease, color .15s ease;
 }
-#bk-root .bk-icon-btn:hover { color: var(--ink); border-color: var(--ink-soft); }
+#bk-root .bk-icon-btn:hover { color: var(--accent-ink); border-color: var(--accent); }
 #bk-root .bk-icon-btn.danger:hover { color: var(--money-out); border-color: var(--money-out); }
 #bk-root .bk-list-row-wrap { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 #bk-root .bk-list-row-wrap:last-child { border-bottom: none; }
 #bk-root .bk-list-row-wrap .bk-list-row { flex: 1; padding: 0; border-bottom: none; }
 #bk-root .bk-row-check { width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; }
 #bk-root .bk-select-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-#bk-root .bk-select-all { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); cursor: pointer; user-select: none; }
+#bk-root .bk-select-all { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); cursor: pointer; user-select: none; font-weight: 600; }
 #bk-root .bk-select-all input { width: 16px; height: 16px; cursor: pointer; }
-#bk-root .bk-bulk-del { display: none; background: var(--money-out); color: #fff; }
+#bk-root .bk-bulk-del { display: none; background: var(--money-out); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
 #bk-root .bk-bulk-del.show { display: inline-flex; }
 #bk-root .bk-checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; }
 #bk-root .bk-checkbox-row input { width: 16px; height: 16px; }
-#bk-root .bk-cancel-edit { margin-bottom: 14px; font-size: 12px; color: var(--ink-soft); cursor: pointer; text-decoration: underline; }
+#bk-root .bk-cancel-edit { margin-bottom: 14px; font-size: 12px; color: var(--accent-ink); font-weight: 600; cursor: pointer; text-decoration: underline; }
 
 /* Stok */
 #bk-root .bk-stok-row {
@@ -191,7 +230,7 @@
   padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
 }
 #bk-root .bk-stok-row:last-child { border-bottom: none; }
-#bk-root .bk-stok-row .qty { font-family: 'IBM Plex Mono', monospace; font-weight: 500; text-align: right; }
+#bk-root .bk-stok-row .qty { font-family: 'IBM Plex Mono', monospace; font-weight: 600; text-align: right; }
 #bk-root .bk-stok-row.low .qty { color: var(--money-out); }
 #bk-root .bk-stok-note { font-size: 12px; color: var(--ink-soft); margin-bottom: 16px; }
 
@@ -203,22 +242,29 @@
 
 /* Receipt modal */
 #bk-root .bk-overlay {
-  position: fixed; inset: 0; background: rgba(20,20,20,.55); display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; background: rgba(20,20,40,.55); display: flex; align-items: center; justify-content: center;
   z-index: 999; padding: 24px;
 }
 #bk-root .bk-receipt {
-  width: 300px; background: var(--paper); padding: 22px 20px 4px;
+  width: 300px; background: var(--paper); padding: 30px 20px 4px;
   font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--ink);
-  box-shadow: 0 12px 30px rgba(0,0,0,.25);
+  box-shadow: 0 16px 34px rgba(30,27,75,.3);
+  border-radius: 14px 14px 0 0;
+  position: relative;
+  overflow: hidden;
 }
-#bk-root .bk-receipt .r-store { font-family: 'Fraunces', serif; font-weight: 600; font-size: 16px; text-align: center; }
+#bk-root .bk-receipt::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px;
+  background: linear-gradient(90deg, var(--accent), var(--accent3), var(--accent2));
+}
+#bk-root .bk-receipt .r-store { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 17px; text-align: center; color: var(--accent-ink); }
 #bk-root .bk-receipt .r-sub { text-align: center; color: var(--ink-soft); font-size: 10.5px; margin-top: 2px; }
 #bk-root .bk-receipt hr { border: none; border-top: 1px dashed var(--line); margin: 12px 0; }
 #bk-root .bk-receipt .r-item { margin-bottom: 6px; }
 #bk-root .bk-receipt .r-item-top { display: flex; justify-content: space-between; }
 #bk-root .bk-receipt .r-item-sub { color: var(--ink-soft); font-size: 10.5px; margin-top: 1px; }
 #bk-root .bk-receipt .r-item .qn { color: var(--ink-soft); font-size: 11px; }
-#bk-root .bk-receipt .r-total { display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; margin-top: 6px; }
+#bk-root .bk-receipt .r-total { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; margin-top: 6px; color: var(--accent-ink); }
 #bk-root .bk-receipt .r-note { text-align: center; font-size: 10.5px; color: var(--ink-soft); margin-top: 10px; }
 #bk-root .zigzag {
   height: 12px;
@@ -231,16 +277,38 @@
 #bk-root .bk-close-x { position: absolute; top: 14px; right: 14px; cursor: pointer; color: #fff; font-size: 22px; line-height: 1; }
 #bk-root .bk-receipt-wrap { position: relative; display:flex; flex-direction: column; align-items: center; }
 
+/* Service Laptop */
+#bk-root .bk-service-status-bar { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+#bk-root .bk-svc-card { border:1.5px solid var(--line); border-radius:16px; padding:16px 18px; margin-bottom:14px; background:#fff; }
+#bk-root .bk-svc-top { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
+#bk-root .bk-svc-top .nm { font-weight:700; font-size:14.5px; font-family:'Baloo 2', sans-serif; }
+#bk-root .bk-svc-top .sub { font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
+#bk-root .bk-svc-badge { font-size:10.5px; font-weight:700; padding:4px 11px; border-radius:999px; white-space:nowrap; display:inline-block; }
+#bk-root .bk-svc-badge.diterima { background:var(--accent-bg); color:var(--accent-ink); }
+#bk-root .bk-svc-badge.diagnosa { background:var(--accent2-bg); color:var(--accent2-ink); }
+#bk-root .bk-svc-badge.menunggu_konfirmasi { background:var(--money-out-bg); color:var(--money-out); }
+#bk-root .bk-svc-badge.dikerjakan { background:var(--accent3-bg); color:var(--accent3-ink); }
+#bk-root .bk-svc-badge.selesai { background:var(--money-in-bg); color:var(--money-in); }
+#bk-root .bk-svc-badge.diambil { background:#ECEAF7; color:var(--ink-soft); }
+#bk-root .bk-svc-detail { font-size:12.5px; color:var(--ink); line-height:1.6; margin:8px 0; }
+#bk-root .bk-svc-detail .lbl { color:var(--ink-soft); font-weight: 600; }
+#bk-root .bk-svc-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+#bk-root .bk-svc-row-actions { display:flex; gap:4px; flex-shrink:0; }
+#bk-root .bk-svc-timeline { font-size:10.5px; color:var(--ink-soft); margin-top:8px; border-top:1px dashed var(--line); padding-top:8px; }
+#bk-root .bk-svc-dp-box { background: var(--accent2-bg); border: 1.5px dashed var(--accent2); border-radius: 12px; padding: 12px 14px; margin: 10px 0; font-size: 13px; }
+
 @media (max-width: 560px) {
   #bk-root { border-radius: 0; max-width: 100%; overflow: visible; }
-  #bk-root .bk-header { padding: 16px 16px 14px; flex-wrap: wrap; }
+  #bk-root .bk-header { padding: 16px 16px 20px; flex-wrap: wrap; }
+  #bk-root .bk-header-left { min-width: 0; }
+  #bk-root .bk-logo-mark { width: 32px; height: 32px; border-radius: 10px; }
   #bk-root .bk-header input { font-size: 18px; max-width: 100%; }
-  #bk-root .bk-header .bk-date { font-size: 10.5px; }
-  #bk-root .bk-tabs { padding: 0 10px; }
-  #bk-root .bk-tab { padding: 11px 10px; font-size: 12.5px; }
+  #bk-root .bk-header .bk-date { font-size: 10px; padding: 4px 9px; }
+  #bk-root .bk-tabs { padding: 10px 10px; }
+  #bk-root .bk-tab { padding: 8px 12px; font-size: 12px; }
   #bk-root .bk-body { padding: 16px 16px 22px; min-height: 260px; }
   #bk-root .bk-stats { grid-template-columns: 1fr 1fr; gap: 8px; }
-  #bk-root .bk-stat { padding: 11px 12px; }
+  #bk-root .bk-stat { padding: 13px 12px 11px; }
   #bk-root .bk-stat .val { font-size: 16px; }
   #bk-root .bk-two-col { grid-template-columns: 1fr; }
   #bk-root .bk-quickai { flex-direction: column; }
@@ -279,6 +347,8 @@
   #bk-root .bk-stok-row { grid-template-columns: 1fr 60px 70px; font-size: 12.5px; gap: 6px; }
   #bk-root .bk-piutang-top { flex-wrap: wrap; }
   #bk-root .bk-filter { flex-wrap: wrap; }
+  #bk-root .bk-svc-top { flex-wrap: wrap; }
+  #bk-root .bk-svc-actions .bk-btn { flex: 1 1 auto; min-width: 140px; }
 }
 @media (min-width: 561px) {
   #bk-root { box-shadow: 0 1px 3px rgba(0,0,0,.06); }
@@ -287,10 +357,18 @@
 
 <div id="bk-root">
   <div class="bk-header">
-    <input id="bk-storename" value="GRIYA IKAN BSD" />
+    <div class="bk-header-left">
+      <div class="bk-logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="19" height="19">
+          <rect x="4" y="4" width="16" height="11" rx="1.5"></rect>
+          <path d="M2 19h20l-1.5-3h-17L2 19z"></path>
+        </svg>
+      </div>
+      <input id="bk-storename" value="LAPSTORE" />
+    </div>
     <div style="display:flex; align-items:center; gap:10px;">
       <div class="bk-date" id="bk-today"></div>
-      <div id="bk-refresh-btn" title="Muat ulang data terbaru" style="cursor:pointer; color:#C9CCD8; font-size:15px; user-select:none;">&#8635;</div>
+      <div id="bk-refresh-btn" title="Muat ulang data terbaru" style="cursor:pointer; font-size:15px; user-select:none;">&#8635;</div>
     </div>
   </div>
   <div class="bk-shared-banner">
@@ -354,7 +432,7 @@ window.storage = {
 (function(){
   if (!SUPABASE_CONFIGURED) {
     document.getElementById('bk-body').innerHTML = `
-      <div style="padding:20px; border:1px dashed var(--money-out,#A8402F); border-radius:10px; background:#F3E4DF; color:#4A0F08; font-size:13.5px; line-height:1.7;">
+      <div style="padding:20px; border:1.5px dashed var(--money-out,#FF5A5F); border-radius:14px; background:#FFE7E6; color:#7A1418; font-size:13.5px; line-height:1.7; font-family:'Plus Jakarta Sans', sans-serif;">
         <strong>Supabase belum dikonfigurasi.</strong><br/>
         Buka file <code>index.html</code>, cari bagian <code>SUPABASE_URL</code> dan <code>SUPABASE_ANON_KEY</code> di dekat awal kode, lalu isi dengan data dari project Supabase kamu.<br/>
         Lihat <code>README.md</code> untuk langkah lengkapnya.
@@ -375,6 +453,7 @@ window.storage = {
     { id: 'penjualan', label: 'Catat penjualan' },
     { id: 'stok', label: 'Stok' },
     { id: 'produksi', label: 'Produksi' },
+    { id: 'service', label: 'Service Laptop' },
     { id: 'piutang', label: 'Piutang' },
     { id: 'riwayat', label: 'Riwayat' },
   ];
@@ -385,6 +464,31 @@ window.storage = {
   let editingTxnId = null;
   let selectedTxnIds = new Set();
   const STOK_AMBANG_DEFAULT = 5;
+
+  // ---------- SERVICE LAPTOP: state & konstanta ----------
+  const SERVICE_STATUSES = [
+    { id: 'diterima', label: 'Diterima' },
+    { id: 'diagnosa', label: 'Dicek/Diagnosa' },
+    { id: 'menunggu_konfirmasi', label: 'Menunggu konfirmasi biaya' },
+    { id: 'dikerjakan', label: 'Dikerjakan' },
+    { id: 'selesai', label: 'Selesai (siap diambil)' },
+    { id: 'diambil', label: 'Sudah diambil' },
+  ];
+  function serviceStatusLabel(id) {
+    const s = SERVICE_STATUSES.find(x => x.id === id);
+    return s ? s.label : id;
+  }
+  let services = [];
+  let svcFilter = 'semua';
+  let svcView = 'aktif';
+  let svcRiwayatMonth = 'semua';
+  let svcSearchQuery = '';
+  let editingServiceDetailId = null;
+  function blankServiceForm() {
+    return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '' };
+  }
+  function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: '' }; }
+  let serviceFormState = blankServiceForm();
 
   function monthKey(ts) {
     const d = new Date(ts);
@@ -439,6 +543,27 @@ window.storage = {
     await window.storage.delete('txn:' + id, true);
   }
 
+  async function loadServices() {
+    services = [];
+    try {
+      const listRes = await window.storage.list('service:', true);
+      const keys = (listRes && listRes.keys) || [];
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) services.push(JSON.parse(r.value));
+        } catch (e) { /* skip unreadable entry */ }
+      }
+      services.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    } catch (e) { console.error('Gagal memuat data service', e); }
+  }
+  async function saveService(s) {
+    await window.storage.set('service:' + s.id, JSON.stringify(s), true);
+  }
+  async function deleteServiceFromStore(id) {
+    await window.storage.delete('service:' + id, true);
+  }
+
   function renderTabs() {
     tabsEl.innerHTML = TABS.map(t =>
       `<div class="bk-tab ${activeTab===t.id?'active':''}" data-tab="${t.id}">${t.label}</div>`
@@ -468,6 +593,7 @@ window.storage = {
     if (activeTab === 'penjualan') return renderForm('penjualan');
     if (activeTab === 'stok') return renderStok();
     if (activeTab === 'produksi') return renderProduksi();
+    if (activeTab === 'service') return renderService();
     if (activeTab === 'piutang') return renderPiutang();
     if (activeTab === 'riwayat') return renderRiwayat();
   }
@@ -508,12 +634,24 @@ window.storage = {
     return `${bahanStr || '-'} &rarr; ${hasilStr || '-'}`;
   }
 
+  function findLinkedService(txnId) {
+    return services.find(s => s.linkedTxnId === txnId || s.prodTxnId === txnId || s.dpTxnId === txnId);
+  }
+  function serviceLinkNoteHtml(t) {
+    const svc = findLinkedService(t.id);
+    if (!svc) return '';
+    let label = 'Service Laptop';
+    if (svc.prodTxnId === t.id) label = 'Sparepart utk service';
+    else if (svc.dpTxnId === t.id) label = 'DP Service Laptop';
+    return ` &middot; <span style="color:var(--accent-ink); font-weight:600;">${label}</span>: ${svc.device} (${svc.customerName || 'tanpa nama'})`;
+  }
+
   function rowHtml(t, editable) {
     if (t.type === 'produksi') {
       const row = `<div class="bk-list-row">
         <div class="bk-list-left">
           <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span></div>
-          <div class="sub">${summarizeProduksi(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
+          <div class="sub">${summarizeProduksi(t)}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
         </div>
         <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>
       </div>`;
@@ -532,7 +670,7 @@ window.storage = {
     const row = `<div class="bk-list-row">
       <div class="bk-list-left">
         <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}</div>
-        <div class="sub">${names} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
+        <div class="sub">${names}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
       </div>
       <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
     </div>`;
@@ -554,7 +692,7 @@ window.storage = {
         <div class="bk-list-row">
           <div class="bk-list-left">
             <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span></div>
-            <div class="sub">${summarizeProduksi(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
+            <div class="sub">${summarizeProduksi(t)}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
           </div>
           <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>
         </div>
@@ -572,7 +710,7 @@ window.storage = {
       <div class="bk-list-row">
         <div class="bk-list-left">
           <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}</div>
-          <div class="sub">${names} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
+          <div class="sub">${names}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
         </div>
         <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
       </div>
@@ -866,15 +1004,60 @@ window.storage = {
     renderTabs(); renderBody();
   }
 
+  async function syncServiceAfterLinkedTxnDeleted(deletedTxnId) {
+    const s = findLinkedService(deletedTxnId);
+    if (!s) return;
+    try {
+      if (s.prodTxnId === deletedTxnId) {
+        if (s.linkedTxnId) {
+          try { await deleteTxnFromStore(s.linkedTxnId); } catch (e) { /* mungkin sudah terhapus */ }
+          txns = txns.filter(x => x.id !== s.linkedTxnId);
+        }
+        s.prodTxnId = null;
+        s.linkedTxnId = null;
+        s.serviceItemName = null;
+        s.status = 'dikerjakan';
+        s.updatedAt = Date.now();
+        s.history = s.history || [];
+        s.history.push({ status: 'dikerjakan (otomatis dikembalikan, catatan sparepart dihapus)', at: Date.now() });
+        await saveService(s);
+        showToast(`Catatan sparepart untuk service "${s.customerName}" dihapus, status dikembalikan ke "Dikerjakan".`);
+      } else if (s.linkedTxnId === deletedTxnId) {
+        s.linkedTxnId = null;
+        s.status = 'selesai';
+        s.updatedAt = Date.now();
+        s.history = s.history || [];
+        s.history.push({ status: 'selesai (otomatis dikembalikan, transaksi pemasukan dihapus)', at: Date.now() });
+        await saveService(s);
+        showToast(`Transaksi pemasukan untuk service "${s.customerName}" dihapus, status dikembalikan ke "Selesai".`);
+      } else if (s.dpTxnId === deletedTxnId) {
+        s.dpAmount = 0;
+        s.dpTxnId = null;
+        s.updatedAt = Date.now();
+        s.history = s.history || [];
+        s.history.push({ status: 'DP dibatalkan otomatis (transaksi DP dihapus dari Riwayat)', at: Date.now() });
+        await saveService(s);
+        showToast(`Catatan DP untuk service "${s.customerName}" dihapus dari Riwayat.`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function removeTxn(id) {
     const t = txns.find(x => x.id === id);
     if (!t) return;
-    showConfirm('Hapus transaksi ini? Tindakan ini tidak bisa dibatalkan.', async () => {
+    const linkedSvc = findLinkedService(id);
+    const confirmMsg = linkedSvc
+      ? `Transaksi ini terhubung dengan data Service Laptop atas nama "${linkedSvc.customerName}" (${linkedSvc.device}). Menghapusnya akan mengembalikan status service tersebut secara otomatis. Lanjutkan hapus?`
+      : 'Hapus transaksi ini? Tindakan ini tidak bisa dibatalkan.';
+    showConfirm(confirmMsg, async () => {
       try {
         await deleteTxnFromStore(id);
         txns = txns.filter(x => x.id !== id);
+        await syncServiceAfterLinkedTxnDeleted(id);
         renderBody();
-        showToast('Transaksi berhasil dihapus.');
+        if (!linkedSvc) showToast('Transaksi berhasil dihapus.');
       } catch (e) {
         console.error(e);
         showToast('Gagal menghapus transaksi, coba lagi.');
@@ -887,7 +1070,7 @@ window.storage = {
     const lines = [];
     lines.push(storeName);
     lines.push('='.repeat(24));
-    lines.push('Hallo pelanggan Griya Ikan yang berbahagia, berikut adalah resi belanja Anda:');
+    lines.push(`Hallo pelanggan ${storeName} yang berbahagia, berikut adalah resi belanja Anda:`);
     lines.push('');
     t.items.forEach(i => {
       const satuan = i.unit ? i.unit : 'unit';
@@ -916,7 +1099,7 @@ window.storage = {
             <div class="r-store">${storeName}</div>
             <div class="r-sub">Resi penjualan</div>
             <hr/>
-            <div style="font-size:11px; line-height:1.6; margin-bottom:10px;">Hallo pelanggan Griya Ikan yang berbahagia, berikut adalah resi belanja Anda:</div>
+            <div style="font-size:11px; line-height:1.6; margin-bottom:10px;">Hallo pelanggan ${storeName} yang berbahagia, berikut adalah resi belanja Anda:</div>
             ${t.items.map(i => `<div class="r-item">
               <div class="r-item-top"><span>${i.name}</span><span>${rupiah(i.qty*i.price)}</span></div>
               <div class="r-item-sub">x${i.qty}${i.unit?(' '+i.unit):''} @ ${rupiah(i.price)}/${i.unit||'unit'}</div>
@@ -986,7 +1169,7 @@ window.storage = {
   function showToast(msg) {
     const t = document.createElement('div');
     t.textContent = msg;
-    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#22293A;color:#FBF9F3;padding:10px 18px;border-radius:8px;font-size:13px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.25);max-width:90%;text-align:center;';
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1E1B4B;color:#fff;padding:10px 20px;border-radius:999px;font-size:13px;font-weight:600;font-family:\'Plus Jakarta Sans\',sans-serif;z-index:1000;box-shadow:0 4px 16px rgba(30,27,75,.35);max-width:90%;text-align:center;';
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2500);
   }
@@ -1005,7 +1188,7 @@ window.storage = {
     bodyEl.innerHTML = `
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
-        <select id="bk-month-select" style="width:100%; border:1px solid var(--line); border-radius:8px; padding:9px 11px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
+        <select id="bk-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 11px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
           <option value="semua" ${riwayatMonth==='semua'?'selected':''}>Semua bulan</option>
           ${months.map(m => `<option value="${m}" ${riwayatMonth===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
@@ -1055,11 +1238,19 @@ window.storage = {
     const bulkBtn = document.getElementById('bk-bulk-del-btn');
     if (bulkBtn) bulkBtn.addEventListener('click', () => {
       if (!selectedTxnIds.size) return;
-      showConfirm(`Hapus ${selectedTxnIds.size} transaksi terpilih? Tindakan ini tidak bisa dibatalkan.`, async () => {
+      const idsArr = Array.from(selectedTxnIds);
+      const anyLinked = idsArr.some(id => findLinkedService(id));
+      const confirmMsg = anyLinked
+        ? `Hapus ${idsArr.length} transaksi terpilih? Beberapa di antaranya terhubung ke data Service Laptop dan statusnya akan otomatis dikembalikan. Tindakan ini tidak bisa dibatalkan.`
+        : `Hapus ${idsArr.length} transaksi terpilih? Tindakan ini tidak bisa dibatalkan.`;
+      showConfirm(confirmMsg, async () => {
         const ids = Array.from(selectedTxnIds);
         try {
-          for (const id of ids) await deleteTxnFromStore(id);
-          txns = txns.filter(x => !selectedTxnIds.has(x.id));
+          for (const id of ids) {
+            await deleteTxnFromStore(id);
+            txns = txns.filter(x => x.id !== id);
+            await syncServiceAfterLinkedTxnDeleted(id);
+          }
           selectedTxnIds.clear();
           renderRiwayat();
           showToast(`${ids.length} transaksi berhasil dihapus.`);
@@ -1166,7 +1357,7 @@ window.storage = {
 
   function renderStok() {
     const stockMap = computeStock();
-    const rows = Object.values(stockMap).sort((a,b) => a.qty - b.qty);
+    const rows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.qty - b.qty);
     const adaProduksi = txns.some(t => t.type === 'produksi');
     bodyEl.innerHTML = `
       <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}.${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
@@ -1377,6 +1568,610 @@ window.storage = {
     }
   }
 
+  // ---------- SERVICE LAPTOP ----------
+  function renderService() {
+    bodyEl.innerHTML = `
+      ${itemNamesDatalistHtml()}
+      <div class="bk-stok-note">Catat alur service laptop dari masuk sampai diambil pelanggan. Saat status diubah jadi "Sudah diambil", biaya service otomatis tercatat sebagai pemasukan di Ringkasan &amp; Riwayat (dan otomatis jadi piutang kalau belum lunas). Sparepart yang diisi di tahap "Dikerjakan" otomatis mengurangi Stok dan dihitung sebagai biaya (HPP) service tersebut.</div>
+      <div class="bk-filter" style="margin-bottom:18px;">
+        <div class="bk-chip ${svcView==='aktif'?'active':''}" data-view="aktif">Sedang berjalan</div>
+        <div class="bk-chip ${svcView==='riwayat'?'active':''}" data-view="riwayat">Riwayat service</div>
+      </div>
+      <div id="bk-svc-view-slot">${svcView === 'aktif' ? renderServiceAktifHtml() : renderServiceRiwayatHtml()}</div>
+    `;
+    bodyEl.querySelectorAll('.bk-filter [data-view]').forEach(c => c.addEventListener('click', () => { svcView = c.dataset.view; renderService(); }));
+    if (svcView === 'aktif') wireServiceAktifEvents(); else wireServiceRiwayatEvents();
+  }
+
+  function renderServiceAktifHtml() {
+    const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
+    const pool = services.filter(s => s.status !== 'diambil');
+    const filtered = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
+    return `
+      <div class="bk-section-title">Terima service baru</div>
+      <div class="bk-quickai">
+        <input id="bk-svc-quick-input" placeholder="Tulis bebas, mis: laptop Asus A455L milik Budi 081234567890, mati total tidak bisa cas, estimasi 250rb" />
+        <button class="bk-btn accent" id="bk-svc-quick-btn">Isi otomatis (AI)</button>
+      </div>
+      <div class="bk-two-col">
+        <div class="bk-field"><label>Nama pelanggan</label><input id="bk-svc-name" value="${escapeAttr(serviceFormState.customerName)}" placeholder="Nama pelanggan" /></div>
+        <div class="bk-field"><label>No. WhatsApp</label><input id="bk-svc-phone" value="${escapeAttr(serviceFormState.customerPhone)}" placeholder="081234567890" /></div>
+      </div>
+      <div class="bk-two-col">
+        <div class="bk-field"><label>Merk/tipe laptop</label><input id="bk-svc-device" value="${escapeAttr(serviceFormState.device)}" placeholder="Contoh: Asus A455L" /></div>
+        <div class="bk-field"><label>Estimasi biaya awal (opsional)</label><input id="bk-svc-est" type="number" min="0" value="${escapeAttr(serviceFormState.estimasiBiaya)}" placeholder="0" /></div>
+      </div>
+      <div class="bk-field"><label>Keluhan</label><input id="bk-svc-complaint" value="${escapeAttr(serviceFormState.complaint)}" placeholder="Contoh: Laptop mati total, tidak bisa cas" /></div>
+      <div class="bk-field"><label>Kelengkapan yang dititipkan (opsional)</label><input id="bk-svc-accessories" value="${escapeAttr(serviceFormState.accessories)}" placeholder="Contoh: charger, tas" /></div>
+      <div id="bk-svc-form-err" class="bk-err" style="display:none;"></div>
+      <button class="bk-btn primary" id="bk-svc-save-btn" style="margin-bottom:26px;">Terima service masuk</button>
+
+      <div class="bk-section-title">Sedang berjalan</div>
+      <div class="bk-filter bk-service-status-bar">
+        <div class="bk-chip ${svcFilter==='semua'?'active':''}" data-f="semua">Semua (${pool.length})</div>
+        ${activeStatuses.map(s => `<div class="bk-chip ${svcFilter===s.id?'active':''}" data-f="${s.id}">${s.label} (${pool.filter(x=>x.status===s.id).length})</div>`).join('')}
+      </div>
+      <div id="bk-svc-list">${filtered.length ? filtered.map(serviceCardHtml).join('') : '<div class="bk-empty">Tidak ada service yang sedang berjalan pada status ini.</div>'}</div>
+    `;
+  }
+
+  function wireServiceAktifEvents() {
+    document.getElementById('bk-svc-name').addEventListener('input', e => serviceFormState.customerName = e.target.value);
+    document.getElementById('bk-svc-phone').addEventListener('input', e => serviceFormState.customerPhone = e.target.value);
+    document.getElementById('bk-svc-device').addEventListener('input', e => serviceFormState.device = e.target.value);
+    document.getElementById('bk-svc-est').addEventListener('input', e => serviceFormState.estimasiBiaya = e.target.value);
+    document.getElementById('bk-svc-complaint').addEventListener('input', e => serviceFormState.complaint = e.target.value);
+    document.getElementById('bk-svc-accessories').addEventListener('input', e => serviceFormState.accessories = e.target.value);
+    document.getElementById('bk-svc-save-btn').addEventListener('click', saveNewService);
+    document.getElementById('bk-svc-quick-btn').addEventListener('click', runQuickAiService);
+    bodyEl.querySelectorAll('.bk-service-status-bar .bk-chip').forEach(c => c.addEventListener('click', () => { svcFilter = c.dataset.f; renderService(); }));
+    wireServiceCardEvents();
+  }
+
+  function svcCompletedAt(s) {
+    const h = (s.history || []).slice().reverse().find(x => x.status === 'diambil');
+    return (h && h.at) || s.updatedAt || s.createdAt;
+  }
+  function svcMonthKey(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  }
+  function svcAvailableMonths() {
+    const done = services.filter(s => s.status === 'diambil');
+    const set = new Set(done.map(s => svcMonthKey(svcCompletedAt(s))));
+    return Array.from(set).sort().reverse();
+  }
+
+  function renderServiceRiwayatHtml() {
+    const done = services.filter(s => s.status === 'diambil').sort((a,b) => svcCompletedAt(b) - svcCompletedAt(a));
+    const months = svcAvailableMonths();
+    const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
+    const q = svcSearchQuery.trim().toLowerCase();
+    const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q)) : byMonth;
+    const totalPendapatan = byMonth.reduce((sum,s) => sum + (Number(s.biayaFinal)||0), 0);
+
+    return `
+      <div class="bk-two-col" style="margin-bottom:16px;">
+        <div class="bk-field" style="margin-bottom:0;">
+          <label>Bulan selesai</label>
+          <select id="bk-svc-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; background:#fff;">
+            <option value="semua" ${svcRiwayatMonth==='semua'?'selected':''}>Semua bulan</option>
+            ${months.map(m => `<option value="${m}" ${svcRiwayatMonth===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="bk-field" style="margin-bottom:0;">
+          <label>Cari nama pelanggan / device</label>
+          <input id="bk-svc-search" value="${escapeAttr(svcSearchQuery)}" placeholder="Contoh: Budi / Asus A455L" />
+        </div>
+      </div>
+      <div class="bk-stats" style="margin-bottom:16px;">
+        <div class="bk-stat"><div class="lbl">Service selesai ${svcRiwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(svcRiwayatMonth))}</div><div class="val" id="bk-svc-riwayat-count">${byMonth.length}</div></div>
+        <div class="bk-stat in"><div class="lbl">Total pendapatan jasa</div><div class="val" id="bk-svc-riwayat-total">${rupiah(totalPendapatan)}</div></div>
+      </div>
+      <div id="bk-svc-list">${filtered.length ? filtered.map(serviceCardHtml).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>'}</div>
+    `;
+  }
+
+  function refreshSvcRiwayatList() {
+    const done = services.filter(s => s.status === 'diambil').sort((a,b) => svcCompletedAt(b) - svcCompletedAt(a));
+    const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
+    const q = svcSearchQuery.trim().toLowerCase();
+    const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q)) : byMonth;
+    const listEl = document.getElementById('bk-svc-list');
+    if (listEl) listEl.innerHTML = filtered.length ? filtered.map(serviceCardHtml).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>';
+    const totalPendapatan = byMonth.reduce((sum,s) => sum + (Number(s.biayaFinal)||0), 0);
+    const countEl = document.getElementById('bk-svc-riwayat-count');
+    const totalEl = document.getElementById('bk-svc-riwayat-total');
+    if (countEl) countEl.textContent = byMonth.length;
+    if (totalEl) totalEl.textContent = rupiah(totalPendapatan);
+    wireServiceCardEvents();
+  }
+
+  function wireServiceRiwayatEvents() {
+    const monthSel = document.getElementById('bk-svc-month-select');
+    if (monthSel) monthSel.addEventListener('change', e => { svcRiwayatMonth = e.target.value; refreshSvcRiwayatList(); });
+    const searchInp = document.getElementById('bk-svc-search');
+    if (searchInp) searchInp.addEventListener('input', e => { svcSearchQuery = e.target.value; refreshSvcRiwayatList(); });
+    wireServiceCardEvents();
+  }
+
+  async function runQuickAiService() {
+    const input = document.getElementById('bk-svc-quick-input');
+    const btn = document.getElementById('bk-svc-quick-btn');
+    const text = input.value.trim();
+    if (!text) { input.placeholder = 'Tulis dulu deskripsi service-nya...'; input.focus(); return; }
+    btn.disabled = true; btn.textContent = 'Memproses...';
+    try {
+      const prompt = `Ubah teks berikut menjadi data service laptop terstruktur.\nTeks: "${text}"\nFormat JSON object: {"customerName":"nama pelanggan atau string kosong jika tidak disebut","customerPhone":"nomor whatsapp atau string kosong jika tidak disebut","device":"merk/tipe laptop atau string kosong jika tidak disebut","complaint":"keluhan/kerusakan yang disebutkan","accessories":"kelengkapan yang dititipkan atau string kosong jika tidak disebut","estimasiBiaya": angka perkiraan biaya dalam rupiah, 0 jika tidak disebut}\nBalas HANYA dengan JSON object valid, tanpa teks lain, tanpa markdown code fence.`;
+      const raw = await callClaudeAI(prompt);
+      const clean = raw.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(clean);
+      if (parsed.customerName) serviceFormState.customerName = parsed.customerName;
+      if (parsed.customerPhone) serviceFormState.customerPhone = parsed.customerPhone;
+      if (parsed.device) serviceFormState.device = parsed.device;
+      if (parsed.complaint) serviceFormState.complaint = parsed.complaint;
+      if (parsed.accessories) serviceFormState.accessories = parsed.accessories;
+      if (parsed.estimasiBiaya) serviceFormState.estimasiBiaya = parsed.estimasiBiaya;
+      input.value = '';
+      renderService();
+    } catch (e) {
+      console.error(e);
+      const err = document.getElementById('bk-svc-form-err');
+      if (err) { err.style.display = 'block'; err.textContent = e.friendly || 'AI tidak bisa membaca teks itu, coba tulis ulang atau isi manual.'; }
+      btn.disabled = false; btn.textContent = 'Isi otomatis (AI)';
+    }
+  }
+
+  async function saveNewService() {
+    const errEl = document.getElementById('bk-svc-form-err');
+    const name = serviceFormState.customerName.trim();
+    const device = serviceFormState.device.trim();
+    const complaint = serviceFormState.complaint.trim();
+    if (!name || !device || !complaint) {
+      errEl.style.display = 'block';
+      errEl.textContent = 'Isi minimal nama pelanggan, merk/tipe laptop, dan keluhan.';
+      return;
+    }
+    errEl.style.display = 'none';
+    const s = {
+      id: uid(),
+      customerName: name,
+      customerPhone: serviceFormState.customerPhone.trim(),
+      device,
+      complaint,
+      accessories: serviceFormState.accessories.trim(),
+      estimasiBiaya: Number(serviceFormState.estimasiBiaya) || 0,
+      catatanDiagnosa: '',
+      biayaFinal: 0,
+      dpAmount: 0,
+      dpTxnId: null,
+      paid: true,
+      status: 'diterima',
+      linkedTxnId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      history: [{ status: 'diterima', at: Date.now() }],
+    };
+    const btn = document.getElementById('bk-svc-save-btn');
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
+    try {
+      await saveService(s);
+      services.unshift(s);
+      serviceFormState = blankServiceForm();
+      renderService();
+      showToast('Service laptop tercatat.');
+    } catch (e) {
+      console.error(e);
+      errEl.style.display = 'block';
+      errEl.textContent = 'Gagal menyimpan data service, coba lagi.';
+      btn.disabled = false; btn.textContent = 'Terima service masuk';
+    }
+  }
+
+  function serviceCardHtml(s) {
+    const badge = `<span class="bk-svc-badge ${s.status}">${serviceStatusLabel(s.status)}</span>`;
+    let actionHtml = '';
+    if (s.status === 'diterima') {
+      actionHtml = `<div class="bk-svc-actions">
+        <button class="bk-btn primary act-diagnosa" data-id="${s.id}">Mulai diagnosa</button>
+      </div>`;
+    } else if (s.status === 'diagnosa') {
+      actionHtml = `
+        <div class="bk-field"><label>Catatan diagnosa</label><input class="svc-diag-note" data-id="${s.id}" value="${escapeAttr(s.catatanDiagnosa)}" placeholder="Contoh: motherboard short, perlu ganti IC power" /></div>
+        <div class="bk-field"><label>Estimasi biaya ke pelanggan</label><input class="svc-diag-est" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.estimasiBiaya)}" placeholder="0" /></div>
+        <div class="bk-svc-actions">
+          <button class="bk-btn primary act-kirim-estimasi" data-id="${s.id}">Kirim estimasi ke pelanggan</button>
+        </div>`;
+    } else if (s.status === 'menunggu_konfirmasi') {
+      actionHtml = `
+        <div class="bk-svc-detail"><span class="lbl">Estimasi biaya:</span> ${rupiah(s.estimasiBiaya)}</div>
+        <div class="bk-svc-actions">
+          <button class="bk-btn primary act-setuju" data-id="${s.id}">Pelanggan setuju, mulai kerjakan</button>
+          <button class="bk-btn ghost act-revisi" data-id="${s.id}">Revisi diagnosa/estimasi</button>
+        </div>`;
+    } else if (s.status === 'dikerjakan') {
+      if (!s.parts || !s.parts.length) s.parts = [blankSvcPart()];
+      actionHtml = `
+        <div class="bk-field"><label>Biaya final service</label><input class="svc-biaya-final" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.biayaFinal || s.estimasiBiaya)}" placeholder="0" /></div>
+        <div style="font-size:12px; color:var(--ink-soft); margin:12px 0 6px;">Sparepart dipakai (opsional &mdash; otomatis kurangi Stok &amp; dihitung sebagai biaya)</div>
+        <div class="bk-prod-item-head"><div>Nama sparepart</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+        <div class="svc-parts-list" data-svc="${s.id}">${s.parts.map(p => svcPartRowHtml(s.id, p)).join('')}</div>
+        <button class="bk-btn ghost svc-add-part" data-id="${s.id}" style="margin-bottom:10px;">+ Tambah sparepart</button>
+        <div class="bk-svc-actions">
+          <button class="bk-btn primary act-selesai" data-id="${s.id}">Tandai selesai dikerjakan</button>
+        </div>`;
+    } else if (s.status === 'selesai') {
+      const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+      actionHtml = `
+        <div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''}${s.parts && s.parts.some(p=>p.name) ? ` &middot; <span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}</div>
+        <div class="bk-checkbox-row">
+          <input type="checkbox" class="svc-paid-check" data-id="${s.id}" ${s.paid !== false ? 'checked' : ''} />
+          <label style="margin:0;">${s.dpAmount ? `Sisa pembayaran (${rupiah(sisa)}) sudah lunas saat diambil` : 'Sudah dibayar lunas saat diambil'} (kalau tidak dicentang, tercatat sebagai piutang)</label>
+        </div>
+        <div class="bk-svc-actions">
+          <button class="bk-btn primary act-diambil" data-id="${s.id}">Sudah diambil pelanggan</button>
+        </div>`;
+    } else if (s.status === 'diambil') {
+      const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+      actionHtml = `<div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''} &middot; <span class="bk-badge ${s.paid===false?'belum':'lunas'}">${s.paid===false?(s.dpAmount?'Sisa belum lunas':'Belum lunas'):'Lunas'}</span>${s.parts && s.parts.some(p=>p.name) ? `<br/><span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}</div>`;
+    }
+
+    const waBtn = s.customerPhone ? `<button class="bk-btn ghost act-wa" data-id="${s.id}">Kirim update WhatsApp</button>` : '';
+    const isEditingDetail = editingServiceDetailId === s.id;
+
+    const topInfoHtml = isEditingDetail ? `
+      <div class="bk-two-col" style="margin-bottom:8px;">
+        <input class="svc-edit-name" data-id="${s.id}" value="${escapeAttr(s.customerName)}" placeholder="Nama pelanggan" />
+        <input class="svc-edit-phone" data-id="${s.id}" value="${escapeAttr(s.customerPhone)}" placeholder="No. WhatsApp" />
+      </div>
+      <div class="bk-two-col" style="margin-bottom:8px;">
+        <input class="svc-edit-device" data-id="${s.id}" value="${escapeAttr(s.device)}" placeholder="Merk/tipe laptop" />
+        <input class="svc-edit-accessories" data-id="${s.id}" value="${escapeAttr(s.accessories)}" placeholder="Kelengkapan (opsional)" />
+      </div>
+      <input class="svc-edit-complaint" data-id="${s.id}" value="${escapeAttr(s.complaint)}" placeholder="Keluhan" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif;" />
+      <div id="bk-svc-edit-err-${s.id}" class="bk-err" style="display:none;"></div>
+      <div class="bk-svc-actions" style="margin-top:0; margin-bottom:10px;">
+        <button class="bk-btn primary svc-save-detail" data-id="${s.id}">Simpan info</button>
+        <button class="bk-btn ghost svc-cancel-detail" data-id="${s.id}">Batal</button>
+      </div>
+    ` : `
+      <div class="nm">${s.customerName} &middot; ${s.device}</div>
+      <div class="sub">${s.complaint}${s.accessories ? ' &middot; Kelengkapan: '+s.accessories : ''}</div>
+      <div class="sub">${new Date(s.createdAt).toLocaleDateString('id-ID')}</div>
+    `;
+
+    return `<div class="bk-svc-card" data-svc="${s.id}">
+      <div class="bk-svc-top">
+        <div style="flex:1; min-width:0;">
+          ${topInfoHtml}
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+          ${badge}
+          <div class="bk-svc-row-actions">
+            ${!isEditingDetail ? `<div class="bk-icon-btn svc-edit-detail-btn" data-id="${s.id}" title="Edit info pelanggan/perangkat">&#9998;</div>` : ''}
+            <div class="bk-icon-btn danger svc-del-btn" data-id="${s.id}" title="Hapus data service">&times;</div>
+          </div>
+        </div>
+      </div>
+      ${s.catatanDiagnosa && s.status !== 'diagnosa' ? `<div class="bk-svc-detail"><span class="lbl">Catatan diagnosa:</span> ${s.catatanDiagnosa}</div>` : ''}
+      ${svcDpBlockHtml(s)}
+      ${actionHtml}
+      ${waBtn ? `<div class="bk-svc-actions">${waBtn}</div>` : ''}
+      <div class="bk-svc-timeline">${(s.history||[]).map(h => `${serviceStatusLabel(h.status)} &middot; ${new Date(h.at).toLocaleString('id-ID')}`).join(' &rarr; ')}</div>
+    </div>`;
+  }
+
+  function svcDpBlockHtml(s) {
+    if (s.status === 'diambil') return '';
+    if (s.dpAmount && s.dpTxnId) {
+      return `<div class="bk-svc-dp-box" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <div><span class="lbl">DP diterima:</span> <strong>${rupiah(s.dpAmount)}</strong></div>
+        <button class="bk-btn ghost svc-dp-remove" data-id="${s.id}" style="padding:6px 14px; font-size:11.5px;">Batalkan DP</button>
+      </div>`;
+    }
+    return `<div class="bk-svc-dp-box">
+      <div style="font-size:12px; font-weight:700; color:var(--accent2-ink); margin-bottom:8px;">Uang muka (DP) &mdash; opsional</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input class="svc-dp-input" type="number" min="0" data-id="${s.id}" placeholder="Jumlah DP diterima" style="flex:1; min-width:140px; border:1.5px solid var(--line); border-radius:10px; padding:8px 11px; font-size:13px; font-family:'Plus Jakarta Sans',sans-serif;" />
+        <button class="bk-btn ghost svc-dp-save" data-id="${s.id}" style="padding:8px 16px;">Catat DP</button>
+      </div>
+    </div>`;
+  }
+
+  function svcPartRowHtml(serviceId, item) {
+    return `<div class="bk-prod-item-row svc-part-row" data-svc="${serviceId}" data-id="${item.id}">
+      <input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama sparepart (dari stok)" list="bk-item-names" />
+      <input class="f-qty" type="number" min="0" step="any" value="${escapeAttr(item.qty)}" placeholder="0" />
+      <input class="f-unit" value="${escapeAttr(item.unit)}" placeholder="pcs/unit" />
+      <div class="rm" title="Hapus baris">&times;</div>
+    </div>`;
+  }
+
+  function wireServiceCardEvents() {
+    const list = document.getElementById('bk-svc-list');
+    if (!list) return;
+
+    list.querySelectorAll('.svc-edit-detail-btn').forEach(b => b.addEventListener('click', () => {
+      editingServiceDetailId = b.dataset.id;
+      renderService();
+    }));
+    list.querySelectorAll('.svc-cancel-detail').forEach(b => b.addEventListener('click', () => {
+      editingServiceDetailId = null;
+      renderService();
+    }));
+    list.querySelectorAll('.svc-save-detail').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.id;
+      const name = list.querySelector(`.svc-edit-name[data-id="${id}"]`).value.trim();
+      const phone = list.querySelector(`.svc-edit-phone[data-id="${id}"]`).value.trim();
+      const device = list.querySelector(`.svc-edit-device[data-id="${id}"]`).value.trim();
+      const accessories = list.querySelector(`.svc-edit-accessories[data-id="${id}"]`).value.trim();
+      const complaint = list.querySelector(`.svc-edit-complaint[data-id="${id}"]`).value.trim();
+      const errEl = document.getElementById(`bk-svc-edit-err-${id}`);
+      if (!name || !device || !complaint) {
+        if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Nama pelanggan, merk/tipe laptop, dan keluhan wajib diisi.'; }
+        return;
+      }
+      await updateService(id, { customerName: name, customerPhone: phone, device, accessories, complaint });
+      editingServiceDetailId = null;
+      renderService();
+      showToast('Info service diperbarui.');
+    }));
+
+    list.querySelectorAll('.svc-dp-save').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.id;
+      const s = services.find(x => x.id === id);
+      if (!s) return;
+      const input = list.querySelector(`.svc-dp-input[data-id="${id}"]`);
+      const amount = Number(input.value) || 0;
+      if (amount <= 0) { showToast('Isi jumlah DP terlebih dahulu.'); return; }
+      b.disabled = true; b.textContent = 'Menyimpan...';
+      try {
+        const txn = {
+          id: uid(),
+          type: 'penjualan',
+          items: [{ name: `DP Service Laptop - ${s.device} (${id.slice(0,6)})`, qty: 1, unit: 'jasa', price: amount }],
+          total: amount,
+          customerName: s.customerName,
+          customerPhone: s.customerPhone,
+          supplierName: '',
+          paid: true,
+          createdAt: Date.now(),
+        };
+        await saveTxn(txn);
+        txns.unshift(txn);
+        s.dpAmount = amount;
+        s.dpTxnId = txn.id;
+        s.updatedAt = Date.now();
+        s.history = s.history || [];
+        s.history.push({ status: `DP diterima: ${rupiah(amount)}`, at: Date.now() });
+        await saveService(s);
+        renderService();
+        showToast('DP tercatat sebagai pemasukan.');
+      } catch (e) {
+        console.error(e);
+        showToast('Gagal mencatat DP, coba lagi.');
+        b.disabled = false; b.textContent = 'Catat DP';
+      }
+    }));
+
+    list.querySelectorAll('.svc-dp-remove').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.id;
+      const s = services.find(x => x.id === id);
+      if (!s) return;
+      showConfirm(`Batalkan DP sebesar ${rupiah(s.dpAmount)}? Transaksi pemasukan DP ini akan ikut dihapus.`, async () => {
+        try {
+          if (s.dpTxnId) {
+            try { await deleteTxnFromStore(s.dpTxnId); } catch (e) { /* mungkin sudah terhapus */ }
+            txns = txns.filter(x => x.id !== s.dpTxnId);
+          }
+          s.dpAmount = 0;
+          s.dpTxnId = null;
+          s.updatedAt = Date.now();
+          s.history = s.history || [];
+          s.history.push({ status: 'DP dibatalkan', at: Date.now() });
+          await saveService(s);
+          renderService();
+          showToast('DP dibatalkan.');
+        } catch (e) {
+          console.error(e);
+          showToast('Gagal membatalkan DP, coba lagi.');
+        }
+      });
+    }));
+
+    list.querySelectorAll('.act-diagnosa').forEach(b => b.addEventListener('click', () => advanceServiceStatus(b.dataset.id, 'diagnosa')));
+
+    list.querySelectorAll('.act-kirim-estimasi').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.id;
+      const note = list.querySelector(`.svc-diag-note[data-id="${id}"]`).value;
+      const est = list.querySelector(`.svc-diag-est[data-id="${id}"]`).value;
+      await updateService(id, { catatanDiagnosa: note, estimasiBiaya: Number(est) || 0 });
+      await advanceServiceStatus(id, 'menunggu_konfirmasi', false);
+      renderService();
+      sendServiceWhatsapp(id, 'estimasi');
+    }));
+
+    list.querySelectorAll('.act-setuju').forEach(b => b.addEventListener('click', () => advanceServiceStatus(b.dataset.id, 'dikerjakan')));
+    list.querySelectorAll('.act-revisi').forEach(b => b.addEventListener('click', () => advanceServiceStatus(b.dataset.id, 'diagnosa')));
+
+    list.querySelectorAll('.svc-part-row').forEach(row => {
+      const sid = row.dataset.svc, pid = row.dataset.id;
+      const s = services.find(x => x.id === sid);
+      const part = s && s.parts ? s.parts.find(p => p.id === pid) : null;
+      if (!part) return;
+      row.querySelector('.f-name').addEventListener('input', e => part.name = e.target.value);
+      row.querySelector('.f-qty').addEventListener('input', e => part.qty = e.target.value);
+      row.querySelector('.f-unit').addEventListener('input', e => part.unit = e.target.value);
+      row.querySelector('.rm').addEventListener('click', () => {
+        s.parts = s.parts.filter(p => p.id !== pid);
+        if (!s.parts.length) s.parts.push(blankSvcPart());
+        renderService();
+      });
+    });
+    list.querySelectorAll('.svc-add-part').forEach(b => b.addEventListener('click', () => {
+      const s = services.find(x => x.id === b.dataset.id);
+      if (!s) return;
+      s.parts = s.parts || [];
+      s.parts.push(blankSvcPart());
+      renderService();
+    }));
+
+    list.querySelectorAll('.act-selesai').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.id;
+      const s = services.find(x => x.id === id);
+      if (!s) return;
+      const biayaEl = list.querySelector(`.svc-biaya-final[data-id="${id}"]`);
+      const biaya = Number(biayaEl.value) || 0;
+      const validParts = (s.parts || []).filter(p => p.name && Number(p.qty) > 0)
+        .map(p => ({ name: p.name.trim(), qty: Number(p.qty), unit: (p.unit||'').trim() }));
+
+      let serviceItemName = s.serviceItemName;
+      if (validParts.length) {
+        serviceItemName = `Jasa Service Laptop - ${s.device} (${id.slice(0,6)})`;
+        const prodTxn = {
+          id: uid(),
+          type: 'produksi',
+          bahan: validParts,
+          hasil: [{ name: serviceItemName, qty: 1, unit: 'jasa' }],
+          total: 0,
+          createdAt: Date.now(),
+        };
+        try {
+          await saveTxn(prodTxn);
+          txns.unshift(prodTxn);
+          s.prodTxnId = prodTxn.id;
+        } catch (e) {
+          console.error(e);
+          showToast('Gagal mencatat pemakaian sparepart, coba lagi.');
+          return;
+        }
+      }
+
+      await updateService(id, { biayaFinal: biaya, parts: s.parts, serviceItemName });
+      await advanceServiceStatus(id, 'selesai', false);
+      renderService();
+      sendServiceWhatsapp(id, 'selesai');
+    }));
+
+    list.querySelectorAll('.svc-paid-check').forEach(chk => chk.addEventListener('change', () => {
+      const s = services.find(x => x.id === chk.dataset.id);
+      if (s) s.paid = chk.checked;
+    }));
+
+    list.querySelectorAll('.act-diambil').forEach(b => b.addEventListener('click', () => finalizeServiceAsIncome(b.dataset.id)));
+
+    list.querySelectorAll('.act-wa').forEach(b => b.addEventListener('click', () => sendServiceWhatsapp(b.dataset.id, 'manual')));
+
+    list.querySelectorAll('.svc-del-btn').forEach(b => b.addEventListener('click', () => removeService(b.dataset.id)));
+  }
+
+  async function updateService(id, patch) {
+    const s = services.find(x => x.id === id);
+    if (!s) return;
+    Object.assign(s, patch, { updatedAt: Date.now() });
+    try { await saveService(s); } catch (e) { console.error(e); showToast('Gagal menyimpan perubahan, coba lagi.'); }
+  }
+
+  async function advanceServiceStatus(id, newStatus, rerender = true) {
+    const s = services.find(x => x.id === id);
+    if (!s) return;
+    s.status = newStatus;
+    s.updatedAt = Date.now();
+    s.history = s.history || [];
+    s.history.push({ status: newStatus, at: Date.now() });
+    try {
+      await saveService(s);
+      if (rerender) renderService();
+    } catch (e) {
+      console.error(e);
+      showToast('Gagal memperbarui status, coba lagi.');
+    }
+  }
+
+  async function finalizeServiceAsIncome(id) {
+    const s = services.find(x => x.id === id);
+    if (!s) return;
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    const confirmMsg = s.dpAmount
+      ? `Biaya final ${rupiah(s.biayaFinal)} dikurangi DP ${rupiah(s.dpAmount)} = sisa ${rupiah(sisa)} akan dicatat sebagai pemasukan, dan status ditandai sudah diambil. Lanjutkan?`
+      : `Catat biaya service ${rupiah(s.biayaFinal)} sebagai pemasukan dan tandai sudah diambil?`;
+    showConfirm(confirmMsg, async () => {
+      try {
+        const txn = {
+          id: uid(),
+          type: 'penjualan',
+          items: [{ name: s.serviceItemName || `Jasa Service Laptop - ${s.device}`, qty: 1, unit: 'jasa', price: sisa }],
+          total: sisa,
+          customerName: s.customerName,
+          customerPhone: s.customerPhone,
+          supplierName: '',
+          paid: sisa <= 0 ? true : (s.paid !== false),
+          createdAt: Date.now(),
+        };
+        await saveTxn(txn);
+        txns.unshift(txn);
+        s.linkedTxnId = txn.id;
+        s.paid = txn.paid;
+        s.status = 'diambil';
+        s.updatedAt = Date.now();
+        s.history = s.history || [];
+        s.history.push({ status: 'diambil', at: Date.now() });
+        await saveService(s);
+        renderService();
+        showToast('Service selesai, biaya tercatat di pemasukan.');
+      } catch (e) {
+        console.error(e);
+        showToast('Gagal menyelesaikan data service, coba lagi.');
+      }
+    });
+  }
+
+  async function removeService(id) {
+    const s = services.find(x => x.id === id);
+    if (!s) return;
+    showConfirm('Hapus data service ini? Kalau ada transaksi pemasukan terkait, transaksi itu juga akan ikut terhapus.', async () => {
+      try {
+        if (s.linkedTxnId) {
+          try { await deleteTxnFromStore(s.linkedTxnId); } catch (e) { /* mungkin sudah terhapus */ }
+          txns = txns.filter(x => x.id !== s.linkedTxnId);
+        }
+        if (s.prodTxnId) {
+          try { await deleteTxnFromStore(s.prodTxnId); } catch (e) { /* mungkin sudah terhapus */ }
+          txns = txns.filter(x => x.id !== s.prodTxnId);
+        }
+        if (s.dpTxnId) {
+          try { await deleteTxnFromStore(s.dpTxnId); } catch (e) { /* mungkin sudah terhapus */ }
+          txns = txns.filter(x => x.id !== s.dpTxnId);
+        }
+        await deleteServiceFromStore(id);
+        services = services.filter(x => x.id !== id);
+        renderService();
+        showToast('Data service dihapus.');
+      } catch (e) {
+        console.error(e);
+        showToast('Gagal menghapus data service, coba lagi.');
+      }
+    });
+  }
+
+  function sendServiceWhatsapp(id, context) {
+    const s = services.find(x => x.id === id);
+    if (!s) return;
+    const phoneRaw = (s.customerPhone || '').replace(/[^0-9]/g, '');
+    const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
+    if (!phone) { showToast('Nomor WhatsApp pelanggan belum diisi.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    let msg;
+    if (context === 'estimasi') {
+      msg = `Halo ${s.customerName}, hasil pengecekan laptop ${s.device} di ${storeName}: ${s.catatanDiagnosa || '-'}. Estimasi biaya perbaikan: ${rupiah(s.estimasiBiaya)}. Mohon konfirmasi apakah dilanjutkan ya. Terima kasih!`;
+    } else if (context === 'selesai') {
+      msg = `Halo ${s.customerName}, laptop ${s.device} sudah selesai diservice di ${storeName} dengan biaya ${rupiah(s.biayaFinal)}. Silakan diambil ya, terima kasih!`;
+    } else {
+      msg = `Halo ${s.customerName}, update status service laptop ${s.device} di ${storeName}: ${serviceStatusLabel(s.status)}.`;
+    }
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+
   // ---------- PIUTANG ----------
   function renderPiutang() {
     const unpaid = txns.filter(t => t.type === 'penjualan' && t.paid === false).sort((a,b) => b.createdAt - a.createdAt);
@@ -1483,7 +2278,8 @@ window.storage = {
       const map = {};
       scopedTxns.filter(t => t.type === type).forEach(t => {
         t.items.forEach(i => {
-          const key = i.name.trim();
+          let key = i.name.trim();
+          if (/^Jasa Service Laptop/i.test(key)) key = 'Jasa Service Laptop (semua unit)';
           if (!map[key]) map[key] = { qty: 0, total: 0, unit: i.unit || '' };
           map[key].qty += Number(i.qty) || 0;
           map[key].total += (Number(i.qty)||0) * (Number(i.price)||0);
@@ -1525,7 +2321,8 @@ window.storage = {
     try {
       const before = txns.length;
       await loadTxns();
-      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && !editingTxnId && modalSlot.innerHTML.trim() === '';
+      await loadServices();
+      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && !editingTxnId && modalSlot.innerHTML.trim() === '';
       if (safeToRerender) renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
     } catch (e) {
@@ -1542,6 +2339,7 @@ window.storage = {
     bodyEl.innerHTML = '<div class="bk-empty">Memuat data...</div>';
     await loadStoreName();
     await loadTxns();
+    await loadServices();
     renderTabs();
     renderBody();
     setInterval(() => refreshData(false), 20000);
