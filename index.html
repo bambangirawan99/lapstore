@@ -542,6 +542,47 @@ window.storage = {
   async function saveClosingSnapshot(c) { await window.storage.set('closing:' + c.id, JSON.stringify(c), true); }
   async function deleteClosingFromStore(id) { await window.storage.delete('closing:' + id, true); }
 
+  // ---------- UTANG / KEWAJIBAN ----------
+  const UTANG_JENIS = ['Pinjaman Bank', 'Utang Supplier', 'Utang Lainnya'];
+  let utangList = [];
+  let utangPayments = [];
+  function blankUtangForm() { return { kreditur: '', jenis: UTANG_JENIS[0], nominal: '', keterangan: '' }; }
+  let utangFormState = blankUtangForm();
+
+  async function loadUtang() {
+    utangList = [];
+    try {
+      const listRes = await window.storage.list('utang:', true);
+      const keys = (listRes && listRes.keys) || [];
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) utangList.push(JSON.parse(r.value));
+        } catch (e) { /* skip */ }
+      }
+      utangList.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    } catch (e) { console.error('Gagal memuat utang', e); }
+  }
+  async function saveUtangItem(u) { await window.storage.set('utang:' + u.id, JSON.stringify(u), true); }
+  async function deleteUtangFromStore(id) { await window.storage.delete('utang:' + id, true); }
+
+  async function loadUtangPayments() {
+    utangPayments = [];
+    try {
+      const listRes = await window.storage.list('utang-bayar:', true);
+      const keys = (listRes && listRes.keys) || [];
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) utangPayments.push(JSON.parse(r.value));
+        } catch (e) { /* skip */ }
+      }
+      utangPayments.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    } catch (e) { console.error('Gagal memuat riwayat pembayaran utang', e); }
+  }
+  async function saveUtangPayment(p) { await window.storage.set('utang-bayar:' + p.id, JSON.stringify(p), true); }
+  async function deleteUtangPaymentFromStore(id) { await window.storage.delete('utang-bayar:' + id, true); }
+
   // ---------- SERVICE LAPTOP: state & konstanta ----------
   const SERVICE_STATUSES = [
     { id: 'diterima', label: 'Diterima' },
@@ -2656,6 +2697,10 @@ window.storage = {
       ['Persediaan (nilai stok)', n.persediaan],
       ['Total Aset', n.totalAset],
       [],
+      ['KEWAJIBAN'],
+      ['Utang/Pinjaman', n.kewajiban],
+      ['Total Kewajiban', n.kewajiban],
+      [],
       ['MODAL'],
       ['Modal awal', n.modalAwal],
       ['Laba ditahan (akumulasi)', n.labaDitahan],
@@ -2667,6 +2712,30 @@ window.storage = {
     ];
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Neraca');
     XLSX.writeFile(wb, 'neraca.xlsx');
+  }
+
+  function downloadUtangExcel() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['Utang / Kewajiban'],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      ['Total kewajiban (sisa utang)', computeKewajibanTotal()],
+      [],
+      ['Kreditur', 'Jenis', 'Keterangan', 'Tanggal', 'Nominal awal', 'Sisa utang'],
+      ...utangList.map(u => [u.kreditur, u.jenis, u.keterangan || '', new Date(u.createdAt).toLocaleDateString('id-ID'), u.nominalAwal, u.sisaUtang]),
+      [],
+      ['Riwayat pembayaran'],
+      ['Kreditur', 'Tanggal', 'Nominal dibayar'],
+      ...utangPayments.map(p => {
+        const u = utangList.find(x => x.id === p.utangId);
+        return [u ? u.kreditur : '-', new Date(p.createdAt).toLocaleDateString('id-ID'), p.nominal];
+      }),
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Utang');
+    XLSX.writeFile(wb, 'utang-kewajiban.xlsx');
   }
 
   function downloadArusKasExcel(mKey) {
@@ -2774,7 +2843,7 @@ window.storage = {
       ['Periode', periodLabel],
       ['Dicetak', new Date().toLocaleString('id-ID')],
       [],
-      ['Sheet di file ini: Laba Rugi, Neraca, Arus Kas, Beban Operasional, Stok Bulanan, Per Rekening'],
+      ['Sheet di file ini: Laba Rugi, Neraca, Arus Kas, Beban Operasional, Utang, Stok Bulanan, Per Rekening'],
     ]), 'Ringkasan');
 
     const lr = computeLabaRugiForMonth(mKey);
@@ -2811,6 +2880,10 @@ window.storage = {
       ['Piutang', n.piutang],
       ['Persediaan (nilai stok)', n.persediaan],
       ['Total Aset', n.totalAset],
+      [],
+      ['KEWAJIBAN'],
+      ['Utang/Pinjaman', n.kewajiban],
+      ['Total Kewajiban', n.kewajiban],
       [],
       ['MODAL'],
       ['Modal awal', n.modalAwal],
@@ -2850,6 +2923,21 @@ window.storage = {
       [],
       ['Total', '', '', bebanFiltered.reduce((s,b) => s + (Number(b.nominal)||0), 0)],
     ]), 'Beban Operasional');
+
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      ['UTANG / KEWAJIBAN'],
+      ['Total kewajiban (sisa utang)', computeKewajibanTotal()],
+      [],
+      ['Kreditur', 'Jenis', 'Keterangan', 'Tanggal', 'Nominal awal', 'Sisa utang'],
+      ...utangList.map(u => [u.kreditur, u.jenis, u.keterangan || '', new Date(u.createdAt).toLocaleDateString('id-ID'), u.nominalAwal, u.sisaUtang]),
+      [],
+      ['Riwayat pembayaran'],
+      ['Kreditur', 'Tanggal', 'Nominal dibayar'],
+      ...utangPayments.map(p => {
+        const u = utangList.find(x => x.id === p.utangId);
+        return [u ? u.kreditur : '-', new Date(p.createdAt).toLocaleDateString('id-ID'), p.nominal];
+      }),
+    ]), 'Utang');
 
     const stokMonthForExport = mKey === 'semua' ? (laporanAvailableMonths()[0] || monthKey(Date.now())) : mKey;
     const stokValueData = computeStokValueForMonth(stokMonthForExport);
@@ -2960,6 +3048,8 @@ window.storage = {
     const set = new Set();
     txns.forEach(t => set.add(monthKey(t.createdAt)));
     bebanList.forEach(b => set.add(monthKey(b.createdAt)));
+    utangList.forEach(u => set.add(monthKey(u.createdAt)));
+    utangPayments.forEach(p => set.add(monthKey(p.createdAt)));
     return Array.from(set).sort().reverse();
   }
 
@@ -2970,6 +3060,8 @@ window.storage = {
       if (t.type === 'pembelian') kas -= t.total;
     });
     bebanList.forEach(b => { kas -= Number(b.nominal) || 0; });
+    utangList.forEach(u => { kas += Number(u.nominalAwal) || 0; });
+    utangPayments.forEach(p => { kas -= Number(p.nominal) || 0; });
     return kas;
   }
   function computePiutangTotalLap() {
@@ -2985,13 +3077,18 @@ window.storage = {
     });
     return total;
   }
+  function computeKewajibanTotal() {
+    return utangList.reduce((s,u) => s + (Number(u.sisaUtang)||0), 0);
+  }
   function computeNeraca() {
     const kas = computeKasTotal();
     const piutang = computePiutangTotalLap();
     const persediaan = computePersediaanTotal();
+    const kewajiban = computeKewajibanTotal();
     const totalAset = kas + piutang + persediaan;
-    const labaDitahan = totalAset - modalAwal;
-    return { kas, piutang, persediaan, totalAset, modalAwal, labaDitahan, totalModal: totalAset };
+    const totalModal = totalAset - kewajiban;
+    const labaDitahan = totalModal - modalAwal;
+    return { kas, piutang, persediaan, kewajiban, totalAset, modalAwal, labaDitahan, totalModal };
   }
 
   function computeArusKasForMonth(mKey) {
@@ -3013,6 +3110,17 @@ window.storage = {
       const kategoriLabel = b.kategori === 'Lainnya' && b.kategoriCustom ? b.kategoriCustom : b.kategori;
       outflow.push({ label: `Beban: ${kategoriLabel}${b.keterangan ? ' - '+b.keterangan : ''}`, amount: Number(b.nominal)||0, date: b.createdAt });
     });
+    utangList.forEach(u => {
+      const inMonth = mKey === 'semua' ? true : monthKey(u.createdAt) === mKey;
+      if (!inMonth) return;
+      inflow.push({ label: `Terima pinjaman: ${u.kreditur} (${u.jenis})`, amount: Number(u.nominalAwal)||0, date: u.createdAt });
+    });
+    utangPayments.forEach(p => {
+      const inMonth = mKey === 'semua' ? true : monthKey(p.createdAt) === mKey;
+      if (!inMonth) return;
+      const u = utangList.find(x => x.id === p.utangId);
+      outflow.push({ label: `Bayar cicilan utang: ${u ? u.kreditur : '-'}`, amount: Number(p.nominal)||0, date: p.createdAt });
+    });
     inflow.sort((a,b)=>b.date-a.date);
     outflow.sort((a,b)=>b.date-a.date);
     const totalMasuk = inflow.reduce((s,x)=>s+x.amount,0);
@@ -3029,6 +3137,8 @@ window.storage = {
       }
     });
     bebanList.forEach(b => { if (monthKey(b.createdAt) < mKey) saldo -= (Number(b.nominal)||0); });
+    utangList.forEach(u => { if (monthKey(u.createdAt) < mKey) saldo += (Number(u.nominalAwal)||0); });
+    utangPayments.forEach(p => { if (monthKey(p.createdAt) < mKey) saldo -= (Number(p.nominal)||0); });
     return saldo;
   }
 
@@ -3089,6 +3199,7 @@ window.storage = {
         <div class="bk-chip ${laporanView==='aruskas'?'active':''}" data-lv="aruskas">Arus Kas</div>
         <div class="bk-chip ${laporanView==='neraca'?'active':''}" data-lv="neraca">Neraca &amp; Tutup Buku</div>
         <div class="bk-chip ${laporanView==='beban'?'active':''}" data-lv="beban">Beban Operasional</div>
+        <div class="bk-chip ${laporanView==='utang'?'active':''}" data-lv="utang">Utang/Kewajiban</div>
         <div class="bk-chip ${laporanView==='stokbulanan'?'active':''}" data-lv="stokbulanan">Stok Bulanan</div>
         <div class="bk-chip ${laporanView==='rekening'?'active':''}" data-lv="rekening">Per Rekening</div>
       </div>
@@ -3097,6 +3208,7 @@ window.storage = {
         laporanView === 'aruskas' ? renderArusKasHtml() :
         laporanView === 'neraca' ? renderNeracaHtml() :
         laporanView === 'beban' ? renderBebanHtml() :
+        laporanView === 'utang' ? renderUtangHtml() :
         laporanView === 'stokbulanan' ? renderStokBulananHtml() :
         renderRekeningHtml()
       }</div>
@@ -3110,6 +3222,7 @@ window.storage = {
     if (laporanView === 'aruskas') wireArusKasEvents();
     else if (laporanView === 'neraca') wireNeracaEvents();
     else if (laporanView === 'beban') wireBebanEvents();
+    else if (laporanView === 'utang') wireUtangEvents();
     else if (laporanView === 'stokbulanan') wireStokBulananEvents();
     else if (laporanView === 'rekening') wireRekeningEvents();
   }
@@ -3164,15 +3277,20 @@ window.storage = {
       </div>
 
       <div class="bk-section-title">Aset</div>
-      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Kas</div><div class="sub">Saldo tunai riil (penjualan lunas + DP &minus; pembelian &minus; beban)</div></div><div class="bk-list-amt in">${rupiah(n.kas)}</div></div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Kas</div><div class="sub">Saldo tunai riil (penjualan lunas + DP + pinjaman diterima &minus; pembelian &minus; beban &minus; cicilan utang)</div></div><div class="bk-list-amt in">${rupiah(n.kas)}</div></div>
       <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Piutang</div><div class="sub">Penjualan/service yang belum lunas</div></div><div class="bk-list-amt out">${rupiah(n.piutang)}</div></div>
       <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Persediaan (nilai stok)</div><div class="sub">Modal yang mengendap di stok bahan/laptop/sparepart</div></div><div class="bk-list-amt">${rupiah(n.persediaan)}</div></div>
       <div class="bk-total-line"><div class="t-lbl">Total Aset</div><div class="t-val">${rupiah(n.totalAset)}</div></div>
 
+      <div class="bk-section-title" style="margin-top:18px;">Kewajiban</div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Utang/Pinjaman</div><div class="sub">Sisa utang yang belum dibayar (lihat rincian di tab Utang/Kewajiban)</div></div><div class="bk-list-amt out">${rupiah(n.kewajiban)}</div></div>
+      <div class="bk-total-line"><div class="t-lbl">Total Kewajiban</div><div class="t-val">${rupiah(n.kewajiban)}</div></div>
+
       <div class="bk-section-title" style="margin-top:18px;">Modal</div>
       <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Modal awal</div></div><div class="bk-list-amt">${rupiah(n.modalAwal)}</div></div>
-      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Laba ditahan (akumulasi)</div><div class="sub">Total Aset &minus; Modal awal</div></div><div class="bk-list-amt ${n.labaDitahan>=0?'in':'out'}">${rupiah(n.labaDitahan)}</div></div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Laba ditahan (akumulasi)</div><div class="sub">(Total Aset &minus; Total Kewajiban) &minus; Modal awal</div></div><div class="bk-list-amt ${n.labaDitahan>=0?'in':'out'}">${rupiah(n.labaDitahan)}</div></div>
       <div class="bk-total-line"><div class="t-lbl">Total Modal</div><div class="t-val">${rupiah(n.totalModal)}</div></div>
+      <div class="bk-stok-note" style="margin-top:-10px;">Total Aset = Total Kewajiban + Total Modal.</div>
 
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin:20px 0 18px;">
         <button class="bk-btn primary" id="bk-tutup-buku-btn">Simpan snapshot tutup buku bulan ini</button>
@@ -3231,6 +3349,114 @@ window.storage = {
             showToast('Snapshot dihapus.');
           } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
         });
+      });
+    });
+  }
+
+  function renderUtangHtml() {
+    const totalKewajiban = computeKewajibanTotal();
+    return `
+      <div class="bk-stats" style="margin-bottom:16px; grid-template-columns: 1fr;">
+        <div class="bk-stat out"><div class="lbl">Total kewajiban (sisa utang)</div><div class="val">${rupiah(totalKewajiban)}</div></div>
+      </div>
+      <div class="bk-section-title">Catat utang/pinjaman baru</div>
+      <div class="bk-two-col">
+        <div class="bk-field"><label>Kreditur / pemberi pinjaman</label><input id="bk-utang-kreditur" value="${escapeAttr(utangFormState.kreditur)}" placeholder="Nama bank/orang/supplier" /></div>
+        <div class="bk-field">
+          <label>Jenis</label>
+          <select id="bk-utang-jenis" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
+            ${UTANG_JENIS.map(j => `<option value="${j}" ${utangFormState.jenis===j?'selected':''}>${j}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="bk-field"><label>Nominal pinjaman diterima</label><input id="bk-utang-nominal" type="number" min="0" value="${escapeAttr(utangFormState.nominal)}" placeholder="0" /></div>
+      <div class="bk-field"><label>Keterangan (opsional)</label><input id="bk-utang-ket" value="${escapeAttr(utangFormState.keterangan)}" placeholder="Contoh: modal tambahan renovasi toko" /></div>
+      <div id="bk-utang-err" class="bk-err" style="display:none;"></div>
+      <button class="bk-btn primary" id="bk-utang-save" style="margin-bottom:16px;">Catat utang</button>
+      <button class="bk-btn ghost" id="bk-utang-excel" style="margin-bottom:26px;">Unduh Excel</button>
+
+      <div class="bk-section-title">Daftar utang</div>
+      <div id="bk-utang-list">${utangList.length ? utangList.map(utangRowHtml).join('') : '<div class="bk-empty">Belum ada catatan utang.</div>'}</div>
+    `;
+  }
+
+  function utangRowHtml(u) {
+    const lunas = (Number(u.sisaUtang)||0) <= 0;
+    const payments = utangPayments.filter(p => p.utangId === u.id).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    return `<div class="bk-svc-card" data-utang="${u.id}">
+      <div class="bk-svc-top">
+        <div>
+          <div class="nm">${u.kreditur || 'Tanpa nama'}</div>
+          <div class="sub">${u.jenis}${u.keterangan ? ' - '+u.keterangan : ''} &middot; ${new Date(u.createdAt).toLocaleDateString('id-ID')}</div>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+          <span class="bk-badge ${lunas?'lunas':'belum'}">${lunas?'Lunas':'Aktif'}</span>
+          <div class="bk-icon-btn danger utang-del-btn" title="Hapus utang">&times;</div>
+        </div>
+      </div>
+      <div class="bk-svc-detail"><span class="lbl">Pinjaman awal:</span> ${rupiah(u.nominalAwal)} &middot; <span class="lbl">Sisa:</span> ${rupiah(u.sisaUtang)}</div>
+      ${!lunas ? `
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <input class="utang-bayar-input" type="number" min="0" data-id="${u.id}" placeholder="Jumlah bayar cicilan" style="flex:1; min-width:140px; border:1px solid var(--line); border-radius:8px; padding:8px 11px; font-size:13px; font-family:'Inter',sans-serif;" />
+        <button class="bk-btn accent utang-bayar-btn" data-id="${u.id}">Catat pembayaran</button>
+      </div>` : ''}
+      ${payments.length ? `<div class="bk-svc-timeline">${payments.map(p => `Bayar ${rupiah(p.nominal)} &middot; ${new Date(p.createdAt).toLocaleDateString('id-ID')}`).join(' | ')}</div>` : ''}
+    </div>`;
+  }
+
+  function wireUtangEvents() {
+    document.getElementById('bk-utang-kreditur').addEventListener('input', e => utangFormState.kreditur = e.target.value);
+    document.getElementById('bk-utang-jenis').addEventListener('change', e => utangFormState.jenis = e.target.value);
+    document.getElementById('bk-utang-nominal').addEventListener('input', e => utangFormState.nominal = e.target.value);
+    document.getElementById('bk-utang-ket').addEventListener('input', e => utangFormState.keterangan = e.target.value);
+    document.getElementById('bk-utang-excel').addEventListener('click', downloadUtangExcel);
+    document.getElementById('bk-utang-save').addEventListener('click', async () => {
+      const errEl = document.getElementById('bk-utang-err');
+      const kreditur = utangFormState.kreditur.trim();
+      const nominal = Number(utangFormState.nominal) || 0;
+      if (!kreditur || nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nama kreditur dan nominal pinjaman yang valid.'; return; }
+      errEl.style.display = 'none';
+      const u = { id: uid(), kreditur, jenis: utangFormState.jenis, keterangan: utangFormState.keterangan.trim(), nominalAwal: nominal, sisaUtang: nominal, createdAt: Date.now() };
+      try {
+        await saveUtangItem(u);
+        utangList.unshift(u);
+        utangFormState = blankUtangForm();
+        renderLaporan();
+        showToast('Utang tercatat, kas otomatis bertambah sesuai nominal pinjaman.');
+      } catch (e) { console.error(e); errEl.style.display = 'block'; errEl.textContent = 'Gagal menyimpan utang, coba lagi.'; }
+    });
+    document.querySelectorAll('#bk-utang-list [data-utang]').forEach(card => {
+      const id = card.dataset.utang;
+      const delBtn = card.querySelector('.utang-del-btn');
+      if (delBtn) delBtn.addEventListener('click', () => {
+        showConfirm('Hapus catatan utang ini beserta seluruh riwayat pembayarannya? Ini akan mempengaruhi perhitungan Kas.', async () => {
+          try {
+            await deleteUtangFromStore(id);
+            utangList = utangList.filter(u => u.id !== id);
+            const related = utangPayments.filter(p => p.utangId === id);
+            for (const p of related) { await deleteUtangPaymentFromStore(p.id); }
+            utangPayments = utangPayments.filter(p => p.utangId !== id);
+            renderLaporan();
+            showToast('Utang dihapus.');
+          } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+        });
+      });
+      const bayarBtn = card.querySelector('.utang-bayar-btn');
+      if (bayarBtn) bayarBtn.addEventListener('click', async () => {
+        const input = card.querySelector(`.utang-bayar-input[data-id="${id}"]`);
+        const nominal = Number(input.value) || 0;
+        if (nominal <= 0) { showToast('Isi jumlah pembayaran terlebih dahulu.'); return; }
+        const u = utangList.find(x => x.id === id);
+        if (!u) return;
+        try {
+          const p = { id: uid(), utangId: id, nominal, createdAt: Date.now() };
+          await saveUtangPayment(p);
+          utangPayments.unshift(p);
+          u.sisaUtang = Math.max(0, (Number(u.sisaUtang)||0) - nominal);
+          await saveUtangItem(u);
+          renderLaporan();
+          showToast('Pembayaran utang tercatat.');
+        } catch (e) { console.error(e); showToast('Gagal mencatat pembayaran, coba lagi.'); }
       });
     });
   }
@@ -3409,6 +3635,8 @@ window.storage = {
       await loadServices();
       await loadBeban();
       await loadClosings();
+      await loadUtang();
+      await loadUtangPayments();
       const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && activeTab !== 'laporan' && !editingTxnId && modalSlot.innerHTML.trim() === '';
       if (safeToRerender) renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
@@ -3430,6 +3658,8 @@ window.storage = {
     await loadBeban();
     await loadModalAwal();
     await loadClosings();
+    await loadUtang();
+    await loadUtangPayments();
     renderTabs();
     renderBody();
     setInterval(() => refreshData(false), 20000);
