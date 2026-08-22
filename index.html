@@ -641,7 +641,10 @@ window.storage = {
   let svcSearchQuery = '';
   let editingServiceDetailId = null;
   function blankServiceForm() {
-    return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '', rekening: BANK_ACCOUNTS[0].id };
+    return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '', rekening: BANK_ACCOUNTS[0].id, kodeService: '' };
+  }
+  function generateServiceCode() {
+    return 'SVC-' + Date.now().toString(36).toUpperCase().slice(-6);
   }
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs' }; }
   let serviceFormState = blankServiceForm();
@@ -1388,6 +1391,7 @@ window.storage = {
     lines.push('='.repeat(24));
     lines.push('Nota Service Laptop');
     lines.push('');
+    if (s.kodeService) lines.push(`Kode Service: ${s.kodeService}`);
     lines.push(`Pelanggan: ${s.customerName || '-'}`);
     lines.push(`Perangkat: ${s.device || '-'}`);
     lines.push(`Keluhan: ${s.complaint || '-'}`);
@@ -1417,6 +1421,7 @@ window.storage = {
           <div class="bk-receipt" id="bk-receipt-card">
             <div class="r-store">${storeName}</div>
             <div class="r-sub">Nota Service Laptop</div>
+            ${s.kodeService ? `<div class="r-sub" style="font-weight:700;">${escapeAttr(s.kodeService)}</div>` : ''}
             <hr/>
             <div class="r-item">
               <div class="r-item-top"><span>Pelanggan</span><span>${s.customerName || '-'}</span></div>
@@ -2081,11 +2086,16 @@ window.storage = {
     const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
     const pool = services.filter(s => s.status !== 'diambil');
     const filtered = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
+    if (!serviceFormState.kodeService) serviceFormState.kodeService = generateServiceCode();
     return `
       <div class="bk-section-title">Terima service baru</div>
       <div class="bk-quickai">
         <input id="bk-svc-quick-input" placeholder="Tulis bebas, mis: laptop Asus A455L milik Budi 081234567890, mati total tidak bisa cas, estimasi 250rb" />
         <button class="bk-btn accent" id="bk-svc-quick-btn">Isi otomatis (AI)</button>
+      </div>
+      <div class="bk-field">
+        <label>Kode Service (otomatis, bisa diganti kalau pakai tag/barcode sendiri)</label>
+        <input id="bk-svc-kode" value="${escapeAttr(serviceFormState.kodeService)}" placeholder="SVC-XXXXXX" style="font-family:'IBM Plex Mono',monospace;" />
       </div>
       <div class="bk-two-col">
         <div class="bk-field"><label>Nama pelanggan</label><input id="bk-svc-name" value="${escapeAttr(serviceFormState.customerName)}" placeholder="Nama pelanggan" /></div>
@@ -2116,6 +2126,7 @@ window.storage = {
   }
 
   function wireServiceAktifEvents() {
+    document.getElementById('bk-svc-kode').addEventListener('input', e => serviceFormState.kodeService = e.target.value);
     document.getElementById('bk-svc-name').addEventListener('input', e => serviceFormState.customerName = e.target.value);
     document.getElementById('bk-svc-phone').addEventListener('input', e => serviceFormState.customerPhone = e.target.value);
     document.getElementById('bk-svc-device').addEventListener('input', e => serviceFormState.device = e.target.value);
@@ -2148,7 +2159,7 @@ window.storage = {
     const months = svcAvailableMonths();
     const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
     const q = svcSearchQuery.trim().toLowerCase();
-    const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q)) : byMonth;
+    const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
     const totalPendapatan = byMonth.reduce((sum,s) => sum + (Number(s.biayaFinal)||0), 0);
 
     return `
@@ -2161,8 +2172,8 @@ window.storage = {
           </select>
         </div>
         <div class="bk-field" style="margin-bottom:0;">
-          <label>Cari nama pelanggan / device</label>
-          <input id="bk-svc-search" value="${escapeAttr(svcSearchQuery)}" placeholder="Contoh: Budi / Asus A455L" />
+          <label>Cari kode service / nama pelanggan / device</label>
+          <input id="bk-svc-search" value="${escapeAttr(svcSearchQuery)}" placeholder="Contoh: SVC-ABC123 / Budi / Asus A455L" />
         </div>
       </div>
       <div class="bk-stats" style="margin-bottom:16px;">
@@ -2177,7 +2188,7 @@ window.storage = {
     const done = services.filter(s => s.status === 'diambil').sort((a,b) => svcCompletedAt(b) - svcCompletedAt(a));
     const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
     const q = svcSearchQuery.trim().toLowerCase();
-    const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q)) : byMonth;
+    const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
     const listEl = document.getElementById('bk-svc-list');
     if (listEl) listEl.innerHTML = filtered.length ? filtered.map(serviceCardHtml).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>';
     const totalPendapatan = byMonth.reduce((sum,s) => sum + (Number(s.biayaFinal)||0), 0);
@@ -2236,6 +2247,7 @@ window.storage = {
     errEl.style.display = 'none';
     const s = {
       id: uid(),
+      kodeService: (serviceFormState.kodeService || generateServiceCode()).trim(),
       customerName: name,
       customerPhone: serviceFormState.customerPhone.trim(),
       device,
@@ -2326,6 +2338,7 @@ window.storage = {
     const isEditingDetail = editingServiceDetailId === s.id;
 
     const topInfoHtml = isEditingDetail ? `
+      <input class="svc-edit-kode" data-id="${s.id}" value="${escapeAttr(s.kodeService || '')}" placeholder="Kode Service" style="width:100%; margin-bottom:8px; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'IBM Plex Mono',monospace;" />
       <div class="bk-two-col" style="margin-bottom:8px;">
         <input class="svc-edit-name" data-id="${s.id}" value="${escapeAttr(s.customerName)}" placeholder="Nama pelanggan" />
         <input class="svc-edit-phone" data-id="${s.id}" value="${escapeAttr(s.customerPhone)}" placeholder="No. WhatsApp" />
@@ -2344,6 +2357,7 @@ window.storage = {
         <button class="bk-btn ghost svc-cancel-detail" data-id="${s.id}">Batal</button>
       </div>
     ` : `
+      ${s.kodeService ? `<div class="mono" style="display:inline-block; font-size:11px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:3px 9px; border-radius:6px; margin-bottom:6px;">${escapeAttr(s.kodeService)}</div>` : ''}
       <div class="nm">${s.customerName} &middot; ${s.device}</div>
       <div class="sub">${s.complaint}${s.accessories ? ' &middot; Kelengkapan: '+s.accessories : ''}</div>
       <div class="sub">${new Date(s.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(s)}</div>
@@ -2410,6 +2424,7 @@ window.storage = {
     }));
     list.querySelectorAll('.svc-save-detail').forEach(b => b.addEventListener('click', async () => {
       const id = b.dataset.id;
+      const kodeService = list.querySelector(`.svc-edit-kode[data-id="${id}"]`).value.trim();
       const name = list.querySelector(`.svc-edit-name[data-id="${id}"]`).value.trim();
       const phone = list.querySelector(`.svc-edit-phone[data-id="${id}"]`).value.trim();
       const device = list.querySelector(`.svc-edit-device[data-id="${id}"]`).value.trim();
@@ -2421,7 +2436,7 @@ window.storage = {
         if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Nama pelanggan, merk/tipe laptop, dan keluhan wajib diisi.'; }
         return;
       }
-      await updateService(id, { customerName: name, customerPhone: phone, device, accessories, complaint, rekening });
+      await updateService(id, { kodeService, customerName: name, customerPhone: phone, device, accessories, complaint, rekening });
       editingServiceDetailId = null;
       renderService();
       showToast('Info service diperbarui.');
@@ -2680,13 +2695,14 @@ window.storage = {
     const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
     if (!phone) { showToast('Nomor WhatsApp pelanggan belum diisi.'); return; }
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const kodeRef = s.kodeService ? ` (Kode: ${s.kodeService})` : '';
     let msg;
     if (context === 'estimasi') {
-      msg = `Halo ${s.customerName}, hasil pengecekan laptop ${s.device} di ${storeName}: ${s.catatanDiagnosa || '-'}. Estimasi biaya perbaikan: ${rupiah(s.estimasiBiaya)}. Mohon konfirmasi apakah dilanjutkan ya. Terima kasih!`;
+      msg = `Halo ${s.customerName}, hasil pengecekan laptop ${s.device}${kodeRef} di ${storeName}: ${s.catatanDiagnosa || '-'}. Estimasi biaya perbaikan: ${rupiah(s.estimasiBiaya)}. Mohon konfirmasi apakah dilanjutkan ya. Terima kasih!`;
     } else if (context === 'selesai') {
-      msg = `Halo ${s.customerName}, laptop ${s.device} sudah selesai diservice di ${storeName} dengan biaya ${rupiah(s.biayaFinal)}. Silakan diambil ya, terima kasih!`;
+      msg = `Halo ${s.customerName}, laptop ${s.device}${kodeRef} sudah selesai diservice di ${storeName} dengan biaya ${rupiah(s.biayaFinal)}. Silakan diambil ya, terima kasih!`;
     } else {
-      msg = `Halo ${s.customerName}, update status service laptop ${s.device} di ${storeName}: ${serviceStatusLabel(s.status)}.`;
+      msg = `Halo ${s.customerName}, update status service laptop ${s.device}${kodeRef} di ${storeName}: ${serviceStatusLabel(s.status)}.`;
     }
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
   }
@@ -3849,7 +3865,7 @@ window.storage = {
       return haystack.includes(q);
     }).sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
 
-    const matchedServices = services.filter(s => `${s.customerName||''} ${s.device||''} ${s.complaint||''}`.toLowerCase().includes(q))
+    const matchedServices = services.filter(s => `${s.kodeService||''} ${s.customerName||''} ${s.device||''} ${s.complaint||''}`.toLowerCase().includes(q))
       .sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
 
     const matchedBeban = bebanList.filter(b => {
@@ -3902,7 +3918,7 @@ window.storage = {
   function cariServiceRowHtml(s) {
     return `<div class="bk-list-row-wrap">
       <div class="bk-list-row">
-        <div class="bk-list-left"><div class="nm">${s.customerName || 'Tanpa nama'} &middot; ${s.device || '-'}</div><div class="sub">${s.complaint || ''} &middot; ${serviceStatusLabel(s.status)}</div></div>
+        <div class="bk-list-left"><div class="nm">${s.kodeService ? `<span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-right:6px;">${escapeAttr(s.kodeService)}</span>` : ''}${s.customerName || 'Tanpa nama'} &middot; ${s.device || '-'}</div><div class="sub">${s.complaint || ''} &middot; ${serviceStatusLabel(s.status)}</div></div>
       </div>
       <div class="bk-row-actions"><button class="bk-btn ghost cari-open-service" data-id="${s.id}" data-status="${s.status}" style="padding:6px 12px; font-size:12px;">Buka</button></div>
     </div>`;
