@@ -1156,10 +1156,27 @@ window.storage = {
       return;
     }
     errEl.style.display = 'none';
+    const isEdit = !!editingTxnId;
+
+    if (type === 'penjualan') {
+      const stockMap = isEdit ? computeStockExcluding(editingTxnId) : computeStock();
+      const kurang = [];
+      validItems.forEach(i => {
+        const avail = getAvailableQty(stockMap, i.name);
+        if (Number(i.qty) > avail) {
+          kurang.push(`${i.name} (stok tersisa ${avail}${i.unit ? ' '+i.unit : ''}, diminta ${i.qty})`);
+        }
+      });
+      if (kurang.length) {
+        errEl.style.display = 'block';
+        errEl.textContent = `Stok tidak cukup untuk: ${kurang.join('; ')}. Cek tab Stok atau catat pembelian dulu.`;
+        return;
+      }
+    }
+
     const itemsTotal = validItems.reduce((s,i) => s + Number(i.qty) * Number(i.price), 0);
     const ongkosKirim = type === 'pembelian' ? (Number(st.ongkosKirim) || 0) : 0;
     const total = itemsTotal + ongkosKirim;
-    const isEdit = !!editingTxnId;
     const existing = isEdit ? txns.find(x => x.id === editingTxnId) : null;
     const txn = {
       id: isEdit ? editingTxnId : uid(),
@@ -1678,6 +1695,35 @@ window.storage = {
     return stockMap;
   }
 
+  // Sama seperti computeStock, tapi mengabaikan satu transaksi tertentu (dipakai saat validasi stok pada mode edit,
+  // supaya kuantitas transaksi yang sedang diedit itu sendiri tidak ikut menghalangi/menghitung dobel).
+  function computeStockExcluding(txnId) {
+    const stockMap = {};
+    function addQty(name, unit, delta) {
+      const key = (name || '').trim().toLowerCase();
+      if (!key) return;
+      if (!stockMap[key]) stockMap[key] = { name: name.trim(), unit: unit || '', qty: 0 };
+      stockMap[key].qty += delta;
+      if (unit) stockMap[key].unit = unit;
+    }
+    txns.forEach(t => {
+      if (t.id === txnId) return;
+      if (t.type === 'pembelian') {
+        t.items.forEach(i => addQty(i.name, i.unit, Number(i.qty) || 0));
+      } else if (t.type === 'penjualan') {
+        t.items.forEach(i => addQty(i.name, i.unit, -(Number(i.qty) || 0)));
+      } else if (t.type === 'produksi') {
+        (t.bahan || []).forEach(i => addQty(i.name, i.unit, -(Number(i.qty) || 0)));
+        (t.hasil || []).forEach(i => addQty(i.name, i.unit, Number(i.qty) || 0));
+      }
+    });
+    return stockMap;
+  }
+  function getAvailableQty(stockMap, name) {
+    const key = (name || '').trim().toLowerCase();
+    return stockMap[key] ? stockMap[key].qty : 0;
+  }
+
   // ---------- HPP (Harga Pokok Penjualan) via metode rata-rata bergerak ----------
   function computeHPP() {
     const sorted = [...txns].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -2031,6 +2077,21 @@ window.storage = {
     }
     errEl.style.display = 'none';
     const isEdit = !!editingTxnId;
+
+    const stockMapProd = isEdit ? computeStockExcluding(editingTxnId) : computeStock();
+    const kurangBahan = [];
+    validBahan.forEach(i => {
+      const avail = getAvailableQty(stockMapProd, i.name);
+      if (Number(i.qty) > avail) {
+        kurangBahan.push(`${i.name} (stok tersisa ${avail}${i.unit ? ' '+i.unit : ''}, diminta ${i.qty})`);
+      }
+    });
+    if (kurangBahan.length) {
+      errEl.style.display = 'block';
+      errEl.textContent = `Stok bahan baku tidak cukup untuk: ${kurangBahan.join('; ')}. Cek tab Stok atau catat pembelian dulu.`;
+      return;
+    }
+
     const existing = isEdit ? txns.find(x => x.id === editingTxnId) : null;
     const txn = {
       id: isEdit ? editingTxnId : uid(),
@@ -2552,6 +2613,22 @@ window.storage = {
       const biaya = Number(biayaEl.value) || 0;
       const validParts = (s.parts || []).filter(p => p.name && Number(p.qty) > 0)
         .map(p => ({ name: p.name.trim(), qty: Number(p.qty), unit: (p.unit||'').trim() }));
+
+      if (validParts.length) {
+        const stockMapSvc = computeStock();
+        const kurangParts = [];
+        validParts.forEach(p => {
+          const avail = getAvailableQty(stockMapSvc, p.name);
+          if (p.qty > avail) {
+            kurangParts.push(`${p.name} (stok tersisa ${avail}${p.unit ? ' '+p.unit : ''}, diminta ${p.qty})`);
+          }
+        });
+        if (kurangParts.length) {
+          showToast(`Stok sparepart tidak cukup untuk: ${kurangParts.join('; ')}. Cek tab Stok atau catat pembelian dulu.`);
+          return;
+        }
+      }
+
       const partsInfo = validParts.length ? ` Sparepart yang dipakai (${validParts.map(p=>p.name).join(', ')}) akan otomatis mengurangi Stok.` : '';
       showConfirm(`Tandai service "${s.customerName}" (${s.device}) selesai dikerjakan dengan biaya final ${rupiah(biaya)}?${partsInfo}`, async () => {
       let serviceItemName = s.serviceItemName;
