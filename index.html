@@ -392,6 +392,7 @@
 <div id="bk-modal-slot"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 // ====== KONFIGURASI SUPABASE (WAJIB DIISI SEBELUM DEPLOY) ======
@@ -1287,7 +1288,10 @@ window.storage = {
         <div class="bk-stat out"><div class="lbl">HPP (estimasi)</div><div class="val">${rupiah(hppBulan)}</div></div>
         <div class="bk-stat in"><div class="lbl">Laba kotor</div><div class="val" style="color:${labaKotorBulan>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(labaKotorBulan)}</div></div>
       </div>
-      <button class="bk-btn accent" id="bk-download-lr" style="margin-bottom:18px;">Unduh laporan laba rugi (PDF)</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
+        <button class="bk-btn accent" id="bk-download-lr">Unduh laporan laba rugi (PDF)</button>
+        <button class="bk-btn ghost" id="bk-download-lr-excel">Unduh Excel</button>
+      </div>
       <div class="bk-filter">
         <div class="bk-chip ${riwayatFilter==='semua'?'active':''}" data-f="semua">Semua</div>
         <div class="bk-chip ${riwayatFilter==='penjualan'?'active':''}" data-f="penjualan">Penjualan</div>
@@ -1305,6 +1309,7 @@ window.storage = {
     `;
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
     document.getElementById('bk-download-lr').addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
+    document.getElementById('bk-download-lr-excel').addEventListener('click', () => downloadLabaRugiExcel(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
     bodyEl.querySelectorAll('.bk-chip').forEach(c => c.addEventListener('click', () => { riwayatFilter = c.dataset.f; selectedTxnIds.clear(); renderRiwayat(); }));
     bodyEl.querySelectorAll('.bk-list-row-wrap').forEach(w => {
       const id = w.dataset.txn;
@@ -2335,6 +2340,314 @@ window.storage = {
     window.open(url, '_blank');
   }
 
+  // ---------- EXPORT EXCEL (Laba Rugi, Neraca, Arus Kas, Beban, Stok Bulanan, Per Rekening) ----------
+  function stripEntities(s) {
+    return String(s || '')
+      .replace(/&middot;/g, ' - ')
+      .replace(/&minus;/g, '-')
+      .replace(/&rarr;/g, '->')
+      .replace(/&amp;/g, '&')
+      .replace(/&mdash;/g, '-');
+  }
+
+  function itemBreakdownRows(scopedTxns, type) {
+    const map = {};
+    scopedTxns.filter(t => t.type === type).forEach(t => {
+      t.items.forEach(i => {
+        let key = i.name.trim();
+        if (/^Jasa Service Laptop/i.test(key)) key = 'Jasa Service Laptop (semua unit)';
+        if (!map[key]) map[key] = { qty: 0, total: 0, unit: i.unit || '' };
+        map[key].qty += Number(i.qty) || 0;
+        map[key].total += (Number(i.qty)||0) * (Number(i.price)||0);
+      });
+    });
+    return Object.entries(map).sort((a,b) => b[1].total - a[1].total).map(([name, r]) => [name, r.qty, r.unit, r.total]);
+  }
+
+  function computeLabaRugiForMonth(mKey) {
+    const byMonth = mKey === 'semua' ? txns : txns.filter(t => monthKey(t.createdAt) === mKey);
+    const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total, 0);
+    const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
+    const hppAll = computeHPP();
+    const hppBulan = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + (hppAll.hppByTxn[t.id] || 0), 0);
+    const labaKotorBulan = masuk - hppBulan;
+    const bebanFiltered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey);
+    const totalBeban = bebanFiltered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
+    const labaBersih = labaKotorBulan - totalBeban;
+    return { byMonth, masuk, keluar, hppBulan, labaKotorBulan, bebanFiltered, totalBeban, labaBersih };
+  }
+
+  function sheetFromAOA(aoa) {
+    return XLSX.utils.aoa_to_sheet(aoa);
+  }
+
+  function downloadLabaRugiExcel(scopeMonth, scopedTxns, masuk, keluar, hppTotal, labaKotor) {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const periodLabel = monthLabel(scopeMonth);
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['Laporan Laba Rugi'],
+      ['Periode', periodLabel],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['Ringkasan arus kas'],
+      ['Pendapatan (Penjualan)', masuk],
+      ['Beban (Pembelian bahan baku)', -keluar],
+      ['Laba/Rugi bersih (arus kas)', masuk - keluar],
+      [],
+      ['Estimasi HPP & laba kotor'],
+      ['Pendapatan (Penjualan)', masuk],
+      ['HPP (Harga Pokok Penjualan)', -(hppTotal||0)],
+      ['Laba kotor', labaKotor||0],
+      [],
+      ['Rincian penjualan per produk'],
+      ['Nama item', 'Jumlah', 'Satuan', 'Total'],
+      ...itemBreakdownRows(scopedTxns, 'penjualan'),
+      [],
+      ['Rincian pembelian per bahan baku'],
+      ['Nama item', 'Jumlah', 'Satuan', 'Total'],
+      ...itemBreakdownRows(scopedTxns, 'pembelian'),
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Laba Rugi');
+    XLSX.writeFile(wb, `laba-rugi-${scopeMonth === 'semua' ? 'semua' : scopeMonth}.xlsx`);
+  }
+
+  function downloadNeracaExcel() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const n = computeNeraca();
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['Neraca'],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['ASET'],
+      ['Kas', n.kas],
+      ['Piutang', n.piutang],
+      ['Persediaan (nilai stok)', n.persediaan],
+      ['Total Aset', n.totalAset],
+      [],
+      ['MODAL'],
+      ['Modal awal', n.modalAwal],
+      ['Laba ditahan (akumulasi)', n.labaDitahan],
+      ['Total Modal', n.totalModal],
+      [],
+      ['Riwayat Tutup Buku'],
+      ['Bulan', 'Total Aset', 'Laba Ditahan', 'Disimpan'],
+      ...closings.map(c => [monthLabel(c.month), c.totalAset, c.labaDitahan, new Date(c.savedAt).toLocaleDateString('id-ID')]),
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Neraca');
+    XLSX.writeFile(wb, 'neraca.xlsx');
+  }
+
+  function downloadArusKasExcel(mKey) {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const data = computeArusKasForMonth(mKey);
+    const saldoAwal = computeSaldoKasSebelum(mKey);
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['Laporan Arus Kas'],
+      ['Periode', mKey === 'semua' ? 'Semua periode' : monthLabel(mKey)],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['Saldo awal', saldoAwal],
+      ['Total kas masuk', data.totalMasuk],
+      ['Total kas keluar', data.totalKeluar],
+      ['Saldo akhir', saldoAwal + data.netKas],
+      [],
+      ['Rincian kas masuk'],
+      ['Keterangan', 'Tanggal', 'Jumlah'],
+      ...data.inflow.map(x => [stripEntities(x.label), new Date(x.date).toLocaleDateString('id-ID'), x.amount]),
+      [],
+      ['Rincian kas keluar'],
+      ['Keterangan', 'Tanggal', 'Jumlah'],
+      ...data.outflow.map(x => [stripEntities(x.label), new Date(x.date).toLocaleDateString('id-ID'), x.amount]),
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Arus Kas');
+    XLSX.writeFile(wb, `arus-kas-${mKey === 'semua' ? 'semua' : mKey}.xlsx`);
+  }
+
+  function downloadBebanExcel(mKey) {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const filtered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey);
+    const total = filtered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['Beban Operasional'],
+      ['Periode', mKey === 'semua' ? 'Semua periode' : monthLabel(mKey)],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['Kategori', 'Keterangan', 'Tanggal', 'Nominal'],
+      ...filtered.map(b => [(b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori, b.keterangan || '', new Date(b.createdAt).toLocaleDateString('id-ID'), Number(b.nominal)||0]),
+      [],
+      ['Total', '', '', total],
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Beban Operasional');
+    XLSX.writeFile(wb, `beban-operasional-${mKey === 'semua' ? 'semua' : mKey}.xlsx`);
+  }
+
+  function downloadStokBulananExcel(mKey) {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const rows = computeStokBulanan(mKey);
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['Stok Bulanan'],
+      ['Periode', monthLabel(mKey)],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['Nama item', 'Satuan', 'Stok awal', 'Masuk', 'Keluar', 'Stok akhir'],
+      ...rows.map(r => [r.name, r.unit, r.awal, r.masuk, r.keluar, r.akhir]),
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Stok Bulanan');
+    XLSX.writeFile(wb, `stok-bulanan-${mKey}.xlsx`);
+  }
+
+  function downloadRekeningExcel() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const byAccount = computeRekeningReport();
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['Laporan Per Rekening'],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+    ];
+    BANK_ACCOUNTS.forEach(acc => {
+      const d = byAccount[acc.id];
+      aoa.push([`${acc.label} (${acc.nomor})`]);
+      aoa.push(['Total masuk', d.total]);
+      aoa.push(['Nama pelanggan', 'Tanggal', 'Jumlah']);
+      d.transactions.forEach(t => aoa.push([t.customerName || 'Tanpa nama', new Date(t.createdAt).toLocaleDateString('id-ID'), t.total]));
+      aoa.push([]);
+    });
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Per Rekening');
+    XLSX.writeFile(wb, 'laporan-per-rekening.xlsx');
+  }
+
+  function downloadLaporanExcelLengkap() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const mKey = laporanBulan;
+    const periodLabel = mKey === 'semua' ? 'Semua periode' : monthLabel(mKey);
+    const wb = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      [storeName],
+      ['Laporan Keuangan Lengkap'],
+      ['Periode', periodLabel],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['Sheet di file ini: Laba Rugi, Neraca, Arus Kas, Beban Operasional, Stok Bulanan, Per Rekening'],
+    ]), 'Ringkasan');
+
+    const lr = computeLabaRugiForMonth(mKey);
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      ['LAPORAN LABA RUGI', periodLabel],
+      [],
+      ['Ringkasan arus kas'],
+      ['Pendapatan (Penjualan)', lr.masuk],
+      ['Beban (Pembelian bahan baku)', -lr.keluar],
+      ['Laba/Rugi bersih (arus kas)', lr.masuk - lr.keluar],
+      [],
+      ['Estimasi HPP & laba kotor'],
+      ['Pendapatan (Penjualan)', lr.masuk],
+      ['HPP (Harga Pokok Penjualan)', -lr.hppBulan],
+      ['Laba kotor', lr.labaKotorBulan],
+      ['Beban operasional', -lr.totalBeban],
+      ['Laba bersih', lr.labaBersih],
+      [],
+      ['Rincian penjualan per produk'],
+      ['Nama item', 'Jumlah', 'Satuan', 'Total'],
+      ...itemBreakdownRows(lr.byMonth, 'penjualan'),
+      [],
+      ['Rincian pembelian per bahan baku'],
+      ['Nama item', 'Jumlah', 'Satuan', 'Total'],
+      ...itemBreakdownRows(lr.byMonth, 'pembelian'),
+    ]), 'Laba Rugi');
+
+    const n = computeNeraca();
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      ['NERACA'],
+      [],
+      ['ASET'],
+      ['Kas', n.kas],
+      ['Piutang', n.piutang],
+      ['Persediaan (nilai stok)', n.persediaan],
+      ['Total Aset', n.totalAset],
+      [],
+      ['MODAL'],
+      ['Modal awal', n.modalAwal],
+      ['Laba ditahan (akumulasi)', n.labaDitahan],
+      ['Total Modal', n.totalModal],
+      [],
+      ['Riwayat Tutup Buku'],
+      ['Bulan', 'Total Aset', 'Laba Ditahan', 'Disimpan'],
+      ...closings.map(c => [monthLabel(c.month), c.totalAset, c.labaDitahan, new Date(c.savedAt).toLocaleDateString('id-ID')]),
+    ]), 'Neraca');
+
+    const ak = computeArusKasForMonth(mKey);
+    const saldoAwal = computeSaldoKasSebelum(mKey);
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      ['ARUS KAS', periodLabel],
+      [],
+      ['Saldo awal', saldoAwal],
+      ['Total kas masuk', ak.totalMasuk],
+      ['Total kas keluar', ak.totalKeluar],
+      ['Saldo akhir', saldoAwal + ak.netKas],
+      [],
+      ['Rincian kas masuk'],
+      ['Keterangan', 'Tanggal', 'Jumlah'],
+      ...ak.inflow.map(x => [stripEntities(x.label), new Date(x.date).toLocaleDateString('id-ID'), x.amount]),
+      [],
+      ['Rincian kas keluar'],
+      ['Keterangan', 'Tanggal', 'Jumlah'],
+      ...ak.outflow.map(x => [stripEntities(x.label), new Date(x.date).toLocaleDateString('id-ID'), x.amount]),
+    ]), 'Arus Kas');
+
+    const bebanFiltered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey);
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      ['BEBAN OPERASIONAL', periodLabel],
+      [],
+      ['Kategori', 'Keterangan', 'Tanggal', 'Nominal'],
+      ...bebanFiltered.map(b => [(b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori, b.keterangan || '', new Date(b.createdAt).toLocaleDateString('id-ID'), Number(b.nominal)||0]),
+      [],
+      ['Total', '', '', bebanFiltered.reduce((s,b) => s + (Number(b.nominal)||0), 0)],
+    ]), 'Beban Operasional');
+
+    const stokMonthForExport = mKey === 'semua' ? (laporanAvailableMonths()[0] || monthKey(Date.now())) : mKey;
+    const stokRows = computeStokBulanan(stokMonthForExport);
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      ['STOK BULANAN', monthLabel(stokMonthForExport)],
+      [],
+      ['Nama item', 'Satuan', 'Stok awal', 'Masuk', 'Keluar', 'Stok akhir'],
+      ...stokRows.map(r => [r.name, r.unit, r.awal, r.masuk, r.keluar, r.akhir]),
+    ]), 'Stok Bulanan');
+
+    const byAccount = computeRekeningReport();
+    const rekAoa = [['PER REKENING'], []];
+    BANK_ACCOUNTS.forEach(acc => {
+      const d = byAccount[acc.id];
+      rekAoa.push([`${acc.label} (${acc.nomor})`]);
+      rekAoa.push(['Total masuk', d.total]);
+      rekAoa.push(['Nama pelanggan', 'Tanggal', 'Jumlah']);
+      d.transactions.forEach(t => rekAoa.push([t.customerName || 'Tanpa nama', new Date(t.createdAt).toLocaleDateString('id-ID'), t.total]));
+      rekAoa.push([]);
+    });
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(rekAoa), 'Per Rekening');
+
+    XLSX.writeFile(wb, `laporan-keuangan-lengkap-${mKey === 'semua' ? 'semua' : mKey}.xlsx`);
+  }
+
   // ---------- LAPORAN LABA RUGI (PDF) ----------
   function downloadLabaRugi(scopeMonth, scopedTxns, masuk, keluar, hppTotal, labaKotor) {
     if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
@@ -2544,13 +2857,14 @@ window.storage = {
 
   function renderLaporan() {
     bodyEl.innerHTML = `
-      <div class="bk-filter" style="margin-bottom:18px;">
+      <div class="bk-filter" style="margin-bottom:14px;">
         <div class="bk-chip ${laporanView==='aruskas'?'active':''}" data-lv="aruskas">Arus Kas</div>
         <div class="bk-chip ${laporanView==='neraca'?'active':''}" data-lv="neraca">Neraca &amp; Tutup Buku</div>
         <div class="bk-chip ${laporanView==='beban'?'active':''}" data-lv="beban">Beban Operasional</div>
         <div class="bk-chip ${laporanView==='stokbulanan'?'active':''}" data-lv="stokbulanan">Stok Bulanan</div>
         <div class="bk-chip ${laporanView==='rekening'?'active':''}" data-lv="rekening">Per Rekening</div>
       </div>
+      <button class="bk-btn primary" id="bk-download-semua-excel" style="margin-bottom:20px;">Unduh semua laporan (Excel, 1 file)</button>
       <div id="bk-laporan-slot">${
         laporanView === 'aruskas' ? renderArusKasHtml() :
         laporanView === 'neraca' ? renderNeracaHtml() :
@@ -2560,6 +2874,7 @@ window.storage = {
       }</div>
     `;
     bodyEl.querySelectorAll('.bk-filter [data-lv]').forEach(c => c.addEventListener('click', () => { laporanView = c.dataset.lv; laporanBulan = 'semua'; renderLaporan(); }));
+    document.getElementById('bk-download-semua-excel').addEventListener('click', downloadLaporanExcelLengkap);
     wireLaporanEvents();
   }
 
@@ -2568,6 +2883,7 @@ window.storage = {
     else if (laporanView === 'neraca') wireNeracaEvents();
     else if (laporanView === 'beban') wireBebanEvents();
     else if (laporanView === 'stokbulanan') wireStokBulananEvents();
+    else if (laporanView === 'rekening') wireRekeningEvents();
   }
 
   function renderArusKasHtml() {
@@ -2584,6 +2900,7 @@ window.storage = {
           ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
       </div>
+      <button class="bk-btn ghost" id="bk-aruskas-excel" style="margin-bottom:14px;">Unduh Excel</button>
       <div class="bk-stats" style="margin-bottom:18px;">
         <div class="bk-stat"><div class="lbl">Saldo awal</div><div class="val">${rupiah(saldoAwal)}</div></div>
         <div class="bk-stat in"><div class="lbl">Kas masuk</div><div class="val">${rupiah(data.totalMasuk)}</div></div>
@@ -2603,6 +2920,7 @@ window.storage = {
   function wireArusKasEvents() {
     const sel = document.getElementById('bk-lap-month');
     if (sel) sel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
+    document.getElementById('bk-aruskas-excel').addEventListener('click', () => downloadArusKasExcel(laporanBulan));
   }
 
   function renderNeracaHtml() {
@@ -2628,7 +2946,10 @@ window.storage = {
       <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Laba ditahan (akumulasi)</div><div class="sub">Total Aset &minus; Modal awal</div></div><div class="bk-list-amt ${n.labaDitahan>=0?'in':'out'}">${rupiah(n.labaDitahan)}</div></div>
       <div class="bk-total-line"><div class="t-lbl">Total Modal</div><div class="t-val">${rupiah(n.totalModal)}</div></div>
 
-      <button class="bk-btn primary" id="bk-tutup-buku-btn" style="margin:20px 0 18px;">Simpan snapshot tutup buku bulan ini</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin:20px 0 18px;">
+        <button class="bk-btn primary" id="bk-tutup-buku-btn">Simpan snapshot tutup buku bulan ini</button>
+        <button class="bk-btn ghost" id="bk-neraca-excel">Unduh Excel</button>
+      </div>
 
       <div class="bk-section-title">Riwayat tutup buku</div>
       <div id="bk-closing-list">${closings.length ? closings.map(closingRowHtml).join('') : '<div class="bk-empty">Belum ada snapshot tutup buku.</div>'}</div>
@@ -2648,6 +2969,7 @@ window.storage = {
     </div>`;
   }
   function wireNeracaEvents() {
+    document.getElementById('bk-neraca-excel').addEventListener('click', downloadNeracaExcel);
     document.getElementById('bk-modal-awal-save').addEventListener('click', async () => {
       const val = Number(document.getElementById('bk-modal-awal-input').value) || 0;
       try {
@@ -2717,6 +3039,7 @@ window.storage = {
       <div class="bk-stats" style="margin-bottom:16px;">
         <div class="bk-stat out"><div class="lbl">Total beban ${mKey==='semua'?'(semua waktu)':('&middot; '+monthLabel(mKey))}</div><div class="val">${rupiah(total)}</div></div>
       </div>
+      <button class="bk-btn ghost" id="bk-beban-excel" style="margin-bottom:14px;">Unduh Excel</button>
       <div id="bk-beban-list">${filtered.length ? filtered.map(bebanRowHtml).join('') : '<div class="bk-empty">Belum ada catatan beban pada periode ini.</div>'}</div>
     `;
   }
@@ -2736,6 +3059,7 @@ window.storage = {
     </div>`;
   }
   function wireBebanEvents() {
+    document.getElementById('bk-beban-excel').addEventListener('click', () => downloadBebanExcel(laporanBulan));
     const katSel = document.getElementById('bk-beban-kategori');
     katSel.addEventListener('change', e => { bebanFormState.kategori = e.target.value; renderLaporan(); });
     if (bebanFormState.kategori === 'Lainnya') {
@@ -2787,6 +3111,7 @@ window.storage = {
           ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
       </div>
+      <button class="bk-btn ghost" id="bk-stokbulanan-excel" data-month="${mKey}" style="margin-bottom:14px;">Unduh Excel</button>
       <div class="bk-stok-note">Stok awal bulan dihitung dari seluruh riwayat transaksi sebelum bulan ini. Kolom Masuk (pembelian &amp; hasil produksi) dan Keluar (penjualan &amp; bahan produksi) khusus bulan yang dipilih.</div>
       <div class="bk-stok-row" style="grid-template-columns: 1fr 70px 70px 70px 70px; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700;">
         <div>Nama item</div><div style="text-align:right;">Awal</div><div style="text-align:right;">Masuk</div><div style="text-align:right;">Keluar</div><div style="text-align:right;">Akhir</div>
@@ -2805,12 +3130,15 @@ window.storage = {
   function wireStokBulananEvents() {
     const sel = document.getElementById('bk-lap-month');
     if (sel) sel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
+    const excelBtn = document.getElementById('bk-stokbulanan-excel');
+    if (excelBtn) excelBtn.addEventListener('click', () => downloadStokBulananExcel(excelBtn.dataset.month));
   }
 
   function renderRekeningHtml() {
     const byAccount = computeRekeningReport();
     return `
       <div class="bk-stok-note">Total uang masuk dihitung dari penjualan/service yang sudah lunas dan tercatat dibayar ke rekening terkait.</div>
+      <button class="bk-btn ghost" id="bk-rekening-excel" style="margin-bottom:16px;">Unduh Excel</button>
       ${BANK_ACCOUNTS.map(acc => {
         const data = byAccount[acc.id];
         return `
@@ -2825,6 +3153,9 @@ window.storage = {
         `;
       }).join('')}
     `;
+  }
+  function wireRekeningEvents() {
+    document.getElementById('bk-rekening-excel').addEventListener('click', downloadRekeningExcel);
   }
 
   // ---------- REFRESH DATA (agar transaksi dari user lain ikut muncul) ----------
