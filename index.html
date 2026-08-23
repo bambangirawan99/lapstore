@@ -1,6 +1,16 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+body {
+  background: linear-gradient(160deg, #060A12 0%, #0F1B33 30%, #1B2A4A 55%, #26406B 78%, #35588C 100%);
+  background-attachment: fixed;
+  padding: 32px 20px;
+}
 #bk-root {
   --paper: #FFFFFF;
   --bg-page: #F5F8FA;
@@ -39,7 +49,8 @@
   background: var(--bg-page);
   border-radius: 12px;
   padding: 0;
-  max-width: 860px;
+  max-width: 900px;
+  width: 100%;
   margin: 0 auto;
   border: 1px solid var(--line);
   overflow: hidden;
@@ -149,7 +160,7 @@
 #bk-root .bk-ai-box::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent3), var(--navy-300), var(--accent2)); }
 #bk-root .bk-ai-box .ai-head { display:flex; align-items:center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 #bk-root .bk-ai-box .ai-title { font-size: 13px; font-weight: 700; color: var(--accent3-ink); }
-#bk-root .bk-ai-box .ai-body { font-size: 13.5px; color: var(--ink); line-height: 1.6; white-space: pre-wrap; }
+#bk-root .bk-ai-box .ai-body { font-size: 13.5px; color: var(--ink); line-height: 1.6; white-space: pre-wrap; max-width: 780px; }
 #bk-root .bk-ai-box .ai-body ul { margin: 6px 0 0 18px; padding: 0; }
 
 #bk-root .bk-section-title { font-family: 'Playfair Display', serif; font-weight: 600; font-size: 18px; margin: 0 0 12px; color: var(--ink); }
@@ -254,7 +265,7 @@
 #bk-root .bk-stok-row:last-child { border-bottom: none; }
 #bk-root .bk-stok-row .qty { font-family: 'IBM Plex Mono', monospace; font-weight: 600; text-align: right; }
 #bk-root .bk-stok-row.low .qty { color: var(--money-out); }
-#bk-root .bk-stok-note { font-size: 12px; color: var(--ink-soft); margin-bottom: 16px; }
+#bk-root .bk-stok-note { font-size: 12px; color: var(--ink-soft); margin-bottom: 16px; max-width: 900px; }
 
 /* Piutang */
 #bk-root .bk-piutang-row { padding: 12px 0; border-bottom: 1px solid var(--line); }
@@ -320,7 +331,8 @@
 #bk-root .bk-svc-dp-box { background: var(--accent2-bg); border: 1px solid var(--accent2); border-radius: 8px; padding: 12px 14px; margin: 10px 0; font-size: 13px; }
 
 @media (max-width: 560px) {
-  #bk-root { border-radius: 0; max-width: 100%; overflow: visible; }
+  body { padding: 0; background: var(--navy-900, #0A0F1C); }
+  #bk-root { border-radius: 0; max-width: 100%; width: 100%; overflow: visible; }
   #bk-root .bk-header { padding: 16px 16px 16px; flex-wrap: wrap; }
   #bk-root .bk-header-left { min-width: 0; }
   #bk-root .bk-logo-mark { width: 32px; height: 32px; border-radius: 8px; }
@@ -374,7 +386,16 @@
   #bk-root .bk-svc-actions .bk-btn { flex: 1 1 auto; min-width: 140px; }
 }
 @media (min-width: 561px) {
-  #bk-root { box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  #bk-root { box-shadow: 0 24px 60px rgba(6,10,18,.35), 0 4px 14px rgba(6,10,18,.15); }
+}
+@media (min-width: 900px) {
+  #bk-root { max-width: 1100px; }
+}
+@media (min-width: 1280px) {
+  #bk-root { max-width: 1320px; }
+}
+@media (min-width: 1600px) {
+  #bk-root { max-width: 1500px; }
 }
 @media print {
   body * { visibility: hidden; }
