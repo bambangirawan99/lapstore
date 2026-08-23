@@ -522,6 +522,11 @@ window.storage = {
 
   document.getElementById('bk-today').textContent = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
+  const OWNER_EMAILS = ['lapstore.laptopstore1@gmail.com'];
+  function isOwner() {
+    return !!(currentUser && currentUser.email && OWNER_EMAILS.map(e => e.toLowerCase()).includes(currentUser.email.toLowerCase()));
+  }
+
   const TABS = [
     { id: 'dashboard', label: 'Ringkasan' },
     { id: 'pembelian', label: 'Catat pembelian' },
@@ -529,9 +534,9 @@ window.storage = {
     { id: 'stok', label: 'Stok' },
     { id: 'produksi', label: 'Produksi' },
     { id: 'service', label: 'Service Laptop' },
-    { id: 'piutang', label: 'Piutang' },
+    { id: 'piutang', label: 'Piutang', ownerOnly: true },
     { id: 'riwayat', label: 'Riwayat' },
-    { id: 'laporan', label: 'Laporan' },
+    { id: 'laporan', label: 'Laporan', ownerOnly: true },
     { id: 'cari', label: 'Cari' },
   ];
   let activeTab = 'dashboard';
@@ -792,7 +797,8 @@ window.storage = {
   }
 
   function renderTabs() {
-    tabsEl.innerHTML = TABS.map(t =>
+    const visibleTabs = TABS.filter(t => !t.ownerOnly || isOwner());
+    tabsEl.innerHTML = visibleTabs.map(t =>
       `<div class="bk-tab ${activeTab===t.id?'active':''}" data-tab="${t.id}">${t.label}</div>`
     ).join('');
     tabsEl.querySelectorAll('.bk-tab').forEach(el => {
@@ -815,6 +821,9 @@ window.storage = {
   }
 
   function renderBody() {
+    if ((activeTab === 'laporan' || activeTab === 'piutang') && !isOwner()) {
+      activeTab = 'dashboard';
+    }
     if (activeTab === 'dashboard') return renderDashboard();
     if (activeTab === 'pembelian') return renderForm('pembelian');
     if (activeTab === 'penjualan') return renderForm('penjualan');
@@ -834,6 +843,17 @@ window.storage = {
     const margin = hpp.totalRevenue > 0 ? (hpp.labaKotor / hpp.totalRevenue * 100) : 0;
     const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0);
     const recent = txns.slice(0, 6);
+    if (!isOwner()) {
+      bodyEl.innerHTML = `
+        <div class="bk-stats">
+          <div class="bk-stat out"><div class="lbl">HPP (estimasi)</div><div class="val">${rupiah(hpp.totalHPP)}</div></div>
+        </div>
+        <div class="bk-stok-note" style="margin-top:-10px;">Laporan keuangan, laba, kas, dan piutang hanya bisa dilihat oleh akun Pemilik. Kamu tetap bisa mencatat transaksi dan melihat harga beli &amp; HPP barang seperti biasa.</div>
+        <div class="bk-section-title">Transaksi terbaru</div>
+        <div id="bk-recent">${recent.length ? recent.map(t2 => rowHtml(t2, false)).join('') : '<div class="bk-empty">Belum ada transaksi. Mulai catat di tab "Catat pembelian" atau "Catat penjualan".</div>'}</div>
+      `;
+      return;
+    }
     bodyEl.innerHTML = `
       <div class="bk-stats">
         <div class="bk-stat in"><div class="lbl">Laba kotor</div><div class="val" style="color:${hpp.labaKotor>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(hpp.labaKotor)}</div></div>
@@ -1667,6 +1687,7 @@ window.storage = {
           ${months.map(m => `<option value="${m}" ${riwayatMonth===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
       </div>
+      ${isOwner() ? `
       <div class="bk-stats" style="margin-bottom:16px;">
         <div class="bk-stat in"><div class="lbl">Pemasukan ${riwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(riwayatMonth))}</div><div class="val">${rupiah(masuk)}</div></div>
         <div class="bk-stat out"><div class="lbl">Pengeluaran ${riwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(riwayatMonth))}</div><div class="val">${rupiah(keluar)}</div></div>
@@ -1678,6 +1699,9 @@ window.storage = {
         <button class="bk-btn accent" id="bk-download-lr">Unduh laporan laba rugi (PDF)</button>
         <button class="bk-btn ghost" id="bk-download-lr-excel">Unduh Excel</button>
       </div>
+      ` : `
+      <div class="bk-stok-note">Ringkasan keuangan &amp; unduh laporan hanya untuk akun Pemilik.</div>
+      `}
       <div class="bk-filter">
         <div class="bk-chip ${riwayatFilter==='semua'?'active':''}" data-f="semua">Semua</div>
         <div class="bk-chip ${riwayatFilter==='penjualan'?'active':''}" data-f="penjualan">Penjualan</div>
@@ -1694,8 +1718,10 @@ window.storage = {
       <div id="bk-riwayat-list">${filtered.length ? filtered.map(riwayatRowHtml).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
     `;
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
-    document.getElementById('bk-download-lr').addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
-    document.getElementById('bk-download-lr-excel').addEventListener('click', () => downloadLabaRugiExcel(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
+    const dlLrBtn = document.getElementById('bk-download-lr');
+    if (dlLrBtn) dlLrBtn.addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
+    const dlLrExcelBtn = document.getElementById('bk-download-lr-excel');
+    if (dlLrExcelBtn) dlLrExcelBtn.addEventListener('click', () => downloadLabaRugiExcel(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
     bodyEl.querySelectorAll('.bk-chip').forEach(c => c.addEventListener('click', () => { riwayatFilter = c.dataset.f; selectedTxnIds.clear(); renderRiwayat(); }));
     bodyEl.querySelectorAll('.bk-list-row-wrap').forEach(w => {
       const id = w.dataset.txn;
@@ -1949,11 +1975,14 @@ window.storage = {
     const adaProduksi = txns.some(t => t.type === 'produksi');
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
+    const showNilai = isOwner();
     const totalNilaiSemua = rows.reduce((s,r) => s + (r.qty > 0 ? r.qty * hpp.getCurrentUnitCost(r.name) : 0), 0);
     bodyEl.innerHTML = `
+      ${showNilai ? `
       <div class="bk-stats" style="margin-bottom:16px; grid-template-columns: 1fr;">
         <div class="bk-stat"><div class="lbl">Total nilai stok saat ini (HPP)</div><div class="val">${rupiah(totalNilaiSemua)}</div></div>
       </div>
+      ` : ''}
       <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
       ${rows.length ? `
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
@@ -1964,7 +1993,7 @@ window.storage = {
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Satuan</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Sisa stok</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">HPP/unit</th>
-              <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Total nilai</th>
+              ${showNilai ? `<th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Total nilai</th>` : ''}
             </tr>
           </thead>
           <tbody>
@@ -1980,7 +2009,7 @@ window.storage = {
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft);">${r.unit || '-'}</td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; ${low ? 'color:var(--money-out);' : ''}">${r.qty.toLocaleString('id-ID')}</td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; color:var(--ink-soft);">${rupiah(unitCost)}</td>
-                <td style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700;">${rupiah(totalNilai)}</td>
+                ${showNilai ? `<td style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700;">${rupiah(totalNilai)}</td>` : ''}
               </tr>`;
             }).join('')}
           </tbody>
@@ -4046,13 +4075,13 @@ window.storage = {
     const matchedServices = services.filter(s => `${s.kodeService||''} ${s.customerName||''} ${s.device||''} ${s.complaint||''}`.toLowerCase().includes(q))
       .sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
 
-    const matchedBeban = bebanList.filter(b => {
+    const matchedBeban = isOwner() ? bebanList.filter(b => {
       const label = (b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori;
       return `${label||''} ${b.keterangan||''}`.toLowerCase().includes(q);
-    }).sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
+    }).sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30) : [];
 
-    const matchedUtang = utangList.filter(u => `${u.kreditur||''} ${u.jenis||''} ${u.keterangan||''}`.toLowerCase().includes(q))
-      .sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
+    const matchedUtang = isOwner() ? utangList.filter(u => `${u.kreditur||''} ${u.jenis||''} ${u.keterangan||''}`.toLowerCase().includes(q))
+      .sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30) : [];
 
     const total = matchedStok.length + matchedTxns.length + matchedServices.length + matchedBeban.length + matchedUtang.length;
     if (total === 0) {
