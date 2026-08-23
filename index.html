@@ -4113,6 +4113,27 @@ window.storage = {
 
   // ---------- LOGIN / AUTH GATE ----------
   let currentUser = null;
+  let idleTimer = null;
+  let idleLogoutTriggered = false;
+  let bgRefreshIntervalId = null;
+  const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 menit tanpa aktivitas
+
+  function resetIdleTimer() {
+    if (!currentUser) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(handleIdleLogout, IDLE_TIMEOUT_MS);
+  }
+  function stopIdleTimer() {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  }
+  async function handleIdleLogout() {
+    if (!currentUser) return;
+    idleLogoutTriggered = true;
+    try { await sbClient.auth.signOut(); } catch (e) { console.error(e); }
+  }
+  ['mousemove', 'mousedown', 'keydown', 'click', 'touchstart', 'scroll'].forEach(evt => {
+    document.addEventListener(evt, resetIdleTimer, { passive: true });
+  });
 
   function renderLoginScreen(errorMsg) {
     document.getElementById('bk-header-actions').style.display = 'none';
@@ -4150,6 +4171,7 @@ window.storage = {
       if (error) throw error;
       currentUser = data.user;
       document.getElementById('bk-header-actions').style.display = 'flex';
+      resetIdleTimer();
       init();
     } catch (e) {
       console.error(e);
@@ -4172,6 +4194,7 @@ window.storage = {
       if (data && data.session) {
         currentUser = data.session.user;
         document.getElementById('bk-header-actions').style.display = 'flex';
+        resetIdleTimer();
         init();
       } else {
         renderLoginScreen();
@@ -4183,7 +4206,11 @@ window.storage = {
     sbClient.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         currentUser = null;
-        renderLoginScreen();
+        stopIdleTimer();
+        if (bgRefreshIntervalId) { clearInterval(bgRefreshIntervalId); bgRefreshIntervalId = null; }
+        const msg = idleLogoutTriggered ? 'Sesi berakhir otomatis karena tidak ada aktivitas selama 5 menit. Silakan masuk lagi untuk keamanan.' : undefined;
+        idleLogoutTriggered = false;
+        renderLoginScreen(msg);
       }
     });
   }
@@ -4201,9 +4228,10 @@ window.storage = {
     await loadModalEntries();
     renderTabs();
     renderBody();
-    setInterval(() => refreshData(false), 20000);
+    if (bgRefreshIntervalId) clearInterval(bgRefreshIntervalId);
+    bgRefreshIntervalId = setInterval(() => refreshData(false), 20000);
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') refreshData(false);
+      if (document.visibilityState === 'visible' && currentUser) refreshData(false);
     });
   }
   bootstrapAuth();
