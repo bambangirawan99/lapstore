@@ -4022,8 +4022,16 @@ window.storage = {
   function renderCariResultsHtml() {
     const q = cariQuery.trim().toLowerCase();
     if (!q) {
-      return '<div class="bk-empty">Ketik kata kunci di atas untuk mulai mencari. Bisa cari nama pelanggan, nama supplier, nama barang, kreditur utang, atau keterangan beban.</div>';
+      return '<div class="bk-empty">Ketik kata kunci di atas untuk mulai mencari. Bisa cari kode barang, kode service, kode transaksi, nama pelanggan, nama barang, kreditur utang, atau keterangan beban.</div>';
     }
+
+    const codeReg = getItemCodeRegistry();
+    const hppData = computeHPP();
+    const matchedStok = Object.values(computeStock()).filter(r => {
+      if (/^Jasa Service Laptop/i.test(r.name)) return false;
+      const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
+      return `${r.name} ${code}`.toLowerCase().includes(q);
+    }).sort((a,b) => a.name.localeCompare(b.name)).slice(0, 30);
 
     const matchedTxns = txns.filter(t => {
       const nameField = t.type === 'penjualan' ? t.customerName : t.supplierName;
@@ -4046,12 +4054,16 @@ window.storage = {
     const matchedUtang = utangList.filter(u => `${u.kreditur||''} ${u.jenis||''} ${u.keterangan||''}`.toLowerCase().includes(q))
       .sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
 
-    const total = matchedTxns.length + matchedServices.length + matchedBeban.length + matchedUtang.length;
+    const total = matchedStok.length + matchedTxns.length + matchedServices.length + matchedBeban.length + matchedUtang.length;
     if (total === 0) {
       return `<div class="bk-empty">Tidak ada hasil untuk "${escapeAttr(cariQuery)}".</div>`;
     }
 
     let html = `<div class="bk-stok-note">Ditemukan ${total} hasil untuk "${escapeAttr(cariQuery)}".</div>`;
+    if (matchedStok.length) {
+      html += `<div class="bk-section-title" style="margin-top:16px; font-size:15px;">Stok Barang (${matchedStok.length})</div>`;
+      html += matchedStok.map(r => cariStokRowHtml(r, codeReg, hppData)).join('');
+    }
     if (matchedTxns.length) {
       html += `<div class="bk-section-title" style="margin-top:16px; font-size:15px;">Transaksi (${matchedTxns.length})</div>`;
       html += matchedTxns.map(cariTxnRowHtml).join('');
@@ -4069,6 +4081,22 @@ window.storage = {
       html += matchedUtang.map(cariUtangRowHtml).join('');
     }
     return html;
+  }
+
+  function cariStokRowHtml(r, codeReg, hppData) {
+    const code = codeReg.byName[r.name.trim().toLowerCase()];
+    const unitCost = hppData.getCurrentUnitCost(r.name);
+    const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
+    const statusBadge = r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '');
+    return `<div class="bk-list-row-wrap">
+      <div class="bk-list-row">
+        <div class="bk-list-left">
+          <div class="nm">${r.name}${code ? ` <span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${statusBadge}</div>
+          <div class="sub">Sisa ${r.qty.toLocaleString('id-ID')} ${r.unit||''} &middot; HPP ${rupiah(unitCost)}/unit &middot; Nilai ${rupiah(totalNilai)}</div>
+        </div>
+      </div>
+      <div class="bk-row-actions"><button class="bk-btn ghost cari-open-stok" style="padding:6px 12px; font-size:12px;">Buka</button></div>
+    </div>`;
   }
 
   function cariTxnRowHtml(t) {
@@ -4146,6 +4174,10 @@ window.storage = {
     document.querySelectorAll('.cari-open-utang').forEach(b => b.addEventListener('click', () => {
       activeTab = 'laporan';
       laporanView = 'utang';
+      renderTabs(); renderBody();
+    }));
+    document.querySelectorAll('.cari-open-stok').forEach(b => b.addEventListener('click', () => {
+      activeTab = 'stok';
       renderTabs(); renderBody();
     }));
   }
