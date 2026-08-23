@@ -710,6 +710,10 @@ window.storage = {
   function generateServiceCode() {
     return 'SVC-' + Date.now().toString(36).toUpperCase().slice(-6);
   }
+  function generateTxnCode(type) {
+    const prefix = type === 'penjualan' ? 'PJ' : type === 'pembelian' ? 'PB' : 'PR';
+    return prefix + '-' + Date.now().toString(36).toUpperCase().slice(-6) + Math.random().toString(36).toUpperCase().slice(2,4);
+  }
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs' }; }
   let serviceFormState = blankServiceForm();
 
@@ -914,12 +918,13 @@ window.storage = {
   }
   function riwayatRowHtml(t) {
     const checked = selectedTxnIds.has(t.id) ? 'checked' : '';
+    const kodeBadge = t.kodeTransaksi ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-left:6px;">${escapeAttr(t.kodeTransaksi)}</span>` : '';
     if (t.type === 'produksi') {
       return `<div class="bk-list-row-wrap" data-txn="${t.id}">
         <input type="checkbox" class="bk-row-check" ${checked} />
         <div class="bk-list-row">
           <div class="bk-list-left">
-            <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span></div>
+            <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span>${kodeBadge}</div>
             <div class="sub">${summarizeProduksi(t)}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
           </div>
           <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>
@@ -938,7 +943,7 @@ window.storage = {
       <input type="checkbox" class="bk-row-check" ${checked} />
       <div class="bk-list-row">
         <div class="bk-list-left">
-          <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}</div>
+          <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
           <div class="sub">${names}${ongkirNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
         </div>
         <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
@@ -1245,6 +1250,7 @@ window.storage = {
     const txn = {
       id: isEdit ? editingTxnId : uid(),
       type,
+      kodeTransaksi: isEdit && existing ? existing.kodeTransaksi : generateTxnCode(type),
       items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim() })),
       total,
       ongkosKirim: type === 'pembelian' ? ongkosKirim : undefined,
@@ -2160,6 +2166,7 @@ window.storage = {
     const txn = {
       id: isEdit ? editingTxnId : uid(),
       type: 'produksi',
+      kodeTransaksi: isEdit && existing ? existing.kodeTransaksi : generateTxnCode('produksi'),
       bahan: validBahan.map(i => ({ name: i.name.trim(), qty: Number(i.qty), unit: i.unit.trim() })),
       hasil: validHasil.map(i => ({ name: i.name.trim(), qty: Number(i.qty), unit: i.unit.trim() })),
       total: 0,
@@ -4005,7 +4012,7 @@ window.storage = {
     bodyEl.innerHTML = `
       <div class="bk-section-title">Cari transaksi, pelanggan, atau catatan lain</div>
       <div class="bk-field">
-        <input id="bk-cari-input" value="${escapeAttr(cariQuery)}" placeholder="Ketik nama pelanggan/supplier, nama barang, kreditur, dll..." style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:10px 14px; font-size:14px; font-family:'Inter',sans-serif;" />
+        <input id="bk-cari-input" value="${escapeAttr(cariQuery)}" placeholder="Ketik kode barang/service/transaksi, nama pelanggan, atau nama barang..." style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:10px 14px; font-size:14px; font-family:'Inter',sans-serif;" />
       </div>
       <div id="bk-cari-results">${renderCariResultsHtml()}</div>
     `;
@@ -4021,9 +4028,10 @@ window.storage = {
     const matchedTxns = txns.filter(t => {
       const nameField = t.type === 'penjualan' ? t.customerName : t.supplierName;
       const itemNames = (t.items||[]).map(i=>i.name).join(' ');
+      const itemCodes = (t.items||[]).map(i=>i.code||'').join(' ');
       const bahanNames = (t.bahan||[]).map(i=>i.name).join(' ');
       const hasilNames = (t.hasil||[]).map(i=>i.name).join(' ');
-      const haystack = `${nameField||''} ${itemNames} ${bahanNames} ${hasilNames}`.toLowerCase();
+      const haystack = `${t.kodeTransaksi||''} ${nameField||''} ${itemNames} ${itemCodes} ${bahanNames} ${hasilNames}`.toLowerCase();
       return haystack.includes(q);
     }).sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 30);
 
@@ -4069,9 +4077,10 @@ window.storage = {
     const label = isProd ? 'Produksi' : (isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian'));
     const names = isProd ? summarizeProduksi(t) : (t.items||[]).map(i=>i.name).join(', ');
     const amt = isProd ? '<div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>' : `<div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>`;
+    const kodeBadge = t.kodeTransaksi ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-left:6px;">${escapeAttr(t.kodeTransaksi)}</span>` : '';
     return `<div class="bk-list-row-wrap">
       <div class="bk-list-row">
-        <div class="bk-list-left"><div class="nm">${label}</div><div class="sub">${names} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div></div>
+        <div class="bk-list-left"><div class="nm">${label}${kodeBadge}</div><div class="sub">${names} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}</div></div>
         ${amt}
       </div>
       <div class="bk-row-actions"><button class="bk-btn ghost cari-open-txn" data-id="${t.id}" style="padding:6px 12px; font-size:12px;">Buka</button></div>
