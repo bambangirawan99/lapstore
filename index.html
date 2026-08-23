@@ -522,7 +522,7 @@ window.storage = {
 
   document.getElementById('bk-today').textContent = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
 
-  const OWNER_EMAILS = ['lapstore.laptopstore1@gmail.com'];
+  const OWNER_EMAILS = ['bambangirawan99@gmail.com', 'ogiiskandar123@gmail.com'];
   function isOwner() {
     return !!(currentUser && currentUser.email && OWNER_EMAILS.map(e => e.toLowerCase()).includes(currentUser.email.toLowerCase()));
   }
