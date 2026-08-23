@@ -529,9 +529,10 @@ window.storage = {
   }
   async function saveModalAwal(v) { await window.storage.set('modal-awal', String(v), true); }
 
-  // ---------- RIWAYAT MODAL (setoran modal bertahap, menggantikan angka modal-awal statis) ----------
+  // ---------- RIWAYAT MODAL (setoran & penarikan modal bertahap, menggantikan angka modal-awal statis) ----------
   let modalEntries = [];
-  function blankModalEntryForm() { return { keterangan: '', nominal: '' }; }
+  const MODAL_JENIS = ['setoran', 'penarikan'];
+  function blankModalEntryForm() { return { keterangan: '', nominal: '', jenis: 'setoran' }; }
   let modalEntryFormState = blankModalEntryForm();
 
   async function loadModalEntries() {
@@ -550,7 +551,7 @@ window.storage = {
 
     // Migrasi otomatis: kalau riwayat masih kosong tapi ada angka modal-awal lama, pindahkan jadi entri pertama.
     if (modalEntries.length === 0 && modalAwal > 0) {
-      const migrated = { id: uid(), keterangan: 'Modal awal (dipindahkan otomatis dari pengaturan lama)', nominal: modalAwal, createdAt: Date.now() };
+      const migrated = { id: uid(), keterangan: 'Modal awal (dipindahkan otomatis dari pengaturan lama)', nominal: modalAwal, jenis: 'setoran', createdAt: Date.now() };
       try {
         await saveModalEntry(migrated);
         modalEntries.push(migrated);
@@ -560,7 +561,10 @@ window.storage = {
   async function saveModalEntry(m) { await window.storage.set('modal-entry:' + m.id, JSON.stringify(m), true); }
   async function deleteModalEntryFromStore(id) { await window.storage.delete('modal-entry:' + id, true); }
   function computeModalAwalTotal() {
-    return modalEntries.reduce((s,m) => s + (Number(m.nominal)||0), 0);
+    return modalEntries.reduce((s,m) => {
+      const amt = Number(m.nominal) || 0;
+      return s + (m.jenis === 'penarikan' ? -amt : amt);
+    }, 0);
   }
 
   async function loadClosings() {
@@ -2945,9 +2949,9 @@ window.storage = {
       ['Laba ditahan (akumulasi)', n.labaDitahan],
       ['Total Modal', n.totalModal],
       [],
-      ['Riwayat Setoran Modal'],
-      ['Keterangan', 'Tanggal', 'Nominal'],
-      ...modalEntries.map(m => [m.keterangan || 'Setoran modal', new Date(m.createdAt).toLocaleDateString('id-ID'), m.nominal]),
+      ['Riwayat Modal (Setoran & Penarikan)'],
+      ['Jenis', 'Keterangan', 'Tanggal', 'Nominal'],
+      ...modalEntries.map(m => [m.jenis === 'penarikan' ? 'Penarikan' : 'Setoran', m.keterangan || '-', new Date(m.createdAt).toLocaleDateString('id-ID'), m.jenis === 'penarikan' ? -m.nominal : m.nominal]),
       [],
       ['Riwayat Tutup Buku'],
       ['Bulan', 'Total Aset', 'Laba Ditahan', 'Disimpan'],
@@ -3133,9 +3137,9 @@ window.storage = {
       ['Laba ditahan (akumulasi)', n.labaDitahan],
       ['Total Modal', n.totalModal],
       [],
-      ['Riwayat Setoran Modal'],
-      ['Keterangan', 'Tanggal', 'Nominal'],
-      ...modalEntries.map(m => [m.keterangan || 'Setoran modal', new Date(m.createdAt).toLocaleDateString('id-ID'), m.nominal]),
+      ['Riwayat Modal (Setoran & Penarikan)'],
+      ['Jenis', 'Keterangan', 'Tanggal', 'Nominal'],
+      ...modalEntries.map(m => [m.jenis === 'penarikan' ? 'Penarikan' : 'Setoran', m.keterangan || '-', new Date(m.createdAt).toLocaleDateString('id-ID'), m.jenis === 'penarikan' ? -m.nominal : m.nominal]),
       [],
       ['Riwayat Tutup Buku'],
       ['Bulan', 'Total Aset', 'Laba Ditahan', 'Disimpan'],
@@ -3310,7 +3314,7 @@ window.storage = {
     bebanList.forEach(b => { kas -= Number(b.nominal) || 0; });
     utangList.forEach(u => { kas += Number(u.nominalAwal) || 0; });
     utangPayments.forEach(p => { kas -= Number(p.nominal) || 0; });
-    modalEntries.forEach(m => { kas += Number(m.nominal) || 0; });
+    modalEntries.forEach(m => { const amt = Number(m.nominal) || 0; kas += (m.jenis === 'penarikan' ? -amt : amt); });
     return kas;
   }
   function computePiutangTotalLap() {
@@ -3374,7 +3378,12 @@ window.storage = {
     modalEntries.forEach(m => {
       const inMonth = mKey === 'semua' ? true : monthKey(m.createdAt) === mKey;
       if (!inMonth) return;
-      inflow.push({ label: `Setoran modal: ${m.keterangan || 'Tanpa keterangan'}`, amount: Number(m.nominal)||0, date: m.createdAt });
+      const amt = Number(m.nominal) || 0;
+      if (m.jenis === 'penarikan') {
+        outflow.push({ label: `Penarikan modal: ${m.keterangan || 'Tanpa keterangan'}`, amount: amt, date: m.createdAt });
+      } else {
+        inflow.push({ label: `Setoran modal: ${m.keterangan || 'Tanpa keterangan'}`, amount: amt, date: m.createdAt });
+      }
     });
     inflow.sort((a,b)=>b.date-a.date);
     outflow.sort((a,b)=>b.date-a.date);
@@ -3394,7 +3403,7 @@ window.storage = {
     bebanList.forEach(b => { if (monthKey(b.createdAt) < mKey) saldo -= (Number(b.nominal)||0); });
     utangList.forEach(u => { if (monthKey(u.createdAt) < mKey) saldo += (Number(u.nominalAwal)||0); });
     utangPayments.forEach(p => { if (monthKey(p.createdAt) < mKey) saldo -= (Number(p.nominal)||0); });
-    modalEntries.forEach(m => { if (monthKey(m.createdAt) < mKey) saldo += (Number(m.nominal)||0); });
+    modalEntries.forEach(m => { if (monthKey(m.createdAt) < mKey) { const amt = Number(m.nominal) || 0; saldo += (m.jenis === 'penarikan' ? -amt : amt); } });
     return saldo;
   }
 
@@ -3524,20 +3533,26 @@ window.storage = {
     const n = computeNeraca();
     return `
       <div class="bk-ai-box" style="margin-bottom:20px;">
-        <div class="ai-head"><div class="ai-title">Riwayat setoran modal</div></div>
-        <div class="ai-body" style="margin-bottom:10px;">Modal awal sekarang dicatat bertahap &mdash; tambahkan tiap kali ada suntikan modal baru (bukan cuma satu angka statis di awal). Total otomatis dijumlah dan dipakai untuk hitung laba ditahan di Neraca, dan tiap setoran otomatis menambah Kas.</div>
+        <div class="ai-head"><div class="ai-title">Riwayat modal (setoran &amp; penarikan)</div></div>
+        <div class="ai-body" style="margin-bottom:10px;">Modal awal dicatat bertahap &mdash; catat tiap ada suntikan modal baru (Setoran) atau saat pemilik menarik uang dari kas usaha (Penarikan, misal untuk keperluan pribadi). Setoran menambah Kas &amp; Modal, Penarikan mengurangi keduanya. Total otomatis dijumlah dan dipakai untuk hitung laba ditahan di Neraca.</div>
         <div class="bk-two-col" style="margin-bottom:8px;">
-          <input id="bk-modal-entry-ket" value="${escapeAttr(modalEntryFormState.keterangan)}" placeholder="Keterangan (mis: modal awal usaha)" style="border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px;" />
-          <input id="bk-modal-entry-nominal" type="number" min="0" value="${escapeAttr(modalEntryFormState.nominal)}" placeholder="Nominal setoran" style="border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px;" />
+          <select id="bk-modal-entry-jenis" style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
+            <option value="setoran" ${modalEntryFormState.jenis==='setoran'?'selected':''}>Setoran modal (masuk)</option>
+            <option value="penarikan" ${modalEntryFormState.jenis==='penarikan'?'selected':''}>Penarikan modal (keluar)</option>
+          </select>
+          <input id="bk-modal-entry-nominal" type="number" min="0" value="${escapeAttr(modalEntryFormState.nominal)}" placeholder="Nominal" style="border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px;" />
+        </div>
+        <div class="bk-field" style="margin-bottom:8px;">
+          <input id="bk-modal-entry-ket" value="${escapeAttr(modalEntryFormState.keterangan)}" placeholder="Keterangan (mis: modal awal usaha / tarik untuk kebutuhan pribadi)" style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px;" />
         </div>
         <div id="bk-modal-entry-err" class="bk-err" style="display:none;"></div>
-        <button class="bk-btn accent" id="bk-modal-entry-save">Catat setoran modal</button>
-        <div class="bk-total-line" style="margin-top:14px;"><div class="t-lbl">Total modal awal (semua setoran)</div><div class="t-val">${rupiah(computeModalAwalTotal())}</div></div>
-        <div id="bk-modal-entry-list" style="margin-top:10px;">${modalEntries.length ? modalEntries.slice().reverse().map(modalEntryRowHtml).join('') : '<div class="bk-empty">Belum ada setoran modal tercatat.</div>'}</div>
+        <button class="bk-btn accent" id="bk-modal-entry-save">Catat</button>
+        <div class="bk-total-line" style="margin-top:14px;"><div class="t-lbl">Total modal (setoran &minus; penarikan)</div><div class="t-val">${rupiah(computeModalAwalTotal())}</div></div>
+        <div id="bk-modal-entry-list" style="margin-top:10px;">${modalEntries.length ? modalEntries.slice().reverse().map(modalEntryRowHtml).join('') : '<div class="bk-empty">Belum ada setoran/penarikan modal tercatat.</div>'}</div>
       </div>
 
       <div class="bk-section-title">Aset</div>
-      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Kas</div><div class="sub">Saldo tunai riil (penjualan lunas + DP + pinjaman diterima + setoran modal &minus; pembelian &minus; beban &minus; cicilan utang)</div></div><div class="bk-list-amt in">${rupiah(n.kas)}</div></div>
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Kas</div><div class="sub">Saldo tunai riil (penjualan lunas + DP + pinjaman diterima + setoran modal &minus; pembelian &minus; beban &minus; cicilan utang &minus; penarikan modal)</div></div><div class="bk-list-amt in">${rupiah(n.kas)}</div></div>
       <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Piutang</div><div class="sub">Penjualan/service yang belum lunas</div></div><div class="bk-list-amt out">${rupiah(n.piutang)}</div></div>
       <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Persediaan (nilai stok)</div><div class="sub">Modal yang mengendap di stok bahan/laptop/sparepart</div></div><div class="bk-list-amt">${rupiah(n.persediaan)}</div></div>
       <div class="bk-total-line"><div class="t-lbl">Total Aset</div><div class="t-val">${rupiah(n.totalAset)}</div></div>
@@ -3562,16 +3577,17 @@ window.storage = {
     `;
   }
   function modalEntryRowHtml(m) {
+    const isPenarikan = m.jenis === 'penarikan';
     return `<div class="bk-list-row-wrap" data-modal-entry="${m.id}">
       <div class="bk-list-row">
         <div class="bk-list-left">
-          <div class="nm">${m.keterangan || 'Setoran modal'}</div>
-          <div class="sub">${new Date(m.createdAt).toLocaleDateString('id-ID')}</div>
+          <div class="nm">${m.keterangan || (isPenarikan ? 'Penarikan modal' : 'Setoran modal')} <span class="bk-badge ${isPenarikan?'belum':'lunas'}">${isPenarikan?'Penarikan':'Setoran'}</span></div>
+          <div class="sub">${new Date(m.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(m)}</div>
         </div>
-        <div class="bk-list-amt in">${rupiah(m.nominal)}</div>
+        <div class="bk-list-amt ${isPenarikan?'out':'in'}">${isPenarikan?'-':'+'}${rupiah(m.nominal)}</div>
       </div>
       <div class="bk-row-actions">
-        <div class="bk-icon-btn danger modal-entry-del-btn" title="Hapus setoran">&times;</div>
+        <div class="bk-icon-btn danger modal-entry-del-btn" title="Hapus catatan">&times;</div>
       </div>
     </div>`;
   }
@@ -3590,20 +3606,27 @@ window.storage = {
   }
   function wireNeracaEvents() {
     document.getElementById('bk-neraca-excel').addEventListener('click', downloadNeracaExcel);
+    document.getElementById('bk-modal-entry-jenis').addEventListener('change', e => modalEntryFormState.jenis = e.target.value);
     document.getElementById('bk-modal-entry-ket').addEventListener('input', e => modalEntryFormState.keterangan = e.target.value);
     document.getElementById('bk-modal-entry-nominal').addEventListener('input', e => modalEntryFormState.nominal = e.target.value);
     document.getElementById('bk-modal-entry-save').addEventListener('click', async () => {
       const errEl = document.getElementById('bk-modal-entry-err');
       const nominal = Number(modalEntryFormState.nominal) || 0;
-      if (nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nominal setoran modal yang valid.'; return; }
+      if (nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nominal yang valid.'; return; }
+      const isPenarikan = modalEntryFormState.jenis === 'penarikan';
+      if (isPenarikan && nominal > computeKasTotal()) {
+        errEl.style.display = 'block';
+        errEl.textContent = `Penarikan melebihi saldo kas saat ini (${rupiah(computeKasTotal())}).`;
+        return;
+      }
       errEl.style.display = 'none';
-      const m = { id: uid(), keterangan: modalEntryFormState.keterangan.trim(), nominal, createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null };
+      const m = { id: uid(), keterangan: modalEntryFormState.keterangan.trim(), nominal, jenis: modalEntryFormState.jenis, createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null };
       try {
         await saveModalEntry(m);
         modalEntries.push(m);
         modalEntryFormState = blankModalEntryForm();
         renderLaporan();
-        showToast('Setoran modal tercatat, Kas otomatis bertambah.');
+        showToast(isPenarikan ? 'Penarikan modal tercatat, Kas otomatis berkurang.' : 'Setoran modal tercatat, Kas otomatis bertambah.');
       } catch (e) { console.error(e); errEl.style.display = 'block'; errEl.textContent = 'Gagal menyimpan, coba lagi.'; }
     });
     document.querySelectorAll('#bk-modal-entry-list .bk-list-row-wrap').forEach(w => {
