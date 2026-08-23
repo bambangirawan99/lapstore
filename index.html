@@ -79,25 +79,41 @@ body {
 #bk-root .bk-logo-mark {
   width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
   background: linear-gradient(135deg, rgba(255,255,255,.28), rgba(255,255,255,.08));
-  border: 1px solid rgba(255,255,255,.3);
+  border: 1px solid rgba(212,175,110,.5);
   display: flex; align-items: center; justify-content: center;
-  color: #fff;
+  color: #F0CB78;
+  filter: drop-shadow(0 0 4px rgba(240,203,120,.5));
 }
+#bk-root .bk-header-titlewrap { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 1px; }
 #bk-root .bk-header input {
   font-family: 'Playfair Display', serif;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 22px;
-  background: transparent;
+  background: linear-gradient(100deg, #8A6A3C 0%, #E9C577 22%, #FFF3D0 45%, #E9C577 68%, #8A6A3C 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  caret-color: #F5D98A;
+  animation: bkGoldShine 5s linear infinite;
   border: none;
-  color: #fff;
   outline: none;
   padding: 2px 0;
   border-bottom: 1px dashed transparent;
   max-width: 100%;
   min-width: 0;
-  flex: 1;
+  width: 100%;
 }
-#bk-root .bk-header input:focus { border-bottom: 1px dashed rgba(255,255,255,.6); }
+@keyframes bkGoldShine {
+  0% { background-position: 220% 0; }
+  100% { background-position: -60% 0; }
+}
+#bk-root .bk-header-tagline {
+  font-size: 10.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
+  color: #E9C577; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#bk-root .bk-header input:focus { border-bottom: 1px dashed rgba(233,197,119,.6); }
 #bk-root .bk-header .bk-date {
   font-size: 11px; font-weight: 700; color: var(--navy-800);
   font-family: 'IBM Plex Mono', monospace;
@@ -418,7 +434,10 @@ body {
           <path d="M2 19h20l-1.5-3h-17L2 19z"></path>
         </svg>
       </div>
-      <input id="bk-storename" value="LAPSTORE" />
+      <div class="bk-header-titlewrap">
+        <input id="bk-storename" value="LAPSTORE" />
+        <div class="bk-header-tagline">Laptop Store Terbaik Se Lampung</div>
+      </div>
     </div>
     <div id="bk-header-actions" style="display:none; align-items:center; gap:10px;">
       <div class="bk-date" id="bk-today"></div>
