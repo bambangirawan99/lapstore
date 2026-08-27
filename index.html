@@ -2906,6 +2906,8 @@ window.storage = {
       lines.push(`Halo ${s.customerName}, laptop Anda sudah kami terima di ${storeName}${kodeRef}.`);
       lines.push('');
       lines.push(`Tanggal masuk: ${tanggal}`);
+      lines.push(`Nama pelanggan: ${s.customerName || '-'}`);
+      lines.push(`No. HP: ${s.customerPhone || '-'}`);
       lines.push(`Merk/Tipe/Seri: ${s.device || '-'}`);
       lines.push(`Keluhan: ${s.complaint || '-'}`);
       lines.push(`Kelengkapan dititipkan: ${s.accessories || '-'}`);
