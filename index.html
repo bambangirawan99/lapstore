@@ -1660,6 +1660,28 @@ window.storage = {
   }
   function closeConfirmModal() { modalSlot.innerHTML = ''; }
 
+  function showServiceReceivedPrompt(s) {
+    const hasPhone = !!(s.customerPhone || '').replace(/[^0-9]/g, '');
+    modalSlot.innerHTML = `
+      <div class="bk-overlay" id="bk-svc-wa-overlay">
+        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:340px; width:100%; text-align:center;">
+          <div style="font-size:15px; font-weight:700; margin-bottom:6px; color:var(--ink);">Service tercatat &mdash; ${escapeAttr(s.kodeService||'')}</div>
+          <div style="font-size:13px; margin-bottom:18px; color:var(--ink-soft); line-height:1.5;">Kirim konfirmasi ke pelanggan lewat WhatsApp? Isinya mencakup seri laptop, keluhan, dan kelengkapan yang baru saja diinput.</div>
+          <div style="display:flex; gap:10px;">
+            <button class="bk-btn ghost" id="bk-svc-wa-skip" style="flex:1;">Nanti saja</button>
+            <button class="bk-btn primary" id="bk-svc-wa-send" style="flex:1;" ${hasPhone ? '' : 'disabled'}>Kirim via WhatsApp</button>
+          </div>
+          ${hasPhone ? '' : '<div class="bk-err" style="display:block; margin-top:10px;">Nomor WhatsApp pelanggan belum diisi.</div>'}
+        </div>
+      </div>
+    `;
+    const close = () => { modalSlot.innerHTML = ''; };
+    document.getElementById('bk-svc-wa-skip').addEventListener('click', close);
+    document.getElementById('bk-svc-wa-overlay').addEventListener('click', (e) => { if (e.target.id === 'bk-svc-wa-overlay') close(); });
+    const sendBtn = document.getElementById('bk-svc-wa-send');
+    if (sendBtn && !sendBtn.disabled) sendBtn.addEventListener('click', () => { sendServiceWhatsapp(s.id, 'diterima'); close(); });
+  }
+
   function showToast(msg) {
     const t = document.createElement('div');
     t.textContent = msg;
@@ -2437,7 +2459,7 @@ window.storage = {
       services.unshift(s);
       serviceFormState = blankServiceForm();
       renderService();
-      showToast('Service laptop tercatat.');
+      showServiceReceivedPrompt(s);
     } catch (e) {
       console.error(e);
       errEl.style.display = 'block';
@@ -2451,6 +2473,7 @@ window.storage = {
     let actionHtml = '';
     if (s.status === 'diterima') {
       actionHtml = `<div class="bk-svc-actions">
+        <button class="bk-btn ghost act-wa-diterima" data-id="${s.id}">Kirim WA konfirmasi diterima</button>
         <button class="bk-btn primary act-diagnosa" data-id="${s.id}">Mulai diagnosa</button>
       </div>`;
     } else if (s.status === 'diagnosa') {
@@ -2669,6 +2692,7 @@ window.storage = {
     }));
 
     list.querySelectorAll('.act-diagnosa').forEach(b => b.addEventListener('click', () => advanceServiceStatus(b.dataset.id, 'diagnosa')));
+    list.querySelectorAll('.act-wa-diterima').forEach(b => b.addEventListener('click', () => sendServiceWhatsapp(b.dataset.id, 'diterima')));
 
     list.querySelectorAll('.act-kirim-estimasi').forEach(b => b.addEventListener('click', async () => {
       const id = b.dataset.id;
@@ -2876,7 +2900,20 @@ window.storage = {
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const kodeRef = s.kodeService ? ` (Kode: ${s.kodeService})` : '';
     let msg;
-    if (context === 'estimasi') {
+    if (context === 'diterima') {
+      const tanggal = new Date(s.createdAt).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const lines = [];
+      lines.push(`Halo ${s.customerName}, laptop Anda sudah kami terima di ${storeName}${kodeRef}.`);
+      lines.push('');
+      lines.push(`Tanggal masuk: ${tanggal}`);
+      lines.push(`Merk/Tipe/Seri: ${s.device || '-'}`);
+      lines.push(`Keluhan: ${s.complaint || '-'}`);
+      lines.push(`Kelengkapan dititipkan: ${s.accessories || '-'}`);
+      if (Number(s.estimasiBiaya) > 0) lines.push(`Estimasi biaya awal: ${rupiah(s.estimasiBiaya)}`);
+      lines.push('');
+      lines.push('Kami akan segera melakukan pengecekan dan menginformasikan hasil serta estimasi biaya perbaikannya. Terima kasih sudah mempercayakan laptop Anda kepada kami!');
+      msg = lines.join('\n');
+    } else if (context === 'estimasi') {
       msg = `Halo ${s.customerName}, hasil pengecekan laptop ${s.device}${kodeRef} di ${storeName}: ${s.catatanDiagnosa || '-'}. Estimasi biaya perbaikan: ${rupiah(s.estimasiBiaya)}. Mohon konfirmasi apakah dilanjutkan ya. Terima kasih!`;
     } else if (context === 'selesai') {
       msg = `Halo ${s.customerName}, laptop ${s.device}${kodeRef} sudah selesai diservice di ${storeName} dengan biaya ${rupiah(s.biayaFinal)}. Silakan diambil ya, terima kasih!`;
