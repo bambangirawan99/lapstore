@@ -3104,6 +3104,12 @@ window.storage = {
     bodyEl.querySelectorAll('[data-lunas]').forEach(btn => {
       btn.addEventListener('click', () => markLunas(btn.dataset.lunas));
     });
+    bodyEl.querySelectorAll('[data-nota]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const t = txns.find(x => x.id === btn.dataset.nota);
+        if (t) downloadNotaDotMatrix(t);
+      });
+    });
     bodyEl.querySelectorAll('[data-remind]').forEach(btn => {
       btn.addEventListener('click', () => remindWhatsapp(btn.dataset.remind));
     });
@@ -3121,6 +3127,7 @@ window.storage = {
       </div>
       <div class="bk-piutang-actions">
         <button class="bk-btn primary" data-lunas="${t.id}">Tandai lunas</button>
+        <button class="bk-btn ghost" data-nota="${t.id}">Unduh Nota PDF</button>
         ${t.customerPhone ? `<button class="bk-btn ghost" data-remind="${t.id}">Ingatkan via WhatsApp</button>` : ''}
       </div>
     </div>`;
