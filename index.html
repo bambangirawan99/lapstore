@@ -3413,12 +3413,14 @@ window.storage = {
     doc.text(`Nama : ${t.customerName || '-'}`, marginL, y); y += 4.5;
     doc.text(`No.HP: ${t.customerPhone || '-'}`, marginL, y); y += 7;
 
-    // Tabel item
-    const colCode = marginL;
+    // Tabel item - kolom diberi jarak cukup supaya nilai Rupiah tidak tumpang tindih
     const colDesc = marginL + 4;
-    const colQty = marginR - 62;
-    const colHarga = marginR - 45;
-    const colTotal = marginR - 4;
+    const colTotal = marginR - 4;           // teks Total Harga, align right
+    const dividerTotal = marginR - 42;      // garis antar kolom Harga | Total Harga
+    const colHarga = dividerTotal - 4;      // teks Harga, align right
+    const dividerHarga = dividerTotal - 38; // garis antar kolom Qty | Harga
+    const dividerQty = dividerHarga - 20;   // garis antar kolom Item Description | Qty
+    const colQty = (dividerQty + dividerHarga) / 2; // teks Qty, align center
     const tableTop = y;
     doc.setFont('courier', 'bold'); doc.setFontSize(9);
     doc.text('Item Description', colDesc, y + 5);
@@ -3441,9 +3443,9 @@ window.storage = {
     y += 3;
     doc.line(marginL, y, marginR, y);
     // Garis vertikal pembatas kolom tabel
-    doc.line(colQty - 8, tableTop, colQty - 8, y);
-    doc.line(colHarga - 20, tableTop, colHarga - 20, y);
-    doc.line(colTotal - 22, tableTop, colTotal - 22, y);
+    doc.line(dividerQty, tableTop, dividerQty, y);
+    doc.line(dividerHarga, tableTop, dividerHarga, y);
+    doc.line(dividerTotal, tableTop, dividerTotal, y);
     doc.rect(marginL, tableTop, marginR - marginL, y - tableTop);
     y += 8;
 
