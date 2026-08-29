@@ -2265,17 +2265,21 @@ window.storage = {
 
   // ---------- SERVICE LAPTOP ----------
   function renderService() {
+    const unpaidCount = services.filter(s => s.paid === false && s.linkedTxnId).length;
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
       <div class="bk-stok-note">Catat alur service laptop dari masuk sampai diambil pelanggan. Saat status diubah jadi "Sudah diambil", biaya service otomatis tercatat sebagai pemasukan di Ringkasan &amp; Riwayat (dan otomatis jadi piutang kalau belum lunas). Sparepart yang diisi di tahap "Dikerjakan" otomatis mengurangi Stok dan dihitung sebagai biaya (HPP) service tersebut.</div>
       <div class="bk-filter" style="margin-bottom:18px;">
         <div class="bk-chip ${svcView==='aktif'?'active':''}" data-view="aktif">Sedang berjalan</div>
+        <div class="bk-chip ${svcView==='tagihan'?'active':''}" data-view="tagihan">Tagihan${unpaidCount ? ` (${unpaidCount})` : ''}</div>
         <div class="bk-chip ${svcView==='riwayat'?'active':''}" data-view="riwayat">Riwayat service</div>
       </div>
-      <div id="bk-svc-view-slot">${svcView === 'aktif' ? renderServiceAktifHtml() : renderServiceRiwayatHtml()}</div>
+      <div id="bk-svc-view-slot">${svcView === 'aktif' ? renderServiceAktifHtml() : svcView === 'tagihan' ? renderServiceTagihanHtml() : renderServiceRiwayatHtml()}</div>
     `;
     bodyEl.querySelectorAll('.bk-filter [data-view]').forEach(c => c.addEventListener('click', () => { svcView = c.dataset.view; renderService(); }));
-    if (svcView === 'aktif') wireServiceAktifEvents(); else wireServiceRiwayatEvents();
+    if (svcView === 'aktif') wireServiceAktifEvents();
+    else if (svcView === 'tagihan') wireServiceTagihanEvents();
+    else wireServiceRiwayatEvents();
   }
 
   function renderServiceAktifHtml() {
@@ -2428,6 +2432,157 @@ window.storage = {
       if (err) { err.style.display = 'block'; err.textContent = e.friendly || 'AI tidak bisa membaca teks itu, coba tulis ulang atau isi manual.'; }
       btn.disabled = false; btn.textContent = 'Isi otomatis (AI)';
     }
+  }
+
+  // ---------- SERVICE: TAGIHAN (invoice belum dibayar) ----------
+  function renderServiceTagihanHtml() {
+    const unpaid = services.filter(s => s.paid === false && s.linkedTxnId).sort((a,b) => (b.updatedAt||b.createdAt||0) - (a.updatedAt||a.createdAt||0));
+    const totalTagihan = unpaid.reduce((sum,s) => {
+      const txn = txns.find(x => x.id === s.linkedTxnId);
+      return sum + (txn ? txn.total : Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0)));
+    }, 0);
+    return `
+      <div class="bk-stats" style="grid-template-columns: 1fr; margin-bottom:16px;">
+        <div class="bk-stat out"><div class="lbl">Total tagihan service belum lunas</div><div class="val">${rupiah(totalTagihan)}</div></div>
+      </div>
+      <div id="bk-svc-tagihan-list">${unpaid.length ? unpaid.map(serviceTagihanRowHtml).join('') : '<div class="bk-empty">Tidak ada tagihan service yang belum lunas. Semua sudah beres!</div>'}</div>
+    `;
+  }
+
+  function serviceTagihanRowHtml(s) {
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    const diambilAt = (s.history || []).slice().reverse().find(h => h.status === 'diambil');
+    const tglLabel = diambilAt ? new Date(diambilAt.at).toLocaleDateString('id-ID') : new Date(s.updatedAt || s.createdAt).toLocaleDateString('id-ID');
+    return `<div class="bk-piutang-row" data-svc="${s.id}">
+      <div class="bk-piutang-top">
+        <div>
+          <div style="font-weight:600;">${s.customerName || 'Tanpa nama'}${s.kodeService ? ` <span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-left:4px;">${escapeAttr(s.kodeService)}</span>` : ''}</div>
+          <div class="sub" style="font-size:11.5px; color:var(--ink-soft);">${s.device || '-'} &middot; Biaya ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; DP ${rupiah(s.dpAmount)}` : ''} &middot; Diambil ${tglLabel}</div>
+        </div>
+        <div class="bk-list-amt out">${rupiah(sisa)}</div>
+      </div>
+      <div class="bk-piutang-actions">
+        <button class="bk-btn primary svc-tagihan-lunas" data-id="${s.id}">Tandai lunas</button>
+        <button class="bk-btn ghost svc-tagihan-invoice" data-id="${s.id}">Unduh Invoice PDF</button>
+        ${s.customerPhone ? `<button class="bk-btn ghost svc-tagihan-wa" data-id="${s.id}">Ingatkan via WhatsApp</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function wireServiceTagihanEvents() {
+    bodyEl.querySelectorAll('.svc-tagihan-lunas').forEach(b => b.addEventListener('click', () => markServiceLunas(b.dataset.id)));
+    bodyEl.querySelectorAll('.svc-tagihan-invoice').forEach(b => b.addEventListener('click', () => {
+      const s = services.find(x => x.id === b.dataset.id);
+      if (s) downloadServiceInvoicePdf(s);
+    }));
+    bodyEl.querySelectorAll('.svc-tagihan-wa').forEach(b => b.addEventListener('click', () => remindServiceTagihanWhatsapp(b.dataset.id)));
+  }
+
+  async function markServiceLunas(serviceId) {
+    const s = services.find(x => x.id === serviceId);
+    if (!s || !s.linkedTxnId) return;
+    const t = txns.find(x => x.id === s.linkedTxnId);
+    try {
+      if (t) { t.paid = true; await saveTxn(t); }
+      s.paid = true;
+      await saveService(s);
+      renderService();
+      showToast('Tagihan service ditandai lunas.');
+    } catch (e) {
+      console.error(e);
+      showToast('Gagal memperbarui status, coba lagi.');
+    }
+  }
+
+  function remindServiceTagihanWhatsapp(serviceId) {
+    const s = services.find(x => x.id === serviceId);
+    if (!s) return;
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    const phoneRaw = (s.customerPhone || '').replace(/[^0-9]/g, '');
+    const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const acc = BANK_ACCOUNTS.find(a => a.id === s.rekening) || BANK_ACCOUNTS[0];
+    const kodeRef = s.kodeService ? ` (Kode: ${s.kodeService})` : '';
+    const msg = `Halo ${s.customerName}, mengingatkan tagihan service laptop ${s.device}${kodeRef} di ${storeName} sebesar ${rupiah(sisa)} masih belum lunas. Transfer ke ${acc.label} ${acc.nomor} ya, terima kasih!`;
+    const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+  }
+
+  function downloadServiceInvoicePdf(s) {
+    if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a5' });
+    const pageW = 148, pageH = 210;
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const acc = BANK_ACCOUNTS.find(a => a.id === s.rekening) || BANK_ACCOUNTS[0];
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    const marginL = 14, marginR = pageW - 14;
+    let y = 18;
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+    doc.text(storeName, pageW/2, y, { align: 'center' }); y += 7;
+    doc.setFontSize(11); doc.setTextColor(160, 60, 50);
+    doc.text('INVOICE TAGIHAN SERVICE', pageW/2, y, { align: 'center' }); y += 5;
+    doc.setTextColor(20);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+    doc.text('Belum Lunas', pageW/2, y, { align: 'center' }); y += 8;
+
+    doc.setDrawColor(120); doc.line(marginL, y, marginR, y); y += 7;
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+    const infoRows = [
+      ['Kode Service', s.kodeService || '-'],
+      ['Tanggal invoice', new Date().toLocaleDateString('id-ID')],
+      ['Pelanggan', s.customerName || '-'],
+      ['No. HP', s.customerPhone || '-'],
+      ['Merk/Tipe Laptop', s.device || '-'],
+      ['Keluhan', s.complaint || '-'],
+    ];
+    infoRows.forEach(([label, val]) => {
+      doc.setFont('helvetica', 'bold'); doc.text(label, marginL, y);
+      doc.setFont('helvetica', 'normal');
+      const wrapped = doc.splitTextToSize(String(val), marginR - marginL - 42);
+      doc.text(wrapped, marginL + 42, y);
+      y += 5 * Math.max(1, wrapped.length);
+    });
+    y += 4;
+    doc.line(marginL, y, marginR, y); y += 8;
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+    doc.text('Rincian Biaya', marginL, y); y += 7;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+    doc.text('Biaya service', marginL, y); doc.text(rupiah(s.biayaFinal), marginR, y, { align: 'right' }); y += 6;
+    if (Number(s.dpAmount) > 0) {
+      doc.text('Uang muka (DP) sudah dibayar', marginL, y); doc.text('- ' + rupiah(s.dpAmount), marginR, y, { align: 'right' }); y += 6;
+    }
+    doc.line(marginL + 70, y, marginR, y); y += 6;
+
+    doc.setFillColor(245, 233, 231);
+    doc.rect(marginL, y - 6, marginR - marginL, 12, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(160, 60, 50);
+    doc.text('SISA TAGIHAN', marginL + 3, y + 1.5);
+    doc.text(rupiah(sisa), marginR - 3, y + 1.5, { align: 'right' });
+    doc.setTextColor(20);
+    y += 16;
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
+    doc.text('Pembayaran transfer ke:', marginL, y); y += 5.5;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${acc.label} - ${acc.nomor}`, marginL, y); y += 10;
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(120);
+    doc.text('Mohon segera melunasi tagihan di atas. Terima kasih atas kepercayaan Anda menggunakan jasa kami.', marginL, y, { maxWidth: marginR - marginL }); y += 14;
+    doc.setTextColor(20);
+
+    doc.setFontSize(9);
+    doc.text(storeName, marginL + 20, pageH - 30, { align: 'center' });
+    doc.line(marginL, pageH - 12, marginL + 40, pageH - 12);
+    doc.text('Kasir', marginL + 20, pageH - 8, { align: 'center' });
+
+    doc.setFontSize(7.5); doc.setTextColor(150);
+    doc.text(`Dicetak otomatis oleh sistem ${storeName}`, pageW/2, pageH - 6, { align: 'center' });
+
+    doc.save(`invoice-tagihan-${(s.kodeService || s.id.slice(0,8)).replace(/\s+/g,'_')}.pdf`);
   }
 
   async function saveNewService() {
