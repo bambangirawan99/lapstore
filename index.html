@@ -970,6 +970,7 @@ window.storage = {
         <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
       </div>
       <div class="bk-row-actions">
+        ${isIn ? `<div class="bk-icon-btn print-dotmatrix-btn" title="Unduh nota PDF (dot matrix)">&#9099;</div>` : ''}
         <div class="bk-icon-btn edit-btn" title="Edit transaksi">&#9998;</div>
         <div class="bk-icon-btn danger del-btn" title="Hapus transaksi">&times;</div>
       </div>
@@ -1462,12 +1463,16 @@ window.storage = {
             <button class="bk-btn ghost" id="bk-print-btn">Cetak nota</button>
             <button class="bk-btn ghost" id="bk-copy-btn">Salin teks</button>
           </div>
+          <div class="bk-receipt-actions">
+            <button class="bk-btn ghost" id="bk-pdf-dotmatrix-btn" style="flex:1;">Unduh PDF (Dot Matrix)</button>
+          </div>
         </div>
       </div>
     `;
     document.getElementById('bk-receipt-close').addEventListener('click', closeReceipt);
     document.getElementById('bk-overlay').addEventListener('click', (e) => { if (e.target.id === 'bk-overlay') closeReceipt(); });
     document.getElementById('bk-print-btn').addEventListener('click', () => { window.print(); });
+    document.getElementById('bk-pdf-dotmatrix-btn').addEventListener('click', () => downloadNotaDotMatrix(t));
     document.getElementById('bk-wa-btn').addEventListener('click', () => {
       const phoneRaw = (t.customerPhone || '').replace(/[^0-9]/g, '');
       const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
@@ -1750,6 +1755,11 @@ window.storage = {
       const id = w.dataset.txn;
       w.querySelector('.edit-btn').addEventListener('click', () => startEdit(id));
       w.querySelector('.del-btn').addEventListener('click', () => removeTxn(id));
+      const printBtn = w.querySelector('.print-dotmatrix-btn');
+      if (printBtn) printBtn.addEventListener('click', () => {
+        const t = txns.find(x => x.id === id);
+        if (t) downloadNotaDotMatrix(t);
+      });
       const chk = w.querySelector('.bk-row-check');
       if (chk) chk.addEventListener('change', () => {
         if (chk.checked) selectedTxnIds.add(id); else selectedTxnIds.delete(id);
@@ -3352,6 +3362,131 @@ window.storage = {
   }
 
   // ---------- LAPORAN LABA RUGI (PDF) ----------
+  // ---------- NOTA PDF FORMAT DOT MATRIX (kertas kontinu, mirip printer POS lama) ----------
+  function downloadNotaDotMatrix(t) {
+    if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
+    const { jsPDF } = window.jspdf;
+    // Ukuran kertas kontinu dot matrix umum di Indonesia: 9.5 x 5.5 inch (setengah folio)
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [139.7, 241.3] });
+    const pageW = 241.3;
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const acc = BANK_ACCOUNTS.find(a => a.id === t.rekening) || null;
+    const isTransfer = !!t.rekening;
+    const tgl = new Date(t.createdAt);
+    const tglLabel = tgl.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) + ' ' + tgl.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const marginL = 12, marginR = pageW - 12;
+    let y = 14;
+
+    doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(140);
+    doc.text('Nota Kasir - ' + storeName, marginL, 8);
+    doc.text(new Date().toLocaleString('id-ID'), marginR, 8, { align: 'right' });
+    doc.setTextColor(20);
+
+    // Header toko
+    doc.setFont('courier', 'bold'); doc.setFontSize(15);
+    doc.text(storeName, marginL, y); y += 7;
+    doc.setFont('courier', 'normal'); doc.setFontSize(9);
+    doc.text('Nota Penjualan', marginL, y);
+
+    // Info invoice (kanan atas)
+    let yInfo = 14;
+    doc.setFontSize(9);
+    const infoRows = [
+      ['No. Invoice', ': ' + (t.kodeTransaksi || t.id.slice(0,8).toUpperCase())],
+      ['Tanggal', ': ' + tglLabel],
+      ['Transaksi', ': ' + (isTransfer ? ('Transfer - ' + (acc ? acc.label : '')) : 'Tunai / Cash')],
+      ['Kasir', ': ' + (t.createdBy || 'Admin')],
+    ];
+    infoRows.forEach(([label, val]) => {
+      doc.text(label, marginR - 68, yInfo);
+      doc.text(val, marginR - 46, yInfo);
+      yInfo += 5;
+    });
+    y = Math.max(y, yInfo) + 4;
+
+    doc.setDrawColor(90); doc.setLineWidth(0.2);
+    doc.line(marginL, y, marginR, y); y += 6;
+
+    doc.setFont('courier', 'bold'); doc.setFontSize(9);
+    doc.text('Kepada', marginL, y); y += 5;
+    doc.setFont('courier', 'normal');
+    doc.text(`Nama : ${t.customerName || '-'}`, marginL, y); y += 4.5;
+    doc.text(`No.HP: ${t.customerPhone || '-'}`, marginL, y); y += 7;
+
+    // Tabel item
+    const colCode = marginL;
+    const colDesc = marginL + 4;
+    const colQty = marginR - 62;
+    const colHarga = marginR - 45;
+    const colTotal = marginR - 4;
+    const tableTop = y;
+    doc.setFont('courier', 'bold'); doc.setFontSize(9);
+    doc.text('Item Description', colDesc, y + 5);
+    doc.text('Qty', colQty, y + 5, { align: 'center' });
+    doc.text('Harga', colHarga, y + 5, { align: 'right' });
+    doc.text('Total Harga', colTotal, y + 5, { align: 'right' });
+    y += 8;
+    doc.line(marginL, y, marginR, y);
+    y += 1;
+
+    doc.setFont('courier', 'normal');
+    (t.items || []).forEach(i => {
+      y += 5;
+      const lineTotal = (Number(i.qty)||0) * (Number(i.price)||0);
+      doc.text(i.name, colDesc, y);
+      doc.text(String(i.qty), colQty, y, { align: 'center' });
+      doc.text(rupiah(i.price), colHarga, y, { align: 'right' });
+      doc.text(rupiah(lineTotal), colTotal, y, { align: 'right' });
+    });
+    y += 3;
+    doc.line(marginL, y, marginR, y);
+    // Garis vertikal pembatas kolom tabel
+    doc.line(colQty - 8, tableTop, colQty - 8, y);
+    doc.line(colHarga - 20, tableTop, colHarga - 20, y);
+    doc.line(colTotal - 22, tableTop, colTotal - 22, y);
+    doc.rect(marginL, tableTop, marginR - marginL, y - tableTop);
+    y += 8;
+
+    // Ringkasan total
+    const total = t.total || 0;
+    const isLunas = t.paid !== false;
+    const bayar = isLunas ? total : 0;
+    const kembali = isLunas ? 0 : 0;
+    const summaryLabelX = marginR - 45;
+    doc.setFontSize(9.5);
+    const summaryRows = [
+      ['Total', rupiah(total)],
+      ['Ongkir', rupiah(0)],
+      ['Sub Total', rupiah(total)],
+      ['Bayar', isLunas ? rupiah(bayar) : 'Belum lunas'],
+      ['Kembali', isLunas ? rupiah(kembali) : rupiah(total)],
+    ];
+    summaryRows.forEach(([label, val], idx) => {
+      const bold = idx === summaryRows.length - 1;
+      doc.setFont('courier', bold ? 'bold' : 'normal');
+      doc.text(label, summaryLabelX, y);
+      doc.text(String(val), marginR, y, { align: 'right' });
+      y += 5;
+    });
+    y += 8;
+
+    // Tanda tangan
+    const sigY = y;
+    doc.setFont('courier', 'normal'); doc.setFontSize(9);
+    doc.text(storeName, marginL + 20, sigY, { align: 'center' });
+    doc.text(t.customerName || 'Pelanggan', marginR - 20, sigY, { align: 'center' });
+    doc.line(marginL, sigY + 20, marginL + 40, sigY + 20);
+    doc.line(marginR - 40, sigY + 20, marginR, sigY + 20);
+    doc.text('Kasir', marginL + 20, sigY + 25, { align: 'center' });
+    doc.text('Pelanggan', marginR - 20, sigY + 25, { align: 'center' });
+
+    // Footer
+    doc.setFont('courier', 'normal'); doc.setFontSize(7.5); doc.setTextColor(140);
+    doc.text(`Dicetak otomatis oleh sistem ${storeName} - LAPSTORE`, pageW / 2, 134, { align: 'center' });
+
+    doc.save(`nota-${(t.kodeTransaksi || t.id.slice(0,8)).replace(/\s+/g,'_')}.pdf`);
+  }
+
   function downloadLabaRugi(scopeMonth, scopedTxns, masuk, keluar, hppTotal, labaKotor) {
     if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
     const { jsPDF } = window.jspdf;
