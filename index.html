@@ -3734,9 +3734,13 @@ window.storage = {
   function downloadNotaDotMatrix(t) {
     if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
     const { jsPDF } = window.jspdf;
-    // Ukuran kertas kontinu dot matrix umum di Indonesia: 9.5 x 5.5 inch (setengah folio)
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [139.7, 241.3] });
+    // Ukuran kertas kontinu dot matrix STANDAR PENUH: 9.5 x 11 inch ("Continuous").
+    // Ini ukuran bawaan yang sudah dikenali hampir semua driver printer dot matrix
+    // tanpa perlu setup custom paper size - menghindari salah potong halaman.
+    // Konten nota diletakkan di bagian atas, sisanya kosong (wajar untuk kertas kontinu bersambung).
+    const doc = new jsPDF({ unit: 'mm', format: [241.3, 279.4] });
     const pageW = 241.3;
+    const pageH = 279.4;
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const acc = BANK_ACCOUNTS.find(a => a.id === t.rekening) || null;
     const isTransfer = !!t.rekening;
@@ -3852,7 +3856,11 @@ window.storage = {
 
     // Footer
     doc.setFont('courier', 'normal'); doc.setFontSize(7.5); doc.setTextColor(140);
-    doc.text(`Dicetak otomatis oleh sistem ${storeName} - LAPSTORE`, pageW / 2, 134, { align: 'center' });
+    doc.text(`Dicetak otomatis oleh sistem ${storeName} - LAPSTORE`, pageW / 2, sigY + 40, { align: 'center' });
+    doc.setDrawColor(150); doc.setLineDashPattern([2, 1.5], 0);
+    doc.line(2, sigY + 50, pageW - 2, sigY + 50);
+    doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(170);
+    doc.text('- - - gunting / sobek di sini - - -', pageW / 2, sigY + 54, { align: 'center' });
 
     doc.save(`nota-${(t.kodeTransaksi || t.id.slice(0,8)).replace(/\s+/g,'_')}.pdf`);
   }
