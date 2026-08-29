@@ -2667,8 +2667,10 @@ window.storage = {
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const acc = BANK_ACCOUNTS.find(a => a.id === s.rekening) || BANK_ACCOUNTS[0];
     const kodeRef = s.kodeService ? ` (Kode: ${s.kodeService})` : '';
-    const msg = `Halo ${s.customerName}, mengingatkan tagihan service laptop ${s.device}${kodeRef} di ${storeName} sebesar ${rupiah(sisa)} masih belum lunas. Transfer ke ${acc.label} ${acc.nomor} ya, terima kasih!`;
+    const msg = `Halo ${s.customerName}, mengingatkan tagihan service laptop ${s.device}${kodeRef} di ${storeName} sebesar ${rupiah(sisa)} masih belum lunas. Transfer ke ${acc.label} ${acc.nomor} ya, terima kasih! (Invoice PDF terlampir, mohon dicek folder Download / File Manager, lalu lampirkan manual di sini).`;
     const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    downloadInvoicePdf(serviceToInvoiceData(s));
+    showToast('Invoice PDF terunduh. Lampirkan manual di chat WhatsApp yang baru dibuka (tekan ikon klip 📎).');
     window.open(url, '_blank');
   }
 
@@ -2679,8 +2681,10 @@ window.storage = {
     const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const acc = BANK_ACCOUNTS.find(a => a.id === m.rekening) || BANK_ACCOUNTS[0];
-    const msg = `Halo ${m.customerName}, mengingatkan tagihan (${m.kodeTagihan}) di ${storeName}${m.keterangan ? ' untuk ' + m.keterangan : ''} sebesar ${rupiah(m.nominal)} masih belum lunas. Transfer ke ${acc.label} ${acc.nomor} ya, terima kasih!`;
+    const msg = `Halo ${m.customerName}, mengingatkan tagihan (${m.kodeTagihan}) di ${storeName}${m.keterangan ? ' untuk ' + m.keterangan : ''} sebesar ${rupiah(m.nominal)} masih belum lunas. Transfer ke ${acc.label} ${acc.nomor} ya, terima kasih! (Invoice PDF terlampir, mohon dicek folder Download / File Manager, lalu lampirkan manual di sini).`;
     const url = phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    downloadInvoicePdf(manualToInvoiceData(m));
+    showToast('Invoice PDF terunduh. Lampirkan manual di chat WhatsApp yang baru dibuka (tekan ikon klip 📎).');
     window.open(url, '_blank');
   }
 
@@ -3371,8 +3375,10 @@ window.storage = {
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const phoneRaw = (t.customerPhone || '').replace(/[^0-9]/g, '');
     const phone = phoneRaw.startsWith('0') ? '62' + phoneRaw.slice(1) : phoneRaw;
-    const msg = `Halo${t.customerName ? ' ' + t.customerName : ''}, mengingatkan pembayaran belanja di ${storeName} sebesar ${rupiah(t.total)} pada ${new Date(t.createdAt).toLocaleDateString('id-ID')} masih belum lunas. Transfer ke ${bankAccountLabel(t.rekening) || bankAccountLabel(BANK_ACCOUNTS[0].id)} ya, terima kasih!`;
+    const msg = `Halo${t.customerName ? ' ' + t.customerName : ''}, mengingatkan pembayaran belanja di ${storeName} sebesar ${rupiah(t.total)} pada ${new Date(t.createdAt).toLocaleDateString('id-ID')} masih belum lunas. Transfer ke ${bankAccountLabel(t.rekening) || bankAccountLabel(BANK_ACCOUNTS[0].id)} ya, terima kasih! (Nota PDF terlampir, mohon dicek folder Download / File Manager, lalu lampirkan manual di sini).`;
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    downloadNotaDotMatrix(t);
+    showToast('Nota PDF terunduh. Lampirkan manual di chat WhatsApp yang baru dibuka (tekan ikon klip 📎).');
     window.open(url, '_blank');
   }
 
