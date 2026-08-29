@@ -2721,32 +2721,31 @@ window.storage = {
   function downloadInvoicePdf(inv) {
     if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
     const { jsPDF } = window.jspdf;
-    // Samakan dengan ukuran kertas kontinu dot matrix standar (9.5 x 11 inch) yang dipakai nota penjualan,
-    // supaya bisa dicetak di printer dot matrix yang sama tanpa perlu ganti ukuran kertas.
-    const doc = new jsPDF({ unit: 'mm', format: [241.3, 279.4] });
+    // Ukuran kertas kontinu dot matrix: 9.5 x 5 inch, sama dengan nota penjualan.
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [127, 241.3] });
     const pageW = 241.3;
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const acc = BANK_ACCOUNTS.find(a => a.id === inv.rekening) || BANK_ACCOUNTS[0];
     const sisa = Math.max(0, inv.biaya - inv.dp);
-    const marginL = 14, marginR = pageW - 14;
-    let y = 16;
+    const marginL = 10, marginR = pageW - 10;
+    let y = 10;
 
-    doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(140);
-    doc.text('Invoice Tagihan - ' + storeName, marginL, 8);
-    doc.text(new Date().toLocaleString('id-ID'), marginR, 8, { align: 'right' });
+    doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(140);
+    doc.text('Invoice Tagihan - ' + storeName, marginL, 6);
+    doc.text(new Date().toLocaleString('id-ID'), marginR, 6, { align: 'right' });
     doc.setTextColor(20);
 
-    doc.setFont('courier', 'bold'); doc.setFontSize(16);
-    doc.text(storeName, pageW/2, y, { align: 'center' }); y += 7;
-    doc.setFontSize(11); doc.setTextColor(160, 60, 50);
-    doc.text('INVOICE TAGIHAN', pageW/2, y, { align: 'center' }); y += 5;
+    doc.setFont('courier', 'bold'); doc.setFontSize(13);
+    doc.text(storeName, pageW/2, y, { align: 'center' }); y += 5.5;
+    doc.setFontSize(9.5); doc.setTextColor(160, 60, 50);
+    doc.text('INVOICE TAGIHAN', pageW/2, y, { align: 'center' }); y += 4;
     doc.setTextColor(20);
-    doc.setFont('courier', 'normal'); doc.setFontSize(9);
-    doc.text('Belum Lunas', pageW/2, y, { align: 'center' }); y += 8;
+    doc.setFont('courier', 'normal'); doc.setFontSize(8);
+    doc.text('Belum Lunas', pageW/2, y, { align: 'center' }); y += 5.5;
 
-    doc.setDrawColor(120); doc.line(marginL, y, marginR, y); y += 7;
+    doc.setDrawColor(120); doc.line(marginL, y, marginR, y); y += 5;
 
-    doc.setFont('courier', 'normal'); doc.setFontSize(9.5);
+    doc.setFont('courier', 'normal'); doc.setFontSize(8);
     const infoRows = [
       ['Kode', inv.kode || '-'],
       ['Tanggal invoice', new Date().toLocaleDateString('id-ID')],
@@ -2758,51 +2757,47 @@ window.storage = {
     infoRows.forEach(([label, val]) => {
       doc.setFont('courier', 'bold'); doc.text(label, marginL, y);
       doc.setFont('courier', 'normal');
-      const wrapped = doc.splitTextToSize(String(val), marginR - marginL - 46);
-      doc.text(wrapped, marginL + 46, y);
-      y += 5 * Math.max(1, wrapped.length);
+      const wrapped = doc.splitTextToSize(String(val), marginR - marginL - 44);
+      doc.text(wrapped, marginL + 44, y);
+      y += 4 * Math.max(1, wrapped.length);
     });
-    y += 4;
-    doc.line(marginL, y, marginR, y); y += 8;
+    y += 2.5;
+    doc.line(marginL, y, marginR, y); y += 5;
 
-    doc.setFont('courier', 'bold'); doc.setFontSize(10);
-    doc.text('Rincian Biaya', marginL, y); y += 7;
-    doc.setFont('courier', 'normal'); doc.setFontSize(9.5);
-    doc.text('Biaya', marginL, y); doc.text(rupiah(inv.biaya), marginR, y, { align: 'right' }); y += 6;
+    doc.setFont('courier', 'bold'); doc.setFontSize(9);
+    doc.text('Rincian Biaya', marginL, y); y += 5;
+    doc.setFont('courier', 'normal'); doc.setFontSize(8);
+    doc.text('Biaya', marginL, y); doc.text(rupiah(inv.biaya), marginR, y, { align: 'right' }); y += 4.5;
     if (inv.dp > 0) {
-      doc.text('Uang muka (DP) sudah dibayar', marginL, y); doc.text('- ' + rupiah(inv.dp), marginR, y, { align: 'right' }); y += 6;
+      doc.text('Uang muka (DP) sudah dibayar', marginL, y); doc.text('- ' + rupiah(inv.dp), marginR, y, { align: 'right' }); y += 4.5;
     }
-    doc.line(marginL + 70, y, marginR, y); y += 6;
+    doc.line(marginL + 70, y, marginR, y); y += 4.5;
 
     doc.setFillColor(245, 233, 231);
-    doc.rect(marginL, y - 6, marginR - marginL, 12, 'F');
-    doc.setFont('courier', 'bold'); doc.setFontSize(11); doc.setTextColor(160, 60, 50);
-    doc.text('SISA TAGIHAN', marginL + 3, y + 1.5);
-    doc.text(rupiah(sisa), marginR - 3, y + 1.5, { align: 'right' });
+    doc.rect(marginL, y - 5, marginR - marginL, 10, 'F');
+    doc.setFont('courier', 'bold'); doc.setFontSize(9.5); doc.setTextColor(160, 60, 50);
+    doc.text('SISA TAGIHAN', marginL + 3, y + 1);
+    doc.text(rupiah(sisa), marginR - 3, y + 1, { align: 'right' });
     doc.setTextColor(20);
-    y += 16;
+    y += 12;
 
-    doc.setFont('courier', 'bold'); doc.setFontSize(9.5);
-    doc.text('Pembayaran transfer ke:', marginL, y); y += 5.5;
+    doc.setFont('courier', 'bold'); doc.setFontSize(8);
+    doc.text('Pembayaran transfer ke:', marginL, y); y += 4.5;
     doc.setFont('courier', 'normal');
-    doc.text(`${acc.label} - ${acc.nomor}`, marginL, y); y += 10;
+    doc.text(`${acc.label} - ${acc.nomor}`, marginL, y); y += 7;
 
-    doc.setFont('courier', 'normal'); doc.setFontSize(8.5); doc.setTextColor(120);
-    doc.text('Mohon segera melunasi tagihan di atas. Terima kasih atas kepercayaan Anda.', marginL, y, { maxWidth: marginR - marginL }); y += 14;
+    doc.setFont('courier', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120);
+    doc.text('Mohon segera melunasi tagihan di atas. Terima kasih atas kepercayaan Anda.', marginL, y, { maxWidth: marginR - marginL }); y += 8;
     doc.setTextColor(20);
 
     const sigY = y;
-    doc.setFont('courier', 'normal'); doc.setFontSize(9);
-    doc.text(storeName, marginL + 20, sigY, { align: 'center' });
-    doc.line(marginL, sigY + 20, marginL + 40, sigY + 20);
-    doc.text('Kasir', marginL + 20, sigY + 25, { align: 'center' });
+    doc.setFont('courier', 'normal'); doc.setFontSize(8);
+    doc.text(storeName, marginL + 18, sigY, { align: 'center' });
+    doc.line(marginL, sigY + 11, marginL + 36, sigY + 11);
+    doc.text('Kasir', marginL + 18, sigY + 14.5, { align: 'center' });
 
-    doc.setFont('courier', 'normal'); doc.setFontSize(7.5); doc.setTextColor(140);
-    doc.text(`Dicetak otomatis oleh sistem ${storeName}`, pageW / 2, sigY + 40, { align: 'center' });
-    doc.setDrawColor(150); doc.setLineDashPattern([2, 1.5], 0);
-    doc.line(2, sigY + 50, pageW - 2, sigY + 50);
-    doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(170);
-    doc.text('- - - gunting / sobek di sini - - -', pageW / 2, sigY + 54, { align: 'center' });
+    doc.setFont('courier', 'normal'); doc.setFontSize(6.5); doc.setTextColor(150);
+    doc.text(`Dicetak otomatis oleh sistem ${storeName}`, pageW / 2, 124, { align: 'center' });
 
     doc.save(`invoice-tagihan-${(inv.kode || uid().slice(0,8)).replace(/\s+/g,'_')}.pdf`);
   }
@@ -3752,35 +3747,31 @@ window.storage = {
   function downloadNotaDotMatrix(t) {
     if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
     const { jsPDF } = window.jspdf;
-    // Ukuran kertas kontinu dot matrix STANDAR PENUH: 9.5 x 11 inch ("Continuous").
-    // Ini ukuran bawaan yang sudah dikenali hampir semua driver printer dot matrix
-    // tanpa perlu setup custom paper size - menghindari salah potong halaman.
-    // Konten nota diletakkan di bagian atas, sisanya kosong (wajar untuk kertas kontinu bersambung).
-    const doc = new jsPDF({ unit: 'mm', format: [241.3, 279.4] });
+    // Ukuran kertas kontinu dot matrix: 9.5 x 5 inch, sesuai form yang sudah diatur di printer.
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [127, 241.3] });
     const pageW = 241.3;
-    const pageH = 279.4;
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const acc = BANK_ACCOUNTS.find(a => a.id === t.rekening) || null;
     const isTransfer = !!t.rekening;
     const tgl = new Date(t.createdAt);
     const tglLabel = tgl.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) + ' ' + tgl.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const marginL = 12, marginR = pageW - 12;
-    let y = 14;
+    const marginL = 10, marginR = pageW - 10;
+    let y = 10;
 
-    doc.setFont('courier', 'normal'); doc.setFontSize(8); doc.setTextColor(140);
-    doc.text('Nota Kasir - ' + storeName, marginL, 8);
-    doc.text(new Date().toLocaleString('id-ID'), marginR, 8, { align: 'right' });
+    doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(140);
+    doc.text('Nota Kasir - ' + storeName, marginL, 6);
+    doc.text(new Date().toLocaleString('id-ID'), marginR, 6, { align: 'right' });
     doc.setTextColor(20);
 
     // Header toko
-    doc.setFont('courier', 'bold'); doc.setFontSize(15);
-    doc.text(storeName, marginL, y); y += 7;
-    doc.setFont('courier', 'normal'); doc.setFontSize(9);
+    doc.setFont('courier', 'bold'); doc.setFontSize(13);
+    doc.text(storeName, marginL, y); y += 5.5;
+    doc.setFont('courier', 'normal'); doc.setFontSize(8);
     doc.text('Nota Penjualan', marginL, y);
 
     // Info invoice (kanan atas)
-    let yInfo = 14;
-    doc.setFontSize(9);
+    let yInfo = 10;
+    doc.setFontSize(8);
     const infoRows = [
       ['No. Invoice', ': ' + (t.kodeTransaksi || t.id.slice(0,8).toUpperCase())],
       ['Tanggal', ': ' + tglLabel],
@@ -3788,64 +3779,63 @@ window.storage = {
       ['Kasir', ': ' + (t.createdBy || 'Admin')],
     ];
     infoRows.forEach(([label, val]) => {
-      doc.text(label, marginR - 68, yInfo);
-      doc.text(val, marginR - 46, yInfo);
-      yInfo += 5;
+      doc.text(label, marginR - 66, yInfo);
+      doc.text(val, marginR - 45, yInfo);
+      yInfo += 4;
     });
-    y = Math.max(y, yInfo) + 4;
+    y = Math.max(y, yInfo) + 2.5;
 
     doc.setDrawColor(90); doc.setLineWidth(0.2);
-    doc.line(marginL, y, marginR, y); y += 6;
+    doc.line(marginL, y, marginR, y); y += 4.5;
 
-    doc.setFont('courier', 'bold'); doc.setFontSize(9);
-    doc.text('Kepada', marginL, y); y += 5;
+    doc.setFont('courier', 'bold'); doc.setFontSize(8);
+    doc.text('Kepada', marginL, y); y += 4;
     doc.setFont('courier', 'normal');
-    doc.text(`Nama : ${t.customerName || '-'}`, marginL, y); y += 4.5;
-    doc.text(`No.HP: ${t.customerPhone || '-'}`, marginL, y); y += 7;
+    doc.text(`Nama : ${t.customerName || '-'}`, marginL, y); y += 3.8;
+    doc.text(`No.HP: ${t.customerPhone || '-'}`, marginL, y); y += 5;
 
     // Tabel item - kolom diberi jarak cukup supaya nilai Rupiah tidak tumpang tindih
-    const colDesc = marginL + 4;
-    const colTotal = marginR - 4;           // teks Total Harga, align right
-    const dividerTotal = marginR - 42;      // garis antar kolom Harga | Total Harga
-    const colHarga = dividerTotal - 4;      // teks Harga, align right
-    const dividerHarga = dividerTotal - 38; // garis antar kolom Qty | Harga
-    const dividerQty = dividerHarga - 20;   // garis antar kolom Item Description | Qty
-    const colQty = (dividerQty + dividerHarga) / 2; // teks Qty, align center
+    const colDesc = marginL + 3;
+    const colTotal = marginR - 3;
+    const dividerTotal = marginR - 40;
+    const colHarga = dividerTotal - 3;
+    const dividerHarga = dividerTotal - 36;
+    const dividerQty = dividerHarga - 18;
+    const colQty = (dividerQty + dividerHarga) / 2;
     const tableTop = y;
-    doc.setFont('courier', 'bold'); doc.setFontSize(9);
-    doc.text('Item Description', colDesc, y + 5);
-    doc.text('Qty', colQty, y + 5, { align: 'center' });
-    doc.text('Harga', colHarga, y + 5, { align: 'right' });
-    doc.text('Total Harga', colTotal, y + 5, { align: 'right' });
-    y += 8;
+    doc.setFont('courier', 'bold'); doc.setFontSize(8);
+    doc.text('Item Description', colDesc, y + 4);
+    doc.text('Qty', colQty, y + 4, { align: 'center' });
+    doc.text('Harga', colHarga, y + 4, { align: 'right' });
+    doc.text('Total Harga', colTotal, y + 4, { align: 'right' });
+    y += 6.5;
     doc.line(marginL, y, marginR, y);
-    y += 1;
+    y += 0.8;
 
-    doc.setFont('courier', 'normal');
+    doc.setFont('courier', 'normal'); doc.setFontSize(8);
     (t.items || []).forEach(i => {
-      y += 5;
+      y += 4;
       const lineTotal = (Number(i.qty)||0) * (Number(i.price)||0);
       doc.text(i.name, colDesc, y);
       doc.text(String(i.qty), colQty, y, { align: 'center' });
       doc.text(rupiah(i.price), colHarga, y, { align: 'right' });
       doc.text(rupiah(lineTotal), colTotal, y, { align: 'right' });
     });
-    y += 3;
+    y += 2.5;
     doc.line(marginL, y, marginR, y);
-    // Garis vertikal pembatas kolom tabel
     doc.line(dividerQty, tableTop, dividerQty, y);
     doc.line(dividerHarga, tableTop, dividerHarga, y);
     doc.line(dividerTotal, tableTop, dividerTotal, y);
     doc.rect(marginL, tableTop, marginR - marginL, y - tableTop);
-    y += 8;
+    y += 5;
 
     // Ringkasan total
     const total = t.total || 0;
     const isLunas = t.paid !== false;
     const bayar = isLunas ? total : 0;
     const kembali = isLunas ? 0 : 0;
-    const summaryLabelX = marginR - 45;
-    doc.setFontSize(9.5);
+    const summaryLabelX = marginR - 42;
+    doc.setFontSize(8);
     const summaryRows = [
       ['Total', rupiah(total)],
       ['Ongkir', rupiah(0)],
@@ -3858,27 +3848,23 @@ window.storage = {
       doc.setFont('courier', bold ? 'bold' : 'normal');
       doc.text(label, summaryLabelX, y);
       doc.text(String(val), marginR, y, { align: 'right' });
-      y += 5;
+      y += 3.8;
     });
-    y += 8;
+    y += 4;
 
     // Tanda tangan
     const sigY = y;
-    doc.setFont('courier', 'normal'); doc.setFontSize(9);
-    doc.text(storeName, marginL + 20, sigY, { align: 'center' });
-    doc.text(t.customerName || 'Pelanggan', marginR - 20, sigY, { align: 'center' });
-    doc.line(marginL, sigY + 20, marginL + 40, sigY + 20);
-    doc.line(marginR - 40, sigY + 20, marginR, sigY + 20);
-    doc.text('Kasir', marginL + 20, sigY + 25, { align: 'center' });
-    doc.text('Pelanggan', marginR - 20, sigY + 25, { align: 'center' });
+    doc.setFont('courier', 'normal'); doc.setFontSize(8);
+    doc.text(storeName, marginL + 18, sigY, { align: 'center' });
+    doc.text(t.customerName || 'Pelanggan', marginR - 18, sigY, { align: 'center' });
+    doc.line(marginL, sigY + 11, marginL + 36, sigY + 11);
+    doc.line(marginR - 36, sigY + 11, marginR, sigY + 11);
+    doc.text('Kasir', marginL + 18, sigY + 14.5, { align: 'center' });
+    doc.text('Pelanggan', marginR - 18, sigY + 14.5, { align: 'center' });
 
     // Footer
-    doc.setFont('courier', 'normal'); doc.setFontSize(7.5); doc.setTextColor(140);
-    doc.text(`Dicetak otomatis oleh sistem ${storeName} - LAPSTORE`, pageW / 2, sigY + 40, { align: 'center' });
-    doc.setDrawColor(150); doc.setLineDashPattern([2, 1.5], 0);
-    doc.line(2, sigY + 50, pageW - 2, sigY + 50);
-    doc.setFont('courier', 'normal'); doc.setFontSize(7); doc.setTextColor(170);
-    doc.text('- - - gunting / sobek di sini - - -', pageW / 2, sigY + 54, { align: 'center' });
+    doc.setFont('courier', 'normal'); doc.setFontSize(6.5); doc.setTextColor(150);
+    doc.text(`Dicetak otomatis oleh sistem ${storeName}`, pageW / 2, 124, { align: 'center' });
 
     doc.save(`nota-${(t.kodeTransaksi || t.id.slice(0,8)).replace(/\s+/g,'_')}.pdf`);
   }
