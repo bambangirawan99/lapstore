@@ -3002,13 +3002,12 @@ window.storage = {
         </div>`;
     } else if (s.status === 'selesai') {
       const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+      const isLunas = s.paid !== false;
       actionHtml = `
-        <div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''}${s.parts && s.parts.some(p=>p.name) ? ` &middot; <span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}</div>
-        <div class="bk-checkbox-row">
-          <input type="checkbox" class="svc-paid-check" data-id="${s.id}" ${s.paid !== false ? 'checked' : ''} />
-          <label style="margin:0;">${s.dpAmount ? `Sisa pembayaran (${rupiah(sisa)}) sudah lunas saat diambil` : 'Sudah dibayar lunas saat diambil'} (kalau tidak dicentang, tercatat sebagai piutang)</label>
-        </div>
+        <div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''}${s.parts && s.parts.some(p=>p.name) ? ` &middot; <span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''} <span class="bk-badge ${isLunas?'lunas':'belum'}">${isLunas?'Lunas':'Tercatat di Tagihan'}</span></div>
+        ${!isLunas ? `<div class="bk-stok-note" style="margin:0 0 10px;">Sisa ${rupiah(sisa)} sudah otomatis tercatat di tab Tagihan begitu status ini aktif &mdash; tidak perlu catat manual lagi.</div>` : ''}
         <div class="bk-svc-actions">
+          ${!isLunas ? `<button class="bk-btn ghost svc-mark-lunas" data-id="${s.id}" data-txn="${s.linkedTxnId||''}">Tandai lunas</button>` : ''}
           <button class="bk-btn primary act-diambil" data-id="${s.id}">Sudah diambil pelanggan</button>
         </div>`;
     } else if (s.status === 'diambil') {
@@ -3297,17 +3296,14 @@ window.storage = {
 
       await updateService(id, { biayaFinal: biaya, parts: s.parts, serviceItemName });
       await advanceServiceStatus(id, 'selesai', false);
+      await recordServiceTagihanAtSelesai(id);
       renderService();
       sendServiceWhatsapp(id, 'selesai');
       });
     }));
 
-    list.querySelectorAll('.svc-paid-check').forEach(chk => chk.addEventListener('change', () => {
-      const s = services.find(x => x.id === chk.dataset.id);
-      if (s) s.paid = chk.checked;
-    }));
-
-    list.querySelectorAll('.act-diambil').forEach(b => b.addEventListener('click', () => finalizeServiceAsIncome(b.dataset.id)));
+    list.querySelectorAll('.act-diambil').forEach(b => b.addEventListener('click', () => markServicePickedUp(b.dataset.id)));
+    list.querySelectorAll('.svc-mark-lunas').forEach(b => b.addEventListener('click', () => markServiceLunas(b.dataset.id)));
 
     list.querySelectorAll('.act-wa').forEach(b => b.addEventListener('click', () => sendServiceWhatsapp(b.dataset.id, 'manual')));
 
@@ -3377,6 +3373,63 @@ window.storage = {
       } catch (e) {
         console.error(e);
         showToast('Gagal menyelesaikan data service, coba lagi.');
+      }
+    });
+  }
+
+  // Dipanggil otomatis begitu service ditandai "Selesai dikerjakan" - langsung catat sebagai
+  // tagihan/pemasukan saat itu juga, supaya muncul di tab Tagihan tanpa menunggu diambil.
+  // Ini mencegah dobel pencatatan: saat nanti benar-benar diambil, tinggal update status saja.
+  async function recordServiceTagihanAtSelesai(id) {
+    const s = services.find(x => x.id === id);
+    if (!s || s.linkedTxnId) return; // sudah pernah tercatat, jangan buat lagi
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    try {
+      const txn = {
+        id: uid(),
+        type: 'penjualan',
+        items: [{ name: s.serviceItemName || `Jasa Service Laptop - ${s.device}`, qty: 1, unit: 'jasa', price: sisa }],
+        total: sisa,
+        customerName: s.customerName,
+        customerPhone: s.customerPhone,
+        supplierName: '',
+        paid: sisa <= 0 ? true : false,
+        rekening: s.rekening || BANK_ACCOUNTS[0].id,
+        createdAt: Date.now(),
+      };
+      await saveTxn(txn);
+      txns.unshift(txn);
+      s.linkedTxnId = txn.id;
+      s.paid = txn.paid;
+      await saveService(s);
+      if (!txn.paid) showToast('Service selesai - tagihan otomatis tercatat di tab Tagihan.');
+    } catch (e) {
+      console.error(e);
+      showToast('Gagal mencatat tagihan service, coba lagi.');
+    }
+  }
+
+  // Dipanggil saat "Sudah diambil pelanggan" - kalau tagihan sudah tercatat sejak status Selesai,
+  // di sini cuma update status (tidak membuat transaksi baru, jadi tidak dobel).
+  async function markServicePickedUp(id) {
+    const s = services.find(x => x.id === id);
+    if (!s) return;
+    // Fallback untuk data lama yang sudah di status Selesai sebelum fitur ini ada (belum ada linkedTxnId)
+    if (!s.linkedTxnId) { finalizeServiceAsIncome(id); return; }
+    const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
+    const statusLabel = s.paid === false ? `masih ada tagihan ${rupiah(sisa)} belum lunas` : 'sudah lunas';
+    showConfirm(`Tandai service "${s.customerName}" (${s.device}) sudah diambil pelanggan? (Status pembayaran: ${statusLabel})`, async () => {
+      try {
+        s.status = 'diambil';
+        s.updatedAt = Date.now();
+        s.history = s.history || [];
+        s.history.push({ status: 'diambil', at: Date.now() });
+        await saveService(s);
+        renderService();
+        showServiceReceipt(s);
+      } catch (e) {
+        console.error(e);
+        showToast('Gagal memperbarui status, coba lagi.');
       }
     });
   }
