@@ -384,6 +384,7 @@ body {
   #bk-root .bk-item-row .rm { position: absolute; top: 0; right: 0; }
   #bk-root .bk-item-head { display: none; }
   #bk-root .bk-prod-item-head { display: none; }
+  #bk-root .bk-svc-part-head { display: none; }
   #bk-root .bk-prod-item-row {
     grid-template-columns: 1fr 1fr;
     grid-template-areas: "name name" "qty unit";
@@ -393,6 +394,16 @@ body {
   #bk-root .bk-prod-item-row .f-qty { grid-area: qty; }
   #bk-root .bk-prod-item-row .f-unit { grid-area: unit; }
   #bk-root .bk-prod-item-row .rm { position: absolute; top: 0; right: 0; }
+  #bk-root .bk-svc-part-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "code code" "name name" "qty unit";
+    row-gap: 6px; padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px dashed var(--line); position: relative;
+  }
+  #bk-root .bk-svc-part-row .f-code { grid-area: code; }
+  #bk-root .bk-svc-part-row .f-name { grid-area: name; }
+  #bk-root .bk-svc-part-row .f-qty { grid-area: qty; }
+  #bk-root .bk-svc-part-row .f-unit { grid-area: unit; }
+  #bk-root .bk-svc-part-row .rm { position: absolute; top: 0; right: 0; }
   #bk-root .bk-btn { padding: 10px 14px; font-size: 13px; }
   #bk-root .bk-list-row-wrap { align-items: flex-start; }
   #bk-root .bk-row-actions { flex-direction: column; }
@@ -1196,9 +1207,10 @@ window.storage = {
   function getItemCodeRegistry() {
     const byCode = {};
     const byName = {};
-    const sorted = [...txns].filter(t => t.type === 'pembelian').sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
-    sorted.forEach(t => {
-      (t.items || []).forEach(i => {
+    const relevant = [...txns].filter(t => t.type === 'pembelian' || t.type === 'produksi').sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+    relevant.forEach(t => {
+      const list = t.type === 'pembelian' ? (t.items || []) : (t.hasil || []);
+      list.forEach(i => {
         if (i.code && i.code.trim()) {
           const code = i.code.trim();
           byCode[code.toLowerCase()] = { name: i.name, unit: i.unit || '', code };
@@ -1226,7 +1238,7 @@ window.storage = {
     }
   }
 
-  // ---------- KODE BARANG OTOMATIS PER KATEGORI (LPSTK = Laptop, LPSRV = Onderdil/Sparepart) ----------
+  // ---------- KODE BARANG OTOMATIS PER KATEGORI (LPSTK = Laptop, LPSRV = Onderdil/Sparepart, LPPRD = Hasil Produksi) ----------
   const ITEM_KATEGORI = [
     { prefix: 'LPSTK', label: 'Laptop' },
     { prefix: 'LPSRV', label: 'Onderdil (Sparepart)' },
@@ -1235,14 +1247,17 @@ window.storage = {
     let maxNum = 0;
     const re = new RegExp('^' + prefix + '-(\\d+)$', 'i');
     txns.forEach(t => {
-      if (t.type !== 'pembelian') return;
-      (t.items || []).forEach(i => {
-        const m = (i.code || '').match(re);
-        if (m) {
-          const n = parseInt(m[1], 10);
-          if (n > maxNum) maxNum = n;
-        }
-      });
+      if (t.type === 'pembelian') {
+        (t.items || []).forEach(i => {
+          const m = (i.code || '').match(re);
+          if (m) { const n = parseInt(m[1], 10); if (n > maxNum) maxNum = n; }
+        });
+      } else if (t.type === 'produksi') {
+        (t.hasil || []).forEach(i => {
+          const m = (i.code || '').match(re);
+          if (m) { const n = parseInt(m[1], 10); if (n > maxNum) maxNum = n; }
+        });
+      }
     });
     return maxNum + 1;
   }
@@ -1427,8 +1442,8 @@ window.storage = {
     editingTxnId = id;
     if (t.type === 'produksi') {
       produksiFormState = {
-        bahan: (t.bahan || []).map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '' })),
-        hasil: (t.hasil || []).map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '' })),
+        bahan: (t.bahan || []).map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', code: i.code || '' })),
+        hasil: (t.hasil || []).map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', code: i.code || '' })),
       };
       activeTab = 'produksi';
       renderTabs(); renderBody();
@@ -2149,7 +2164,7 @@ window.storage = {
   }
 
   // ---------- PRODUKSI (konversi nyata bahan baku menjadi produk jadi) ----------
-  function blankProdItem() { return { id: uid(), name: '', qty: '', unit: 'pcs' }; }
+  function blankProdItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', code: '' }; }
   let produksiFormState = { bahan: [blankProdItem()], hasil: [blankProdItem()] };
 
   function renderProdEstimateHtml() {
@@ -2191,16 +2206,18 @@ window.storage = {
     const hppData = computeHPP();
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
+      ${itemCodesDatalistHtml()}
       <div class="bk-stok-note">Catat konversi nyata dari bahan baku menjadi produk jadi (misal olah ikan mentah jadi fillet). Isi jumlah bahan baku yang benar-benar dipakai dan jumlah produk jadi yang benar-benar dihasilkan &mdash; boleh beda dari perkiraan kalau ada susut atau sisa. Produksi tidak memengaruhi saldo keuangan, hanya memindahkan stok dari bahan baku ke produk jadi.</div>
       ${isEdit ? `<div class="bk-cancel-edit" id="bk-cancel-prod-edit">&larr; Batal ubah produksi</div>` : ''}
 
       <div class="bk-section-title">Bahan baku dipakai</div>
-      <div class="bk-prod-item-head"><div>Nama bahan baku</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+      <div class="bk-svc-part-head"><div>Kode</div><div>Nama bahan baku</div><div>Jumlah</div><div>Satuan</div><div></div></div>
       <div id="bk-prod-bahan">${produksiFormState.bahan.map(i => prodItemRowHtml(i, 'bahan')).join('')}</div>
       <button class="bk-btn ghost" id="bk-prod-add-bahan" style="margin-bottom:18px;">+ Tambah bahan baku</button>
 
       <div class="bk-section-title">Hasil produksi (produk jadi)</div>
-      <div class="bk-prod-item-head"><div>Nama produk jadi</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+      <div class="bk-stok-note" style="margin-top:-8px;">Kode hasil produksi (LPPRD-XXXXX) terisi otomatis untuk produk baru. Kalau ini hasil produksi produk yang sama seperti sebelumnya, ganti dengan kode lama supaya stoknya menyatu.</div>
+      <div class="bk-svc-part-head"><div>Kode</div><div>Nama produk jadi</div><div>Jumlah</div><div>Satuan</div><div></div></div>
       <div id="bk-prod-hasil">${produksiFormState.hasil.map(i => prodItemRowHtml(i, 'hasil')).join('')}</div>
       <button class="bk-btn ghost" id="bk-prod-add-hasil" style="margin-bottom:18px;">+ Tambah hasil produksi</button>
 
@@ -2270,9 +2287,25 @@ window.storage = {
 
 
   function wireProdItems(key) {
-    document.getElementById('bk-prod-' + key).querySelectorAll('.bk-prod-item-row').forEach(row => {
+    document.getElementById('bk-prod-' + key).querySelectorAll('.bk-svc-part-row').forEach(row => {
       const id = row.dataset.id;
       const item = produksiFormState[key].find(x => x.id === id);
+      const codeInput = row.querySelector('.f-code');
+      if (codeInput) {
+        codeInput.addEventListener('input', e => {
+          item.code = e.target.value;
+          const codeVal = (item.code || '').trim();
+          if (!codeVal) return;
+          const reg = getItemCodeRegistry();
+          const match = reg.byCode[codeVal.toLowerCase()];
+          if (match) {
+            item.name = match.name;
+            item.unit = match.unit;
+            renderProduksi();
+            showToast(`Kode ditemukan: ${match.name}`);
+          }
+        });
+      }
       row.querySelector('.f-name').addEventListener('input', e => { item.name = e.target.value; updateProdEstimate(); });
       row.querySelector('.f-qty').addEventListener('input', e => { item.qty = e.target.value; updateProdEstimate(); });
       row.querySelector('.f-unit').addEventListener('input', e => { item.unit = e.target.value; updateProdEstimate(); });
@@ -2286,7 +2319,9 @@ window.storage = {
   }
 
   function prodItemRowHtml(item, key) {
-    return `<div class="bk-prod-item-row" data-id="${item.id}">
+    if (key === 'hasil' && !item.code) item.code = generateItemCodeSequence('LPPRD', 1)[0];
+    return `<div class="bk-svc-part-row" data-id="${item.id}">
+      <input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />
       <input class="f-name" value="${escapeAttr(item.name)}" placeholder="${key === 'bahan' ? 'Nama bahan baku' : 'Nama produk jadi'}" list="bk-item-names" />
       <input class="f-qty" type="number" min="0" step="any" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit)}" placeholder="kg/pcs" />
@@ -2325,8 +2360,8 @@ window.storage = {
       id: isEdit ? editingTxnId : uid(),
       type: 'produksi',
       kodeTransaksi: isEdit && existing ? existing.kodeTransaksi : generateTxnCode('produksi'),
-      bahan: validBahan.map(i => ({ name: i.name.trim(), qty: Number(i.qty), unit: i.unit.trim() })),
-      hasil: validHasil.map(i => ({ name: i.name.trim(), qty: Number(i.qty), unit: i.unit.trim() })),
+      bahan: validBahan.map(i => ({ name: i.name.trim(), qty: Number(i.qty), unit: i.unit.trim(), code: (i.code||'').trim() })),
+      hasil: validHasil.map(i => ({ name: i.name.trim(), qty: Number(i.qty), unit: i.unit.trim(), code: (i.code||'').trim() })),
       total: 0,
       createdAt: isEdit && existing ? existing.createdAt : Date.now(),
       createdBy: isEdit && existing ? existing.createdBy : (currentUser ? currentUser.email : null),
@@ -2954,7 +2989,7 @@ window.storage = {
       actionHtml = `
         <div class="bk-field"><label>Biaya final service</label><input class="svc-biaya-final" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.biayaFinal || s.estimasiBiaya)}" placeholder="0" /></div>
         <div style="font-size:12px; color:var(--ink-soft); margin:12px 0 6px;">Sparepart dipakai (opsional &mdash; otomatis kurangi Stok &amp; dihitung sebagai biaya)</div>
-        <div class="bk-prod-item-head"><div>Nama sparepart</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+        <div class="bk-svc-part-head"><div>Kode</div><div>Nama sparepart</div><div>Jumlah</div><div>Satuan</div><div></div></div>
         <div class="svc-parts-list" data-svc="${s.id}">${s.parts.map(p => svcPartRowHtml(s.id, p)).join('')}</div>
         <button class="bk-btn ghost svc-add-part" data-id="${s.id}" style="margin-bottom:10px;">+ Tambah sparepart</button>
         <div class="bk-svc-actions">
