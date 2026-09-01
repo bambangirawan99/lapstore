@@ -224,6 +224,13 @@ body {
 #bk-root .bk-item-head { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-prod-item-row { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
+#bk-root .bk-svc-part-row { display: grid; grid-template-columns: 80px 1fr 80px 80px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
+#bk-root .bk-svc-part-row input {
+  border: 1.5px solid var(--line); border-radius: 8px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
+}
+#bk-root .bk-svc-part-row input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
+#bk-root .bk-svc-part-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
+#bk-root .bk-svc-part-head { display: grid; grid-template-columns: 80px 1fr 80px 80px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 #bk-root .bk-prod-item-row input {
   border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
 }
@@ -565,7 +572,7 @@ window.storage = {
   let bebanList = [];
   let modalAwal = 0;
   let closings = [];
-  let laporanView = 'aruskas'; // aruskas | neraca | beban | stokbulanan | rekening
+  let laporanView = 'aruskas'; // aruskas | jurnal | neraca | beban | utang | stokbulanan | rekening
   let laporanBulan = 'semua';
   function blankBebanForm() { return { kategori: BEBAN_KATEGORI[0], kategoriCustom: '', nominal: '', keterangan: '' }; }
   let bebanFormState = blankBebanForm();
@@ -764,7 +771,7 @@ window.storage = {
   }
   async function saveManualTagihanItem(item) { await window.storage.set('tagihan-manual:' + item.id, JSON.stringify(item), true); }
   async function deleteManualTagihanFromStore(id) { await window.storage.delete('tagihan-manual:' + id, true); }
-  function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs' }; }
+  function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs', code: '' }; }
   let serviceFormState = blankServiceForm();
 
   function monthKey(ts) {
@@ -1102,7 +1109,7 @@ window.storage = {
       </div>` : ''}
       <div class="bk-stok-note" style="margin-top:-6px;">${isJual ? 'Ketik/scan Kode barang untuk otomatis mengisi nama sesuai stok yang sudah tercatat &mdash; hindari salah nama/beda kode.' : 'Isi Kode barang sekali saat pertama beli. Kode ini akan dipakai otomatis saat item ini dijual nanti (cocok untuk barcode scanner).'}</div>
       <div class="bk-item-head"><div>Kode</div><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
-      <div id="bk-items">${st.items.map(itemRowHtml).join('')}</div>
+      <div id="bk-items">${st.items.map(item => itemRowHtml(item, type)).join('')}</div>
       <button class="bk-btn ghost" id="bk-add-item" style="margin-bottom:8px;">+ Tambah item</button>
       ${!isJual ? `<div class="bk-field">
         <label>Ongkos kirim (opsional)</label>
@@ -1162,6 +1169,10 @@ window.storage = {
           item.code = e.target.value;
           applyItemCodeLookup(item, type);
         });
+        codeInput.addEventListener('change', e => {
+          item.code = e.target.value;
+          applyItemCodeLookup(item, type);
+        });
         codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyItemCodeLookup(item, type); } });
       }
       row.querySelector('.f-name').addEventListener('input', e => item.name = e.target.value);
@@ -1215,6 +1226,41 @@ window.storage = {
     }
   }
 
+  // ---------- KODE BARANG OTOMATIS PER KATEGORI (LPSTK = Laptop, LPSRV = Onderdil/Sparepart) ----------
+  const ITEM_KATEGORI = [
+    { prefix: 'LPSTK', label: 'Laptop' },
+    { prefix: 'LPSRV', label: 'Onderdil (Sparepart)' },
+  ];
+  function nextItemCodeNumber(prefix) {
+    let maxNum = 0;
+    const re = new RegExp('^' + prefix + '-(\\d+)$', 'i');
+    txns.forEach(t => {
+      if (t.type !== 'pembelian') return;
+      (t.items || []).forEach(i => {
+        const m = (i.code || '').match(re);
+        if (m) {
+          const n = parseInt(m[1], 10);
+          if (n > maxNum) maxNum = n;
+        }
+      });
+    });
+    return maxNum + 1;
+  }
+  function generateItemCodeSequence(prefix, n) {
+    const start = nextItemCodeNumber(prefix);
+    const result = [];
+    for (let i = 0; i < n; i++) result.push(prefix + '-' + String(start + i).padStart(5, '0'));
+    return result;
+  }
+  function itemCodeDropdownOptionsHtml(selectedVal) {
+    return ITEM_KATEGORI.map(k => {
+      const opts = generateItemCodeSequence(k.prefix, 3);
+      return `<optgroup label="${escapeAttr(k.label)} (${k.prefix})">
+        ${opts.map(c => `<option value="${c}" ${selectedVal===c?'selected':''}>${c}</option>`).join('')}
+      </optgroup>`;
+    }).join('');
+  }
+
   function getKnownItemNames() {
     const set = new Set();
     txns.forEach(t => {
@@ -1231,9 +1277,15 @@ window.storage = {
     return `<datalist id="bk-item-names">${getKnownItemNames().map(n => `<option value="${escapeAttr(n)}"></option>`).join('')}</datalist>`;
   }
 
-  function itemRowHtml(item) {
+  function itemRowHtml(item, type) {
+    const codeField = type === 'pembelian'
+      ? `<select class="f-code" style="border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:12px; font-family:'IBM Plex Mono',monospace; background:#fff;">
+          <option value="">-- manual --</option>
+          ${itemCodeDropdownOptionsHtml(item.code)}
+        </select>`
+      : `<input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />`;
     return `<div class="bk-item-row" data-id="${item.id}">
-      <input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />
+      ${codeField}
       <input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama item" list="bk-item-names" />
       <input class="f-qty" type="number" min="0" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit||'')}" placeholder="pcs/kg" />
@@ -2312,6 +2364,7 @@ window.storage = {
     const unpaidCount = services.filter(s => s.paid === false && s.linkedTxnId).length + manualTagihan.filter(m => m.paid === false).length;
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
+      ${itemCodesDatalistHtml()}
       <div class="bk-stok-note">Catat alur service laptop dari masuk sampai diambil pelanggan. Saat status diubah jadi "Sudah diambil", biaya service otomatis tercatat sebagai pemasukan di Ringkasan &amp; Riwayat (dan otomatis jadi piutang kalau belum lunas). Sparepart yang diisi di tahap "Dikerjakan" otomatis mengurangi Stok dan dihitung sebagai biaya (HPP) service tersebut.</div>
       <div class="bk-filter" style="margin-bottom:18px;">
         <div class="bk-chip ${svcView==='aktif'?'active':''}" data-view="aktif">Sedang berjalan</div>
@@ -2994,10 +3047,13 @@ window.storage = {
   }
 
   function svcPartRowHtml(serviceId, item) {
-    return `<div class="bk-prod-item-row svc-part-row" data-svc="${serviceId}" data-id="${item.id}">
+    const stockMap = computeStock();
+    const stok = item.name ? (stockMap[item.name.trim().toLowerCase()] ? stockMap[item.name.trim().toLowerCase()].qty : 0) : null;
+    return `<div class="bk-svc-part-row svc-part-row" data-svc="${serviceId}" data-id="${item.id}">
+      <input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />
       <input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama sparepart (dari stok)" list="bk-item-names" />
       <input class="f-qty" type="number" min="0" step="any" value="${escapeAttr(item.qty)}" placeholder="0" />
-      <input class="f-unit" value="${escapeAttr(item.unit)}" placeholder="pcs/unit" />
+      <input class="f-unit" value="${escapeAttr(item.unit)}" placeholder="pcs/unit" title="${stok !== null ? 'Sisa stok: ' + stok : ''}" />
       <div class="rm" title="Hapus baris">&times;</div>
     </div>`;
   }
@@ -3118,6 +3174,22 @@ window.storage = {
       const s = services.find(x => x.id === sid);
       const part = s && s.parts ? s.parts.find(p => p.id === pid) : null;
       if (!part) return;
+      const codeInput = row.querySelector('.f-code');
+      if (codeInput) {
+        codeInput.addEventListener('input', e => {
+          part.code = e.target.value;
+          const codeVal = (part.code || '').trim();
+          if (!codeVal) return;
+          const reg = getItemCodeRegistry();
+          const match = reg.byCode[codeVal.toLowerCase()];
+          if (match) {
+            part.name = match.name;
+            part.unit = match.unit;
+            renderService();
+            showToast(`Kode ditemukan: ${match.name}`);
+          }
+        });
+      }
       row.querySelector('.f-name').addEventListener('input', e => part.name = e.target.value);
       row.querySelector('.f-qty').addEventListener('input', e => part.qty = e.target.value);
       row.querySelector('.f-unit').addEventListener('input', e => part.unit = e.target.value);
@@ -3564,6 +3636,39 @@ window.storage = {
     XLSX.writeFile(wb, `arus-kas-${mKey === 'semua' ? 'semua' : mKey}.xlsx`);
   }
 
+  function downloadJurnalUmumExcel(mKey) {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const { entries, totalDebit, totalKredit } = computeJurnalUmum(mKey);
+    const wb = XLSX.utils.book_new();
+    const rows = [];
+    entries.forEach(e => {
+      e.lines.forEach((l, idx) => {
+        rows.push([
+          idx === 0 ? new Date(e.at).toLocaleDateString('id-ID') : '',
+          idx === 0 ? stripEntities(e.ket) : '',
+          l.akun,
+          l.debit > 0 ? l.debit : '',
+          l.kredit > 0 ? l.kredit : '',
+        ]);
+      });
+    });
+    const aoa = [
+      [storeName],
+      ['Jurnal Umum'],
+      ['Periode', mKey === 'semua' ? 'Semua periode' : monthLabel(mKey)],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['Total Debit', totalDebit],
+      ['Total Kredit', totalKredit],
+      [],
+      ['Tanggal', 'Keterangan', 'Akun', 'Debit', 'Kredit'],
+      ...rows,
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Jurnal Umum');
+    XLSX.writeFile(wb, `jurnal-umum-${mKey === 'semua' ? 'semua' : mKey}.xlsx`);
+  }
+
   function downloadBebanExcel(mKey) {
     if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
@@ -3640,7 +3745,7 @@ window.storage = {
       ['Periode', periodLabel],
       ['Dicetak', new Date().toLocaleString('id-ID')],
       [],
-      ['Sheet di file ini: Laba Rugi, Neraca, Arus Kas, Beban Operasional, Utang, Stok Bulanan, Per Rekening'],
+      ['Sheet di file ini: Laba Rugi, Jurnal Umum, Neraca, Arus Kas, Beban Operasional, Utang, Stok Bulanan, Per Rekening'],
     ]), 'Ringkasan');
 
     const lr = computeLabaRugiForMonth(mKey);
@@ -3667,6 +3772,29 @@ window.storage = {
       ['Nama item', 'Jumlah', 'Satuan', 'Total'],
       ...itemBreakdownRows(lr.byMonth, 'pembelian'),
     ]), 'Laba Rugi');
+
+    const jurnal = computeJurnalUmum(mKey);
+    const jurnalRows = [];
+    jurnal.entries.forEach(e => {
+      e.lines.forEach((l, idx) => {
+        jurnalRows.push([
+          idx === 0 ? new Date(e.at).toLocaleDateString('id-ID') : '',
+          idx === 0 ? stripEntities(e.ket) : '',
+          l.akun,
+          l.debit > 0 ? l.debit : '',
+          l.kredit > 0 ? l.kredit : '',
+        ]);
+      });
+    });
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA([
+      ['JURNAL UMUM', periodLabel],
+      [],
+      ['Total Debit', jurnal.totalDebit],
+      ['Total Kredit', jurnal.totalKredit],
+      [],
+      ['Tanggal', 'Keterangan', 'Akun', 'Debit', 'Kredit'],
+      ...jurnalRows,
+    ]), 'Jurnal Umum');
 
     const n = computeNeraca();
     XLSX.utils.book_append_sheet(wb, sheetFromAOA([
@@ -3972,6 +4100,125 @@ window.storage = {
   }
 
   // ---------- LAPORAN: Arus Kas, Neraca, Beban Operasional, Stok Bulanan, Per Rekening ----------
+  // ---------- JURNAL UMUM (derivasi otomatis dari seluruh transaksi, format akuntansi debit/kredit) ----------
+  function computeJurnalUmum(mKey) {
+    const hpp = computeHPP();
+    const entries = [];
+    const inScope = (ts) => mKey === 'semua' ? true : monthKey(ts) === mKey;
+
+    txns.forEach(t => {
+      if (!inScope(t.createdAt)) return;
+      if (t.type === 'pembelian') {
+        entries.push({
+          at: t.createdAt,
+          ket: `Pembelian - ${t.supplierName || 'Supplier'}${t.kodeTransaksi ? ' (' + t.kodeTransaksi + ')' : ''}`,
+          lines: [
+            { akun: 'Persediaan Barang', debit: t.total, kredit: 0 },
+            { akun: 'Kas', debit: 0, kredit: t.total },
+          ],
+        });
+      } else if (t.type === 'penjualan') {
+        const isLunas = t.paid !== false;
+        const hppAmt = hpp.hppByTxn[t.id] || 0;
+        const lines = [];
+        if (isLunas) lines.push({ akun: 'Kas', debit: t.total, kredit: 0 });
+        else lines.push({ akun: 'Piutang Usaha', debit: t.total, kredit: 0 });
+        lines.push({ akun: 'Penjualan', debit: 0, kredit: t.total });
+        if (hppAmt > 0) {
+          lines.push({ akun: 'Harga Pokok Penjualan (HPP)', debit: hppAmt, kredit: 0 });
+          lines.push({ akun: 'Persediaan Barang', debit: 0, kredit: hppAmt });
+        }
+        entries.push({
+          at: t.createdAt,
+          ket: `Penjualan - ${t.customerName || 'Pelanggan'}${t.kodeTransaksi ? ' (' + t.kodeTransaksi + ')' : ''}${isLunas ? '' : ' [Piutang]'}`,
+          lines,
+        });
+      } else if (t.type === 'produksi') {
+        const info = hpp.prodCostByTxn[t.id];
+        const cost = info ? info.batchCost : 0;
+        if (cost > 0) {
+          entries.push({
+            at: t.createdAt,
+            ket: `Produksi${t.kodeTransaksi ? ' (' + t.kodeTransaksi + ')' : ''} - ${summarizeProduksi(t).replace(/&rarr;/, '->')}`,
+            lines: [
+              { akun: 'Persediaan Produk Jadi', debit: cost, kredit: 0 },
+              { akun: 'Persediaan Bahan Baku', debit: 0, kredit: cost },
+            ],
+          });
+        }
+      }
+    });
+
+    bebanList.forEach(b => {
+      if (!inScope(b.createdAt)) return;
+      const label = (b.kategori === 'Lainnya' && b.kategoriCustom) ? b.kategoriCustom : b.kategori;
+      const nominal = Number(b.nominal) || 0;
+      entries.push({
+        at: b.createdAt,
+        ket: `Beban ${label}${b.keterangan ? ' - ' + b.keterangan : ''}`,
+        lines: [
+          { akun: `Beban ${label}`, debit: nominal, kredit: 0 },
+          { akun: 'Kas', debit: 0, kredit: nominal },
+        ],
+      });
+    });
+
+    utangList.forEach(u => {
+      if (!inScope(u.createdAt)) return;
+      const nominal = Number(u.nominalAwal) || 0;
+      entries.push({
+        at: u.createdAt,
+        ket: `Terima pinjaman - ${u.kreditur} (${u.jenis})`,
+        lines: [
+          { akun: 'Kas', debit: nominal, kredit: 0 },
+          { akun: 'Utang Usaha', debit: 0, kredit: nominal },
+        ],
+      });
+    });
+    utangPayments.forEach(p => {
+      if (!inScope(p.createdAt)) return;
+      const u = utangList.find(x => x.id === p.utangId);
+      const nominal = Number(p.nominal) || 0;
+      entries.push({
+        at: p.createdAt,
+        ket: `Bayar cicilan utang - ${u ? u.kreditur : '-'}`,
+        lines: [
+          { akun: 'Utang Usaha', debit: nominal, kredit: 0 },
+          { akun: 'Kas', debit: 0, kredit: nominal },
+        ],
+      });
+    });
+
+    modalEntries.forEach(m => {
+      if (!inScope(m.createdAt)) return;
+      const nominal = Number(m.nominal) || 0;
+      if (m.jenis === 'penarikan') {
+        entries.push({
+          at: m.createdAt,
+          ket: `Penarikan modal${m.keterangan ? ' - ' + m.keterangan : ''}`,
+          lines: [
+            { akun: 'Modal (Penarikan/Prive)', debit: nominal, kredit: 0 },
+            { akun: 'Kas', debit: 0, kredit: nominal },
+          ],
+        });
+      } else {
+        entries.push({
+          at: m.createdAt,
+          ket: `Setoran modal${m.keterangan ? ' - ' + m.keterangan : ''}`,
+          lines: [
+            { akun: 'Kas', debit: nominal, kredit: 0 },
+            { akun: 'Modal', debit: 0, kredit: nominal },
+          ],
+        });
+      }
+    });
+
+    entries.sort((a, b) => (b.at || 0) - (a.at || 0));
+    const totalDebit = entries.reduce((s, e) => s + e.lines.reduce((s2, l) => s2 + l.debit, 0), 0);
+    const totalKredit = entries.reduce((s, e) => s + e.lines.reduce((s2, l) => s2 + l.kredit, 0), 0);
+    return { entries, totalDebit, totalKredit };
+  }
+
   function laporanAvailableMonths() {
     const set = new Set();
     txns.forEach(t => set.add(monthKey(t.createdAt)));
@@ -4139,6 +4386,7 @@ window.storage = {
     bodyEl.innerHTML = `
       <div class="bk-filter" style="margin-bottom:14px;">
         <div class="bk-chip ${laporanView==='aruskas'?'active':''}" data-lv="aruskas">Arus Kas</div>
+        <div class="bk-chip ${laporanView==='jurnal'?'active':''}" data-lv="jurnal">Jurnal Umum</div>
         <div class="bk-chip ${laporanView==='neraca'?'active':''}" data-lv="neraca">Neraca &amp; Tutup Buku</div>
         <div class="bk-chip ${laporanView==='beban'?'active':''}" data-lv="beban">Beban Operasional</div>
         <div class="bk-chip ${laporanView==='utang'?'active':''}" data-lv="utang">Utang/Kewajiban</div>
@@ -4148,6 +4396,7 @@ window.storage = {
       <button class="bk-btn primary" id="bk-download-semua-excel" style="margin-bottom:20px;">Unduh semua laporan (Excel, 1 file)</button>
       <div id="bk-laporan-slot">${
         laporanView === 'aruskas' ? renderArusKasHtml() :
+        laporanView === 'jurnal' ? renderJurnalUmumHtml() :
         laporanView === 'neraca' ? renderNeracaHtml() :
         laporanView === 'beban' ? renderBebanHtml() :
         laporanView === 'utang' ? renderUtangHtml() :
@@ -4162,6 +4411,7 @@ window.storage = {
 
   function wireLaporanEvents() {
     if (laporanView === 'aruskas') wireArusKasEvents();
+    else if (laporanView === 'jurnal') wireJurnalUmumEvents();
     else if (laporanView === 'neraca') wireNeracaEvents();
     else if (laporanView === 'beban') wireBebanEvents();
     else if (laporanView === 'utang') wireUtangEvents();
@@ -4204,6 +4454,58 @@ window.storage = {
     const sel = document.getElementById('bk-lap-month');
     if (sel) sel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
     document.getElementById('bk-aruskas-excel').addEventListener('click', () => downloadArusKasExcel(laporanBulan));
+  }
+
+  function renderJurnalUmumHtml() {
+    const months = laporanAvailableMonths();
+    const mKey = laporanBulan;
+    const { entries, totalDebit, totalKredit } = computeJurnalUmum(mKey);
+    return `
+      <div class="bk-field" style="max-width:260px;">
+        <label>Bulan</label>
+        <select id="bk-lap-month" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
+          <option value="semua" ${mKey==='semua'?'selected':''}>Semua bulan</option>
+          ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
+        </select>
+      </div>
+      <button class="bk-btn ghost" id="bk-jurnal-excel" style="margin-bottom:14px;">Unduh Excel</button>
+      <div class="bk-stats" style="margin-bottom:18px;">
+        <div class="bk-stat in"><div class="lbl">Total Debit</div><div class="val">${rupiah(totalDebit)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Total Kredit</div><div class="val">${rupiah(totalKredit)}</div></div>
+      </div>
+      <div class="bk-stok-note">Jurnal ini dibuat otomatis dari seluruh transaksi (pembelian, penjualan, produksi, beban, utang, modal) dalam format akuntansi debit/kredit standar. Total Debit dan Kredit di atas seharusnya selalu sama (balance) karena setiap transaksi tercatat dua sisi.</div>
+      ${entries.length ? `
+      <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:8px 8px 8px 0; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line); white-space:nowrap;">Tanggal</th>
+              <th style="text-align:left; padding:8px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Keterangan</th>
+              <th style="text-align:left; padding:8px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Akun</th>
+              <th style="text-align:right; padding:8px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Debit</th>
+              <th style="text-align:right; padding:8px 0 8px 8px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Kredit</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${entries.map(e => e.lines.map((l, idx) => `
+              <tr>
+                <td style="padding:6px 8px 6px 0; border-bottom:1px solid var(--line); white-space:nowrap; color:var(--ink-soft); font-size:11.5px;">${idx===0 ? new Date(e.at).toLocaleDateString('id-ID') : ''}</td>
+                <td style="padding:6px 8px; border-bottom:1px solid var(--line); color:var(--ink-soft); font-size:11.5px;">${idx===0 ? e.ket : ''}</td>
+                <td style="padding:6px 8px; border-bottom:1px solid var(--line); padding-left:${l.kredit>0?'20px':'8px'};">${escapeAttr(l.akun)}</td>
+                <td style="padding:6px 8px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace;">${l.debit>0?rupiah(l.debit):''}</td>
+                <td style="padding:6px 0 6px 8px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace;">${l.kredit>0?rupiah(l.kredit):''}</td>
+              </tr>
+            `).join('')).join('')}
+          </tbody>
+        </table>
+      </div>
+      ` : '<div class="bk-empty">Belum ada transaksi pada periode ini.</div>'}
+    `;
+  }
+  function wireJurnalUmumEvents() {
+    const sel = document.getElementById('bk-lap-month');
+    if (sel) sel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
+    document.getElementById('bk-jurnal-excel').addEventListener('click', () => downloadJurnalUmumExcel(laporanBulan));
   }
 
   function renderNeracaHtml() {
