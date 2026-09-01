@@ -550,6 +550,7 @@ window.storage = {
     { id: 'pembelian', label: 'Catat pembelian' },
     { id: 'penjualan', label: 'Catat penjualan' },
     { id: 'stok', label: 'Stok' },
+    { id: 'pricelist', label: 'Pricelist' },
     { id: 'produksi', label: 'Produksi' },
     { id: 'service', label: 'Service Laptop' },
     { id: 'piutang', label: 'Piutang', ownerOnly: true },
@@ -782,6 +783,32 @@ window.storage = {
   }
   async function saveManualTagihanItem(item) { await window.storage.set('tagihan-manual:' + item.id, JSON.stringify(item), true); }
   async function deleteManualTagihanFromStore(id) { await window.storage.delete('tagihan-manual:' + id, true); }
+
+  // ---------- PRICELIST (markup per barang, disimpan otomatis) ----------
+  let pricelistData = {}; // key: kode barang (atau nama disanitasi) -> { markup: number persen }
+  function pricelistKeyFor(code, name) {
+    const base = (code || name || '').trim().toLowerCase();
+    return base.replace(/[^a-z0-9]+/g, '_').slice(0, 120) || 'item';
+  }
+  async function loadPricelistData() {
+    pricelistData = {};
+    try {
+      const listRes = await window.storage.list('pricelist:', true);
+      const keys = (listRes && listRes.keys) || [];
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) pricelistData[k.slice('pricelist:'.length)] = JSON.parse(r.value);
+        } catch (e) { /* skip */ }
+      }
+    } catch (e) { console.error('Gagal memuat data pricelist', e); }
+  }
+  async function savePricelistMarkup(itemKey, markup) {
+    pricelistData[itemKey] = { markup };
+    try { await window.storage.set('pricelist:' + itemKey, JSON.stringify({ markup }), true); }
+    catch (e) { console.error(e); showToast('Gagal menyimpan markup, coba lagi.'); }
+  }
+
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs', code: '' }; }
   let serviceFormState = blankServiceForm();
 
@@ -891,6 +918,7 @@ window.storage = {
     if (activeTab === 'pembelian') return renderForm('pembelian');
     if (activeTab === 'penjualan') return renderForm('penjualan');
     if (activeTab === 'stok') return renderStok();
+    if (activeTab === 'pricelist') return renderPricelist();
     if (activeTab === 'produksi') return renderProduksi();
     if (activeTab === 'service') return renderService();
     if (activeTab === 'piutang') return renderPiutang();
@@ -2162,6 +2190,118 @@ window.storage = {
       </div>
       ` : '<div class="bk-empty">Belum ada data stok. Catat pembelian, penjualan, atau produksi dulu.</div>'}
     `;
+  }
+
+  // ---------- PRICELIST (harga jual dari HPP + markup, siap ekspor Excel) ----------
+  function renderPricelist() {
+    const stockMap = computeStock();
+    const codeReg = getItemCodeRegistry();
+    const hpp = computeHPP();
+    const rows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.name.localeCompare(b.name));
+    bodyEl.innerHTML = `
+      <div class="bk-stok-note">Harga jual dihitung otomatis: <strong>HPP/unit &times; (1 + Markup%)</strong>, dibulatkan ke Rp100 terdekat. Isi markup per barang di kolom "Markup (%)" &mdash; harga jual langsung ter-update dan tersimpan otomatis. File Excel yang diunduh hanya berisi Kode, Nama, Satuan &amp; Harga Jual (bersih, siap dibagikan ke pelanggan tanpa membocorkan HPP/margin).</div>
+      <div class="bk-two-col" style="margin-bottom:10px; max-width:460px;">
+        <input id="bk-pricelist-default-markup" type="number" min="0" step="any" placeholder="Markup default % (mis: 20)" />
+        <button class="bk-btn ghost" id="bk-pricelist-apply-default">Terapkan ke yang masih 0%</button>
+      </div>
+      <button class="bk-btn primary" id="bk-pricelist-download" style="margin-bottom:18px;">Unduh Pricelist (Excel)</button>
+      ${rows.length ? `
+      <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+        <table style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:8px 10px 8px 0; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Nama item</th>
+              <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Satuan</th>
+              <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Stok</th>
+              <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">HPP/unit</th>
+              <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Markup (%)</th>
+              <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Harga Jual Rilis</th>
+            </tr>
+          </thead>
+          <tbody id="bk-pricelist-tbody">
+            ${rows.map(r => {
+              const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
+              const itemKey = pricelistKeyFor(code, r.name);
+              const unitCost = hpp.getCurrentUnitCost(r.name);
+              const markup = pricelistData[itemKey] ? (Number(pricelistData[itemKey].markup) || 0) : 0;
+              const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
+              return `<tr data-key="${itemKey}" data-cost="${unitCost}">
+                <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
+                  ${escapeAttr(r.name)}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}
+                </td>
+                <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft);">${r.unit || '-'}</td>
+                <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace;">${r.qty.toLocaleString('id-ID')}</td>
+                <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; color:var(--ink-soft);">${rupiah(unitCost)}</td>
+                <td style="padding:6px 10px; border-bottom:1px solid var(--line); text-align:right;">
+                  <input class="pricelist-markup-input" type="number" min="0" step="any" value="${markup}" style="width:72px; text-align:right; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace;" />
+                </td>
+                <td class="pricelist-harga-jual-cell" style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--accent-ink);">${rupiah(hargaJual)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      ` : '<div class="bk-empty">Belum ada data stok. Catat pembelian dulu supaya ada barang yang bisa diberi harga jual.</div>'}
+    `;
+
+    bodyEl.querySelectorAll('.pricelist-markup-input').forEach(input => {
+      input.addEventListener('input', async (e) => {
+        const tr = e.target.closest('tr');
+        const itemKey = tr.dataset.key;
+        const unitCost = Number(tr.dataset.cost) || 0;
+        const markup = Number(e.target.value) || 0;
+        const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
+        tr.querySelector('.pricelist-harga-jual-cell').textContent = rupiah(hargaJual);
+        await savePricelistMarkup(itemKey, markup);
+      });
+    });
+
+    document.getElementById('bk-pricelist-apply-default').addEventListener('click', async () => {
+      const defVal = Number(document.getElementById('bk-pricelist-default-markup').value) || 0;
+      if (defVal <= 0) { showToast('Isi dulu markup default-nya.'); return; }
+      const trsToUpdate = Array.from(bodyEl.querySelectorAll('#bk-pricelist-tbody tr')).filter(tr => {
+        const input = tr.querySelector('.pricelist-markup-input');
+        return Number(input.value) === 0;
+      });
+      for (const tr of trsToUpdate) {
+        const input = tr.querySelector('.pricelist-markup-input');
+        const unitCost = Number(tr.dataset.cost) || 0;
+        input.value = defVal;
+        const hargaJual = Math.round(unitCost * (1 + defVal / 100) / 100) * 100;
+        tr.querySelector('.pricelist-harga-jual-cell').textContent = rupiah(hargaJual);
+        await savePricelistMarkup(tr.dataset.key, defVal);
+      }
+      showToast(`Markup ${defVal}% diterapkan ke ${trsToUpdate.length} barang.`);
+    });
+
+    document.getElementById('bk-pricelist-download').addEventListener('click', downloadPricelistExcel);
+  }
+
+  function downloadPricelistExcel() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
+    const stockMap = computeStock();
+    const codeReg = getItemCodeRegistry();
+    const hpp = computeHPP();
+    const rows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.name.localeCompare(b.name));
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [storeName],
+      ['DAFTAR HARGA (PRICELIST)'],
+      ['Berlaku per', new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })],
+      [],
+      ['Kode', 'Nama Barang', 'Satuan', 'Harga Jual'],
+    ];
+    rows.forEach(r => {
+      const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
+      const itemKey = pricelistKeyFor(code, r.name);
+      const unitCost = hpp.getCurrentUnitCost(r.name);
+      const markup = pricelistData[itemKey] ? (Number(pricelistData[itemKey].markup) || 0) : 0;
+      const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
+      aoa.push([code || '-', r.name, r.unit || '-', hargaJual]);
+    });
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Pricelist');
+    XLSX.writeFile(wb, `pricelist-${storeName.replace(/\s+/g,'_')}-${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
   // ---------- PRODUKSI (konversi nyata bahan baku menjadi produk jadi) ----------
@@ -5226,7 +5366,8 @@ window.storage = {
       await loadUtangPayments();
       await loadModalEntries();
       await loadManualTagihan();
-      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && activeTab !== 'laporan' && activeTab !== 'cari' && !editingTxnId && modalSlot.innerHTML.trim() === '';
+      await loadPricelistData();
+      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && activeTab !== 'laporan' && activeTab !== 'cari' && activeTab !== 'pricelist' && !editingTxnId && modalSlot.innerHTML.trim() === '';
       if (safeToRerender) renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
     } catch (e) {
@@ -5356,6 +5497,7 @@ window.storage = {
     await loadUtangPayments();
     await loadModalEntries();
     await loadManualTagihan();
+    await loadPricelistData();
     renderTabs();
     renderBody();
     if (bgRefreshIntervalId) clearInterval(bgRefreshIntervalId);
