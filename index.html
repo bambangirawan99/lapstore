@@ -710,30 +710,20 @@ window.storage = {
   let svcRiwayatMonth = 'semua';
   let svcSearchQuery = '';
   let editingServiceDetailId = null;
-  let svcKodeCandidates = [];
   function blankServiceForm() {
     return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '', rekening: BANK_ACCOUNTS[0].id, kodeService: '' };
   }
-  function randomAlnum5() {
-    // Tanpa karakter ambigu (0/O, 1/I) supaya mudah dibaca & ditulis manual
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let s = '';
-    for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
-    return s;
-  }
+  const SVC_KODE_PREFIX = 'LPSTR-';
   function generateServiceCode() {
-    return 'SVC-' + randomAlnum5();
-  }
-  function generateServiceCodeCandidates(n) {
-    const used = new Set(services.map(s => (s.kodeService || '').toUpperCase()));
-    const result = [];
-    let guard = 0;
-    while (result.length < n && guard < 300) {
-      guard++;
-      const code = generateServiceCode();
-      if (!used.has(code.toUpperCase()) && !result.includes(code)) result.push(code);
-    }
-    return result;
+    let maxNum = 0;
+    services.forEach(s => {
+      const m = (s.kodeService || '').match(/^LPSTR-(\d+)$/i);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    return SVC_KODE_PREFIX + String(maxNum + 1).padStart(5, '0');
   }
   function generateTxnCode(type) {
     const prefix = type === 'penjualan' ? 'PJ' : type === 'pembelian' ? 'PB' : 'PR';
@@ -2331,10 +2321,7 @@ window.storage = {
     const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
     const pool = services.filter(s => s.status !== 'diambil');
     const filtered = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
-    if (svcKodeCandidates.length === 0) {
-      svcKodeCandidates = generateServiceCodeCandidates(5);
-      serviceFormState.kodeService = svcKodeCandidates[0];
-    }
+    if (!serviceFormState.kodeService) serviceFormState.kodeService = generateServiceCode();
     return `
       <div class="bk-section-title">Terima service baru</div>
       <div class="bk-quickai">
@@ -2342,13 +2329,8 @@ window.storage = {
         <button class="bk-btn accent" id="bk-svc-quick-btn">Isi otomatis (AI)</button>
       </div>
       <div class="bk-field">
-        <label>Kode Service (pilih salah satu, atau acak ulang)</label>
-        <div style="display:flex; gap:8px;">
-          <select id="bk-svc-kode" style="flex:1; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'IBM Plex Mono',monospace; background:#fff;">
-            ${svcKodeCandidates.map(c => `<option value="${c}" ${serviceFormState.kodeService===c?'selected':''}>${c}</option>`).join('')}
-          </select>
-          <button class="bk-btn ghost" id="bk-svc-kode-reroll" type="button" title="Acak ulang 5 pilihan baru">&#8635; Acak</button>
-        </div>
+        <label>Kode Service (otomatis urut, bisa diganti manual kalau perlu)</label>
+        <input id="bk-svc-kode" value="${escapeAttr(serviceFormState.kodeService)}" placeholder="LPSTR-00001" style="font-family:'IBM Plex Mono',monospace;" />
       </div>
       <div class="bk-two-col">
         <div class="bk-field"><label>Nama pelanggan</label><input id="bk-svc-name" value="${escapeAttr(serviceFormState.customerName)}" placeholder="Nama pelanggan" /></div>
@@ -2379,12 +2361,7 @@ window.storage = {
   }
 
   function wireServiceAktifEvents() {
-    document.getElementById('bk-svc-kode').addEventListener('change', e => serviceFormState.kodeService = e.target.value);
-    document.getElementById('bk-svc-kode-reroll').addEventListener('click', () => {
-      svcKodeCandidates = generateServiceCodeCandidates(5);
-      serviceFormState.kodeService = svcKodeCandidates[0];
-      renderService();
-    });
+    document.getElementById('bk-svc-kode').addEventListener('input', e => serviceFormState.kodeService = e.target.value);
     document.getElementById('bk-svc-name').addEventListener('input', e => serviceFormState.customerName = e.target.value);
     document.getElementById('bk-svc-phone').addEventListener('input', e => serviceFormState.customerPhone = e.target.value);
     document.getElementById('bk-svc-device').addEventListener('input', e => serviceFormState.device = e.target.value);
@@ -2873,7 +2850,6 @@ window.storage = {
       await saveService(s);
       services.unshift(s);
       serviceFormState = blankServiceForm();
-      svcKodeCandidates = [];
       renderService();
       showServiceReceivedPrompt(s);
     } catch (e) {
