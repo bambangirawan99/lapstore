@@ -714,7 +714,7 @@ window.storage = {
     return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '', rekening: BANK_ACCOUNTS[0].id, kodeService: '' };
   }
   const SVC_KODE_PREFIX = 'LPSTR-';
-  function generateServiceCode() {
+  function nextServiceNumber() {
     let maxNum = 0;
     services.forEach(s => {
       const m = (s.kodeService || '').match(/^LPSTR-(\d+)$/i);
@@ -723,7 +723,16 @@ window.storage = {
         if (n > maxNum) maxNum = n;
       }
     });
-    return SVC_KODE_PREFIX + String(maxNum + 1).padStart(5, '0');
+    return maxNum + 1;
+  }
+  function generateServiceCode() {
+    return SVC_KODE_PREFIX + String(nextServiceNumber()).padStart(5, '0');
+  }
+  function generateServiceCodeSequence(n) {
+    const start = nextServiceNumber();
+    const result = [];
+    for (let i = 0; i < n; i++) result.push(SVC_KODE_PREFIX + String(start + i).padStart(5, '0'));
+    return result;
   }
   function generateTxnCode(type) {
     const prefix = type === 'penjualan' ? 'PJ' : type === 'pembelian' ? 'PB' : 'PR';
@@ -2321,7 +2330,10 @@ window.storage = {
     const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
     const pool = services.filter(s => s.status !== 'diambil');
     const filtered = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
-    if (!serviceFormState.kodeService) serviceFormState.kodeService = generateServiceCode();
+    const svcKodeOptions = generateServiceCodeSequence(5);
+    if (!serviceFormState.kodeService || !svcKodeOptions.includes(serviceFormState.kodeService)) {
+      serviceFormState.kodeService = svcKodeOptions[0];
+    }
     return `
       <div class="bk-section-title">Terima service baru</div>
       <div class="bk-quickai">
@@ -2329,8 +2341,10 @@ window.storage = {
         <button class="bk-btn accent" id="bk-svc-quick-btn">Isi otomatis (AI)</button>
       </div>
       <div class="bk-field">
-        <label>Kode Service (otomatis urut, bisa diganti manual kalau perlu)</label>
-        <input id="bk-svc-kode" value="${escapeAttr(serviceFormState.kodeService)}" placeholder="LPSTR-00001" style="font-family:'IBM Plex Mono',monospace;" />
+        <label>Kode Service (otomatis urut, pilih nomor berikutnya)</label>
+        <select id="bk-svc-kode" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'IBM Plex Mono',monospace; background:#fff;">
+          ${svcKodeOptions.map(c => `<option value="${c}" ${serviceFormState.kodeService===c?'selected':''}>${c}</option>`).join('')}
+        </select>
       </div>
       <div class="bk-two-col">
         <div class="bk-field"><label>Nama pelanggan</label><input id="bk-svc-name" value="${escapeAttr(serviceFormState.customerName)}" placeholder="Nama pelanggan" /></div>
@@ -2361,7 +2375,7 @@ window.storage = {
   }
 
   function wireServiceAktifEvents() {
-    document.getElementById('bk-svc-kode').addEventListener('input', e => serviceFormState.kodeService = e.target.value);
+    document.getElementById('bk-svc-kode').addEventListener('change', e => serviceFormState.kodeService = e.target.value);
     document.getElementById('bk-svc-name').addEventListener('input', e => serviceFormState.customerName = e.target.value);
     document.getElementById('bk-svc-phone').addEventListener('input', e => serviceFormState.customerPhone = e.target.value);
     document.getElementById('bk-svc-device').addEventListener('input', e => serviceFormState.device = e.target.value);
