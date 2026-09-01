@@ -904,7 +904,8 @@ window.storage = {
     const t = totals();
     const hpp = computeHPP();
     const margin = hpp.totalRevenue > 0 ? (hpp.labaKotor / hpp.totalRevenue * 100) : 0;
-    const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0);
+    const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0)
+      + manualTagihan.filter(m => m.paid === false).reduce((s,m) => s + (Number(m.nominal)||0), 0);
     const recent = txns.slice(0, 6);
     if (!isOwner()) {
       bodyEl.innerHTML = `
@@ -2720,19 +2721,23 @@ window.storage = {
       if (s) downloadInvoicePdf(serviceToInvoiceData(s));
     }));
     bodyEl.querySelectorAll('.svc-tagihan-wa').forEach(b => b.addEventListener('click', () => remindServiceTagihanWhatsapp(b.dataset.id)));
-    bodyEl.querySelectorAll('.manual-tagihan-lunas').forEach(b => b.addEventListener('click', () => markManualTagihanLunas(b.dataset.id)));
-    bodyEl.querySelectorAll('.manual-tagihan-invoice').forEach(b => b.addEventListener('click', () => {
+    wireManualTagihanActions(bodyEl, renderService);
+  }
+
+  function wireManualTagihanActions(scopeEl, refreshFn) {
+    scopeEl.querySelectorAll('.manual-tagihan-lunas').forEach(b => b.addEventListener('click', () => markManualTagihanLunas(b.dataset.id, refreshFn)));
+    scopeEl.querySelectorAll('.manual-tagihan-invoice').forEach(b => b.addEventListener('click', () => {
       const m = manualTagihan.find(x => x.id === b.dataset.id);
       if (m) downloadInvoicePdf(manualToInvoiceData(m));
     }));
-    bodyEl.querySelectorAll('.manual-tagihan-wa').forEach(b => b.addEventListener('click', () => remindManualTagihanWhatsapp(b.dataset.id)));
-    bodyEl.querySelectorAll('.manual-tagihan-hapus').forEach(b => b.addEventListener('click', () => {
+    scopeEl.querySelectorAll('.manual-tagihan-wa').forEach(b => b.addEventListener('click', () => remindManualTagihanWhatsapp(b.dataset.id)));
+    scopeEl.querySelectorAll('.manual-tagihan-hapus').forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.id;
       showConfirm('Hapus tagihan manual ini?', async () => {
         try {
           await deleteManualTagihanFromStore(id);
           manualTagihan = manualTagihan.filter(x => x.id !== id);
-          renderService();
+          refreshFn();
           showToast('Tagihan manual dihapus.');
         } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
       });
@@ -2755,13 +2760,13 @@ window.storage = {
     }
   }
 
-  async function markManualTagihanLunas(id) {
+  async function markManualTagihanLunas(id, refreshFn) {
     const m = manualTagihan.find(x => x.id === id);
     if (!m) return;
     try {
       m.paid = true;
       await saveManualTagihanItem(m);
-      renderService();
+      (refreshFn || renderService)();
       showToast('Tagihan manual ditandai lunas.');
     } catch (e) {
       console.error(e);
@@ -3440,13 +3445,19 @@ window.storage = {
 
   // ---------- PIUTANG ----------
   function renderPiutang() {
-    const unpaid = txns.filter(t => t.type === 'penjualan' && t.paid === false).sort((a,b) => b.createdAt - a.createdAt);
-    const total = unpaid.reduce((s,t) => s + t.total, 0);
+    const unpaidTxn = txns.filter(t => t.type === 'penjualan' && t.paid === false);
+    const unpaidManual = manualTagihan.filter(m => m.paid === false);
+    const combined = [
+      ...unpaidTxn.map(t => ({ kind: 'txn', data: t, at: t.createdAt })),
+      ...unpaidManual.map(m => ({ kind: 'manual', data: m, at: m.createdAt })),
+    ].sort((a, b) => b.at - a.at);
+    const total = combined.reduce((s, x) => s + (x.kind === 'txn' ? x.data.total : (Number(x.data.nominal) || 0)), 0);
     bodyEl.innerHTML = `
       <div class="bk-stats" style="grid-template-columns: 1fr;">
         <div class="bk-stat out"><div class="lbl">Total piutang belum lunas</div><div class="val">${rupiah(total)}</div></div>
       </div>
-      <div id="bk-piutang-list">${unpaid.length ? unpaid.map(piutangRowHtml).join('') : '<div class="bk-empty">Tidak ada piutang. Semua penjualan sudah lunas.</div>'}</div>
+      <div class="bk-stok-note">Termasuk piutang dari penjualan/service dan tagihan manual (dibuat di tab Service &rarr; Tagihan) &mdash; otomatis tergabung di sini.</div>
+      <div id="bk-piutang-list">${combined.length ? combined.map(x => x.kind === 'txn' ? piutangRowHtml(x.data) : manualTagihanRowHtml(x.data)).join('') : '<div class="bk-empty">Tidak ada piutang. Semua sudah lunas.</div>'}</div>
     `;
     bodyEl.querySelectorAll('[data-lunas]').forEach(btn => {
       btn.addEventListener('click', () => markLunas(btn.dataset.lunas));
@@ -3460,6 +3471,7 @@ window.storage = {
     bodyEl.querySelectorAll('[data-remind]').forEach(btn => {
       btn.addEventListener('click', () => remindWhatsapp(btn.dataset.remind));
     });
+    wireManualTagihanActions(bodyEl, renderPiutang);
   }
 
   function piutangRowHtml(t) {
@@ -4248,6 +4260,20 @@ window.storage = {
       }
     });
 
+    manualTagihan.forEach(m => {
+      if (!inScope(m.createdAt)) return;
+      const nominal = Number(m.nominal) || 0;
+      const isLunas = m.paid === true;
+      entries.push({
+        at: m.createdAt,
+        ket: `Tagihan manual - ${m.customerName || 'Pelanggan'}${m.kodeTagihan ? ' (' + m.kodeTagihan + ')' : ''}${m.keterangan ? ' - ' + m.keterangan : ''}`,
+        lines: [
+          { akun: isLunas ? 'Kas' : 'Piutang Usaha', debit: nominal, kredit: 0 },
+          { akun: 'Pendapatan Jasa Lain-lain', debit: 0, kredit: nominal },
+        ],
+      });
+    });
+
     entries.sort((a, b) => (b.at || 0) - (a.at || 0));
     const totalDebit = entries.reduce((s, e) => s + e.lines.reduce((s2, l) => s2 + l.debit, 0), 0);
     const totalKredit = entries.reduce((s, e) => s + e.lines.reduce((s2, l) => s2 + l.kredit, 0), 0);
@@ -4277,7 +4303,8 @@ window.storage = {
     return kas;
   }
   function computePiutangTotalLap() {
-    return txns.filter(t => t.type === 'penjualan' && t.paid === false).reduce((s,t) => s + t.total, 0);
+    return txns.filter(t => t.type === 'penjualan' && t.paid === false).reduce((s,t) => s + t.total, 0)
+      + manualTagihan.filter(m => m.paid === false).reduce((s,m) => s + (Number(m.nominal)||0), 0);
   }
   function computePersediaanTotal() {
     const stockMap = computeStock();
