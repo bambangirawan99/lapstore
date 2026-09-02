@@ -594,12 +594,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('beban:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) bebanList.push(JSON.parse(r.value));
         } catch (e) { /* skip */ }
-      }
+      }));
       bebanList.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     } catch (e) { console.error('Gagal memuat beban operasional', e); }
   }
@@ -625,12 +625,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('modal-entry:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) modalEntries.push(JSON.parse(r.value));
         } catch (e) { /* skip */ }
-      }
+      }));
       modalEntries.sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
     } catch (e) { console.error('Gagal memuat riwayat modal', e); }
 
@@ -657,12 +657,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('closing:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) closings.push(JSON.parse(r.value));
         } catch (e) { /* skip */ }
-      }
+      }));
       closings.sort((a,b) => (b.savedAt||0) - (a.savedAt||0));
     } catch (e) { console.error('Gagal memuat riwayat tutup buku', e); }
   }
@@ -681,12 +681,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('utang:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) utangList.push(JSON.parse(r.value));
         } catch (e) { /* skip */ }
-      }
+      }));
       utangList.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     } catch (e) { console.error('Gagal memuat utang', e); }
   }
@@ -698,12 +698,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('utang-bayar:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) utangPayments.push(JSON.parse(r.value));
         } catch (e) { /* skip */ }
-      }
+      }));
       utangPayments.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     } catch (e) { console.error('Gagal memuat riwayat pembayaran utang', e); }
   }
@@ -772,12 +772,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('tagihan-manual:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) manualTagihan.push(JSON.parse(r.value));
         } catch (e) { /* skip */ }
-      }
+      }));
       manualTagihan.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     } catch (e) { console.error('Gagal memuat tagihan manual', e); }
   }
@@ -795,12 +795,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('pricelist:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) pricelistData[k.slice('pricelist:'.length)] = JSON.parse(r.value);
         } catch (e) { /* skip */ }
-      }
+      }));
     } catch (e) { console.error('Gagal memuat data pricelist', e); }
   }
   async function savePricelistMarkup(itemKey, markup) {
@@ -849,12 +849,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('txn:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) txns.push(JSON.parse(r.value));
         } catch (e) { /* skip unreadable entry */ }
-      }
+      }));
       txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     } catch (e) { console.error('Gagal memuat transaksi', e); }
   }
@@ -870,12 +870,12 @@ window.storage = {
     try {
       const listRes = await window.storage.list('service:', true);
       const keys = (listRes && listRes.keys) || [];
-      for (const k of keys) {
+      await Promise.all(keys.map(async (k) => {
         try {
           const r = await window.storage.get(k, true);
           if (r && r.value) services.push(JSON.parse(r.value));
         } catch (e) { /* skip unreadable entry */ }
-      }
+      }));
       services.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     } catch (e) { console.error('Gagal memuat data service', e); }
   }
@@ -1245,7 +1245,13 @@ window.storage = {
   }
 
   // ---------- KODE BARANG (barcode) ----------
+  let _itemCodeRegistryCache = null;
+  let _itemCodeRegistryCacheAt = 0;
   function getItemCodeRegistry() {
+    const now = Date.now();
+    if (_itemCodeRegistryCache && (now - _itemCodeRegistryCacheAt) < 1500) {
+      return _itemCodeRegistryCache;
+    }
     const byCode = {};
     const byName = {};
     const byNameFull = {};
@@ -1261,7 +1267,9 @@ window.storage = {
         }
       });
     });
-    return { byCode, byName, byNameFull };
+    _itemCodeRegistryCache = { byCode, byName, byNameFull };
+    _itemCodeRegistryCacheAt = now;
+    return _itemCodeRegistryCache;
   }
   function itemCodesDatalistHtml() {
     const reg = getItemCodeRegistry();
@@ -1970,7 +1978,13 @@ window.storage = {
   }
 
   // ---------- STOK ----------
+  let _computeStockCache = null;
+  let _computeStockCacheAt = 0;
   function computeStock() {
+    const now = Date.now();
+    if (_computeStockCache && (now - _computeStockCacheAt) < 1500) {
+      return _computeStockCache;
+    }
     const stockMap = {};
     function addQty(name, unit, delta) {
       const key = (name || '').trim().toLowerCase();
@@ -1989,6 +2003,8 @@ window.storage = {
         (t.hasil || []).forEach(i => addQty(i.name, i.unit, Number(i.qty) || 0));
       }
     });
+    _computeStockCache = stockMap;
+    _computeStockCacheAt = now;
     return stockMap;
   }
 
