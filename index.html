@@ -544,6 +544,15 @@ window.storage = {
   function isOwner() {
     return !!(currentUser && currentUser.email && OWNER_EMAILS.map(e => e.toLowerCase()).includes(currentUser.email.toLowerCase()));
   }
+  // Hanya akun Pemilik (OWNER_EMAILS) yang boleh menghapus data yang sudah dibuat.
+  // Admin/Kasir tetap bisa input & edit seperti biasa, tapi tidak bisa menghapus.
+  function requireOwnerForDelete() {
+    if (!isOwner()) {
+      showToast('Hanya akun Pemilik yang bisa menghapus data. Hubungi Pemilik kalau perlu dihapus.');
+      return false;
+    }
+    return true;
+  }
 
   const TABS = [
     { id: 'dashboard', label: 'Ringkasan' },
@@ -1569,6 +1578,7 @@ window.storage = {
   }
 
   async function removeTxn(id) {
+    if (!requireOwnerForDelete()) return;
     const t = txns.find(x => x.id === id);
     if (!t) return;
     const linkedSvc = findLinkedService(id);
@@ -1919,7 +1929,7 @@ window.storage = {
         <div class="bk-chip ${riwayatFilter==='pembelian'?'active':''}" data-f="pembelian">Pembelian</div>
         <div class="bk-chip ${riwayatFilter==='produksi'?'active':''}" data-f="produksi">Produksi</div>
       </div>
-      ${filtered.length ? `<div class="bk-select-bar">
+      ${filtered.length && isOwner() ? `<div class="bk-select-bar">
         <label class="bk-select-all">
           <input type="checkbox" id="bk-select-all" ${filtered.length && filtered.every(t=>selectedTxnIds.has(t.id)) ? 'checked' : ''} />
           Pilih semua (${filtered.length})
@@ -1957,6 +1967,7 @@ window.storage = {
     });
     const bulkBtn = document.getElementById('bk-bulk-del-btn');
     if (bulkBtn) bulkBtn.addEventListener('click', () => {
+      if (!requireOwnerForDelete()) return;
       if (!selectedTxnIds.size) return;
       const idsArr = Array.from(selectedTxnIds);
       const anyLinked = idsArr.some(id => findLinkedService(id));
@@ -3059,6 +3070,7 @@ window.storage = {
     }));
     scopeEl.querySelectorAll('.manual-tagihan-wa').forEach(b => b.addEventListener('click', () => remindManualTagihanWhatsapp(b.dataset.id)));
     scopeEl.querySelectorAll('.manual-tagihan-hapus').forEach(b => b.addEventListener('click', () => {
+      if (!requireOwnerForDelete()) return;
       const id = b.dataset.id;
       showConfirm('Hapus tagihan manual ini?', async () => {
         try {
@@ -3769,6 +3781,7 @@ window.storage = {
   }
 
   async function removeService(id) {
+    if (!requireOwnerForDelete()) return;
     const s = services.find(x => x.id === id);
     if (!s) return;
     showConfirm('Hapus data service ini? Kalau ada transaksi pemasukan terkait, transaksi itu juga akan ikut terhapus.', async () => {
