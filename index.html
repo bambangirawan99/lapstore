@@ -1028,7 +1028,7 @@ window.storage = {
   function auditNoteHtml(record) {
     return record.createdBy ? ` &middot; oleh ${record.createdBy}` : '';
   }
-  function riwayatRowHtml(t) {
+  function riwayatRowHtml(t, hppData) {
     const checked = selectedTxnIds.has(t.id) ? 'checked' : '';
     const kodeBadge = t.kodeTransaksi ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-left:6px;">${escapeAttr(t.kodeTransaksi)}</span>` : '';
     if (t.type === 'produksi') {
@@ -1051,12 +1051,18 @@ window.storage = {
     const names = t.items.map(i => i.name).join(', ');
     const badge = isIn ? `<span class="bk-badge ${t.paid===false?'belum':'lunas'}">${t.paid===false?'Belum lunas':'Lunas'}</span>` : '';
     const ongkirNote = (!isIn && Number(t.ongkosKirim) > 0) ? ` &middot; Ongkir ${rupiah(t.ongkosKirim)}` : '';
+    let hppNote = '';
+    if (isIn && hppData && isOwner()) {
+      const hppAmt = hppData.hppByTxn[t.id] || 0;
+      const untung = t.total - hppAmt;
+      hppNote = ` &middot; HPP ${rupiah(hppAmt)} &middot; <span style="color:${untung>=0?'var(--money-in)':'var(--money-out)'}; font-weight:600;">Untung ${rupiah(untung)}</span>`;
+    }
     return `<div class="bk-list-row-wrap" data-txn="${t.id}">
       <input type="checkbox" class="bk-row-check" ${checked} />
       <div class="bk-list-row">
         <div class="bk-list-left">
           <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
-          <div class="sub">${names}${ongkirNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
+          <div class="sub">${names}${ongkirNote}${hppNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
         </div>
         <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
       </div>
@@ -1905,7 +1911,7 @@ window.storage = {
         </label>
         <button class="bk-btn bk-bulk-del ${selectedTxnIds.size ? 'show' : ''}" id="bk-bulk-del-btn">Hapus terpilih (${selectedTxnIds.size})</button>
       </div>` : ''}
-      <div id="bk-riwayat-list">${filtered.length ? filtered.map(riwayatRowHtml).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
+      <div id="bk-riwayat-list">${filtered.length ? filtered.map(t => riwayatRowHtml(t, hppAll)).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
     `;
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
     const dlLrBtn = document.getElementById('bk-download-lr');
@@ -2311,18 +2317,33 @@ window.storage = {
   }
 
   // ---------- PRICELIST (harga jual dari HPP + markup, siap ekspor Excel) ----------
+  let pricelistView = 'barang'; // barang | onderdil
+  function pricelistCategoryOf(code) {
+    return /^LPSRV/i.test(code || '') ? 'onderdil' : 'barang'; // LPSTK & LPPRD & tanpa kode masuk "barang"
+  }
   function renderPricelist() {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
-    const rows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.name.localeCompare(b.name));
+    const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.name.localeCompare(b.name));
+    const rowsWithMeta = allRows.map(r => {
+      const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
+      return { r, code, kategori: pricelistCategoryOf(code) };
+    });
+    const countBarang = rowsWithMeta.filter(x => x.kategori === 'barang').length;
+    const countOnderdil = rowsWithMeta.filter(x => x.kategori === 'onderdil').length;
+    const rows = rowsWithMeta.filter(x => x.kategori === pricelistView);
     bodyEl.innerHTML = `
-      <div class="bk-stok-note">Harga jual dihitung otomatis: <strong>HPP/unit &times; (1 + Markup%)</strong>, dibulatkan ke Rp100 terdekat. Isi markup per barang di kolom "Markup (%)" &mdash; harga jual langsung ter-update dan tersimpan otomatis. File Excel yang diunduh hanya berisi Kode, Nama, Satuan &amp; Harga Jual (bersih, siap dibagikan ke pelanggan tanpa membocorkan HPP/margin).</div>
+      <div class="bk-stok-note">Harga jual otomatis dihitung dari <strong>HPP/unit &times; (1 + Markup%)</strong>, dibulatkan ke Rp100 terdekat. Bisa isi salah satu saja: ketik "Markup (%)" (harga jual ikut menyesuaikan), ATAU ketik langsung "Harga Jual" (markup-nya ikut dihitung ulang otomatis). File Excel yang diunduh hanya berisi Kode, Nama, Satuan &amp; Harga Jual (bersih, siap dibagikan ke pelanggan tanpa membocorkan HPP/margin).</div>
+      <div class="bk-filter" style="margin-bottom:14px;">
+        <div class="bk-chip ${pricelistView==='barang'?'active':''}" data-pv="barang">Stock Barang (${countBarang})</div>
+        <div class="bk-chip ${pricelistView==='onderdil'?'active':''}" data-pv="onderdil">Stock Onderdil (${countOnderdil})</div>
+      </div>
       <div class="bk-two-col" style="margin-bottom:10px; max-width:460px;">
         <input id="bk-pricelist-default-markup" type="number" min="0" step="any" placeholder="Markup default % (mis: 20)" />
         <button class="bk-btn ghost" id="bk-pricelist-apply-default">Terapkan ke yang masih 0%</button>
       </div>
-      <button class="bk-btn primary" id="bk-pricelist-download" style="margin-bottom:18px;">Unduh Pricelist (Excel)</button>
+      <button class="bk-btn primary" id="bk-pricelist-download" style="margin-bottom:18px;">Unduh Pricelist ${pricelistView === 'barang' ? 'Stock Barang' : 'Stock Onderdil'} (Excel)</button>
       ${rows.length ? `
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
         <table style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
@@ -2333,12 +2354,11 @@ window.storage = {
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Stok</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">HPP/unit</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Markup (%)</th>
-              <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Harga Jual Rilis</th>
+              <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Harga Jual (bisa ketik manual)</th>
             </tr>
           </thead>
           <tbody id="bk-pricelist-tbody">
-            ${rows.map(r => {
-              const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
+            ${rows.map(({ r, code }) => {
               const itemKey = pricelistKeyFor(code, r.name);
               const unitCost = hpp.getCurrentUnitCost(r.name);
               const markup = pricelistData[itemKey] ? (Number(pricelistData[itemKey].markup) || 0) : 0;
@@ -2353,14 +2373,18 @@ window.storage = {
                 <td style="padding:6px 10px; border-bottom:1px solid var(--line); text-align:right;">
                   <input class="pricelist-markup-input" type="number" min="0" step="any" value="${markup}" style="width:72px; text-align:right; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace;" />
                 </td>
-                <td class="pricelist-harga-jual-cell" style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--accent-ink);">${rupiah(hargaJual)}</td>
+                <td style="padding:6px 0 6px 10px; border-bottom:1px solid var(--line); text-align:right;">
+                  <input class="pricelist-hargajual-input" type="number" min="0" step="any" value="${hargaJual}" style="width:100px; text-align:right; border:1.5px solid var(--accent); border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--accent-ink);" />
+                </td>
               </tr>`;
             }).join('')}
           </tbody>
         </table>
       </div>
-      ` : '<div class="bk-empty">Belum ada data stok. Catat pembelian dulu supaya ada barang yang bisa diberi harga jual.</div>'}
+      ` : `<div class="bk-empty">Belum ada barang di kategori ${pricelistView === 'barang' ? 'Stock Barang' : 'Stock Onderdil'}.</div>`}
     `;
+
+    bodyEl.querySelectorAll('.bk-filter [data-pv]').forEach(c => c.addEventListener('click', () => { pricelistView = c.dataset.pv; renderPricelist(); }));
 
     bodyEl.querySelectorAll('.pricelist-markup-input').forEach(input => {
       input.addEventListener('input', async (e) => {
@@ -2369,8 +2393,21 @@ window.storage = {
         const unitCost = Number(tr.dataset.cost) || 0;
         const markup = Number(e.target.value) || 0;
         const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
-        tr.querySelector('.pricelist-harga-jual-cell').textContent = rupiah(hargaJual);
+        tr.querySelector('.pricelist-hargajual-input').value = hargaJual;
         await savePricelistMarkup(itemKey, markup);
+      });
+    });
+
+    bodyEl.querySelectorAll('.pricelist-hargajual-input').forEach(input => {
+      input.addEventListener('input', async (e) => {
+        const tr = e.target.closest('tr');
+        const itemKey = tr.dataset.key;
+        const unitCost = Number(tr.dataset.cost) || 0;
+        const hargaJual = Number(e.target.value) || 0;
+        const markup = unitCost > 0 ? ((hargaJual / unitCost) - 1) * 100 : 0;
+        const markupRounded = Math.round(markup * 100) / 100;
+        tr.querySelector('.pricelist-markup-input').value = markupRounded;
+        await savePricelistMarkup(itemKey, markupRounded);
       });
     });
 
@@ -2382,11 +2419,11 @@ window.storage = {
         return Number(input.value) === 0;
       });
       for (const tr of trsToUpdate) {
-        const input = tr.querySelector('.pricelist-markup-input');
+        const markupInput = tr.querySelector('.pricelist-markup-input');
         const unitCost = Number(tr.dataset.cost) || 0;
-        input.value = defVal;
+        markupInput.value = defVal;
         const hargaJual = Math.round(unitCost * (1 + defVal / 100) / 100) * 100;
-        tr.querySelector('.pricelist-harga-jual-cell').textContent = rupiah(hargaJual);
+        tr.querySelector('.pricelist-hargajual-input').value = hargaJual;
         await savePricelistMarkup(tr.dataset.key, defVal);
       }
       showToast(`Markup ${defVal}% diterapkan ke ${trsToUpdate.length} barang.`);
@@ -2401,25 +2438,29 @@ window.storage = {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
-    const rows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.name.localeCompare(b.name));
+    const kategoriLabel = pricelistView === 'barang' ? 'Stock Barang' : 'Stock Onderdil';
+    const rows = Object.values(stockMap)
+      .filter(r => !/^Jasa Service Laptop/i.test(r.name))
+      .map(r => ({ r, code: codeReg.byName[r.name.trim().toLowerCase()] || '' }))
+      .filter(x => pricelistCategoryOf(x.code) === pricelistView)
+      .sort((a,b) => a.r.name.localeCompare(b.r.name));
     const wb = XLSX.utils.book_new();
     const aoa = [
       [storeName],
-      ['DAFTAR HARGA (PRICELIST)'],
+      [`DAFTAR HARGA (PRICELIST) - ${kategoriLabel.toUpperCase()}`],
       ['Berlaku per', new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })],
       [],
       ['Kode', 'Nama Barang', 'Satuan', 'Harga Jual'],
     ];
-    rows.forEach(r => {
-      const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
+    rows.forEach(({ r, code }) => {
       const itemKey = pricelistKeyFor(code, r.name);
       const unitCost = hpp.getCurrentUnitCost(r.name);
       const markup = pricelistData[itemKey] ? (Number(pricelistData[itemKey].markup) || 0) : 0;
       const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
       aoa.push([code || '-', r.name, r.unit || '-', hargaJual]);
     });
-    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Pricelist');
-    XLSX.writeFile(wb, `pricelist-${storeName.replace(/\s+/g,'_')}-${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), kategoriLabel);
+    XLSX.writeFile(wb, `pricelist-${pricelistView}-${storeName.replace(/\s+/g,'_')}-${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
   // ---------- PRODUKSI (konversi nyata bahan baku menjadi produk jadi) ----------
@@ -5523,7 +5564,7 @@ window.storage = {
   let idleTimer = null;
   let idleLogoutTriggered = false;
   let bgRefreshIntervalId = null;
-  const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 menit tanpa aktivitas
+  const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 menit tanpa aktivitas
 
   function resetIdleTimer() {
     if (!currentUser) return;
@@ -5615,7 +5656,7 @@ window.storage = {
         currentUser = null;
         stopIdleTimer();
         if (bgRefreshIntervalId) { clearInterval(bgRefreshIntervalId); bgRefreshIntervalId = null; }
-        const msg = idleLogoutTriggered ? 'Sesi berakhir otomatis karena tidak ada aktivitas selama 5 menit. Silakan masuk lagi untuk keamanan.' : undefined;
+        const msg = idleLogoutTriggered ? 'Sesi berakhir otomatis karena tidak ada aktivitas selama 30 menit. Silakan masuk lagi untuk keamanan.' : undefined;
         idleLogoutTriggered = false;
         renderLoginScreen(msg);
       }
