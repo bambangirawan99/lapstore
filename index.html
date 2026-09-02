@@ -1215,7 +1215,13 @@ window.storage = {
         });
         codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyItemCodeLookup(item, type); } });
       }
-      row.querySelector('.f-name').addEventListener('input', e => item.name = e.target.value);
+      row.querySelector('.f-name').addEventListener('input', e => {
+        item.name = e.target.value;
+        if (type === 'penjualan') {
+          const found = applyItemNameLookup(item);
+          if (found) { renderForm(type); showToast(`Kode otomatis terisi: ${item.code}`); }
+        }
+      });
       row.querySelector('.f-qty').addEventListener('input', e => { item.qty = e.target.value; refreshTotal(type); });
       row.querySelector('.f-unit') && row.querySelector('.f-unit').addEventListener('input', e => item.unit = e.target.value);
       row.querySelector('.f-price').addEventListener('input', e => { item.price = e.target.value; refreshTotal(type); });
@@ -1236,18 +1242,20 @@ window.storage = {
   function getItemCodeRegistry() {
     const byCode = {};
     const byName = {};
+    const byNameFull = {};
     const relevant = [...txns].filter(t => t.type === 'pembelian' || t.type === 'produksi').sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
     relevant.forEach(t => {
       const list = t.type === 'pembelian' ? (t.items || []) : (t.hasil || []);
       list.forEach(i => {
         if (i.code && i.code.trim()) {
           const code = i.code.trim();
-          byCode[code.toLowerCase()] = { name: i.name, unit: i.unit || '', code };
-          if (i.name) byName[i.name.trim().toLowerCase()] = code;
+          const rec = { name: i.name, unit: i.unit || '', code };
+          byCode[code.toLowerCase()] = rec;
+          if (i.name) { byName[i.name.trim().toLowerCase()] = code; byNameFull[i.name.trim().toLowerCase()] = rec; }
         }
       });
     });
-    return { byCode, byName };
+    return { byCode, byName, byNameFull };
   }
   function itemCodesDatalistHtml() {
     const reg = getItemCodeRegistry();
@@ -1265,6 +1273,20 @@ window.storage = {
       renderForm(type);
       showToast(`Kode ditemukan: ${match.name}`);
     }
+  }
+  // Kebalikan dari applyItemCodeLookup - kalau admin ingat NAMA barang tapi lupa kodenya,
+  // ketik/pilih namanya, kode otomatis ikut terisi. Dipakai di kolom sparepart Service.
+  function applyItemNameLookup(item) {
+    const nameVal = (item.name || '').trim();
+    if (!nameVal) return false;
+    const reg = getItemCodeRegistry();
+    const match = reg.byNameFull[nameVal.toLowerCase()];
+    if (match && !item.code) {
+      item.code = match.code;
+      item.unit = match.unit;
+      return true;
+    }
+    return false;
   }
 
   // ---------- KODE BARANG OTOMATIS PER KATEGORI (LPSTK = Laptop, LPSRV = Onderdil/Sparepart, LPPRD = Hasil Produksi) ----------
@@ -2156,6 +2178,17 @@ window.storage = {
         <div class="bk-stat"><div class="lbl">Total nilai stok saat ini (HPP)</div><div class="val">${rupiah(totalNilaiSemua)}</div></div>
       </div>
       ` : ''}
+      <div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">Upload Stok dari Excel</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Unduh dulu format template-nya, isi datanya, lalu upload di sini. Otomatis tercatat sebagai satu transaksi pembelian dan langsung menambah Stok &amp; muncul di Dashboard.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-stok-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-stok-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-stok-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
       <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
       ${rows.length ? `
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
@@ -2190,6 +2223,91 @@ window.storage = {
       </div>
       ` : '<div class="bk-empty">Belum ada data stok. Catat pembelian, penjualan, atau produksi dulu.</div>'}
     `;
+    document.getElementById('bk-stok-template-btn').addEventListener('click', downloadStokUploadTemplate);
+    document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
+  }
+
+  function downloadStokUploadTemplate() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      ['FORMAT UPLOAD STOK BARANG - LAPSTORE'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Kolom Kode boleh dikosongkan (dibuat otomatis sesuai Kategori). Kolom Kategori isi persis "Laptop" atau "Onderdil". Baris contoh di bawah boleh dihapus/ditimpa.'],
+      [],
+      [],
+      ['Kode', 'Nama Barang', 'Kategori (Laptop/Onderdil)', 'Jumlah', 'Satuan', 'Harga Beli per Satuan'],
+      ['', 'Contoh: Baterai Laptop Asus A455', 'Onderdil', 10, 'pcs', 85000],
+      ['', 'Contoh: Lenovo Thinkpad X390', 'Laptop', 2, 'pcs', 4200000],
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Template Stok');
+    XLSX.writeFile(wb, 'template-upload-stok.xlsx');
+  }
+
+  function handleStokExcelUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('bk-stok-upload-status');
+    statusEl.style.color = 'var(--ink-soft)';
+    statusEl.textContent = 'Membaca file...';
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        if (!window.XLSX) { statusEl.textContent = 'Modul Excel belum siap, coba lagi sebentar.'; statusEl.style.color = 'var(--money-out)'; return; }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        let headerIdx = raw.findIndex(row => row.some(c => String(c).trim().toLowerCase().includes('nama barang')));
+        if (headerIdx === -1) headerIdx = 0;
+        const dataRows = raw.slice(headerIdx + 1);
+        const validItems = [];
+        const errors = [];
+        dataRows.forEach((row, idx) => {
+          const [kode, nama, kategori, jumlah, satuan, harga] = row;
+          if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
+          const qty = Number(jumlah);
+          const price = Number(harga);
+          const rowNum = headerIdx + idx + 2;
+          if (!qty || qty <= 0) { errors.push(`Baris ${rowNum}: jumlah tidak valid`); return; }
+          if (!(price >= 0)) { errors.push(`Baris ${rowNum}: harga tidak valid`); return; }
+          let code = String(kode || '').trim();
+          if (!code) {
+            const kat = String(kategori || '').trim().toLowerCase();
+            const prefix = kat.startsWith('laptop') ? 'LPSTK' : 'LPSRV';
+            code = generateItemCodeSequence(prefix, 1)[0];
+          }
+          validItems.push({ code, name: String(nama).trim(), qty, unit: (String(satuan || '').trim() || 'pcs'), price });
+        });
+        if (!validItems.length) {
+          statusEl.textContent = 'Tidak ada baris valid ditemukan. Pastikan format file sesuai template (unduh template dulu kalau belum).';
+          statusEl.style.color = 'var(--money-out)';
+          return;
+        }
+        const total = validItems.reduce((s,i) => s + i.qty * i.price, 0);
+        const txn = {
+          id: uid(),
+          type: 'pembelian',
+          kodeTransaksi: generateTxnCode('pembelian'),
+          items: validItems,
+          total,
+          supplierName: 'Import Excel',
+          createdAt: Date.now(),
+          createdBy: currentUser ? currentUser.email : null,
+        };
+        await saveTxn(txn);
+        txns.unshift(txn);
+        renderStok();
+        const errNote = errors.length ? ` (${errors.length} baris dilewati karena data tidak valid: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
+        showToast(`${validItems.length} barang berhasil diimpor ke Stok${errNote}.`);
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
+        statusEl.style.color = 'var(--money-out)';
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
   }
 
   // ---------- PRICELIST (harga jual dari HPP + markup, siap ekspor Excel) ----------
@@ -2447,7 +2565,12 @@ window.storage = {
           }
         });
       }
-      row.querySelector('.f-name').addEventListener('input', e => { item.name = e.target.value; updateProdEstimate(); });
+      row.querySelector('.f-name').addEventListener('input', e => {
+        item.name = e.target.value;
+        updateProdEstimate();
+        const found = applyItemNameLookup(item);
+        if (found) { renderProduksi(); showToast(`Kode otomatis terisi: ${item.code}`); }
+      });
       row.querySelector('.f-qty').addEventListener('input', e => { item.qty = e.target.value; updateProdEstimate(); });
       row.querySelector('.f-unit').addEventListener('input', e => { item.unit = e.target.value; updateProdEstimate(); });
       const rm = row.querySelector('.rm');
@@ -3369,7 +3492,14 @@ window.storage = {
           }
         });
       }
-      row.querySelector('.f-name').addEventListener('input', e => part.name = e.target.value);
+      row.querySelector('.f-name').addEventListener('input', e => {
+        part.name = e.target.value;
+        const found = applyItemNameLookup(part);
+        if (found) {
+          renderService();
+          showToast(`Kode otomatis terisi: ${part.code}`);
+        }
+      });
       row.querySelector('.f-qty').addEventListener('input', e => part.qty = e.target.value);
       row.querySelector('.f-unit').addEventListener('input', e => part.unit = e.target.value);
       row.querySelector('.rm').addEventListener('click', () => {
@@ -5351,8 +5481,16 @@ window.storage = {
 
   // ---------- REFRESH DATA (agar transaksi dari user lain ikut muncul) ----------
   let isRefreshing = false;
+  const REFRESH_UNSAFE_TABS = ['pembelian', 'penjualan', 'produksi', 'service', 'laporan', 'cari', 'pricelist'];
   async function refreshData(manual) {
     if (isRefreshing) return;
+    const isUnsafe = REFRESH_UNSAFE_TABS.includes(activeTab) || !!editingTxnId || modalSlot.innerHTML.trim() !== '';
+    if (isUnsafe) {
+      // Jangan muat ulang data sama sekali saat sedang mengisi form -- kalau tetap dimuat ulang,
+      // data yang sudah diketik tapi belum disimpan bisa hilang tertimpa data lama dari server.
+      if (manual) showToast('Sedang mengisi data di tab ini -- refresh dijeda dulu supaya tidak ada yang hilang. Simpan dulu, baru refresh.');
+      return;
+    }
     isRefreshing = true;
     const btn = document.getElementById('bk-refresh-btn');
     if (btn && manual) btn.style.transform = 'rotate(180deg)';
@@ -5367,8 +5505,7 @@ window.storage = {
       await loadModalEntries();
       await loadManualTagihan();
       await loadPricelistData();
-      const safeToRerender = activeTab !== 'pembelian' && activeTab !== 'penjualan' && activeTab !== 'produksi' && activeTab !== 'service' && activeTab !== 'laporan' && activeTab !== 'cari' && activeTab !== 'pricelist' && !editingTxnId && modalSlot.innerHTML.trim() === '';
-      if (safeToRerender) renderBody();
+      renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
     } catch (e) {
       console.error(e);
