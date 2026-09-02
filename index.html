@@ -1051,20 +1051,27 @@ window.storage = {
     const names = t.items.map(i => i.name).join(', ');
     const badge = isIn ? `<span class="bk-badge ${t.paid===false?'belum':'lunas'}">${t.paid===false?'Belum lunas':'Lunas'}</span>` : '';
     const ongkirNote = (!isIn && Number(t.ongkosKirim) > 0) ? ` &middot; Ongkir ${rupiah(t.ongkosKirim)}` : '';
-    let hppNote = '';
+    let financialStripHtml = '';
     if (isIn && hppData && isOwner()) {
       const hppAmt = hppData.hppByTxn[t.id] || 0;
       const untung = t.total - hppAmt;
-      hppNote = ` &middot; HPP ${rupiah(hppAmt)} &middot; <span style="color:${untung>=0?'var(--money-in)':'var(--money-out)'}; font-weight:600;">Untung ${rupiah(untung)}</span>`;
+      financialStripHtml = `<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:8px; padding:8px 10px; background:var(--paper); border:1px solid var(--line); border-radius:8px;">
+        <div><div style="font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">Hasil Jual</div><div style="font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12.5px;">${rupiah(t.total)}</div></div>
+        <div><div style="font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">HPP</div><div style="font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12.5px; color:var(--ink-soft);">${rupiah(hppAmt)}</div></div>
+        <div><div style="font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">Untung</div><div style="font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12.5px; color:${untung>=0?'var(--money-in)':'var(--money-out)'};">${rupiah(untung)}</div></div>
+      </div>`;
     }
     return `<div class="bk-list-row-wrap" data-txn="${t.id}">
       <input type="checkbox" class="bk-row-check" ${checked} />
-      <div class="bk-list-row">
-        <div class="bk-list-left">
-          <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
-          <div class="sub">${names}${ongkirNote}${hppNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
+      <div style="flex:1; min-width:0;">
+        <div class="bk-list-row" style="padding:0; border-bottom:none;">
+          <div class="bk-list-left">
+            <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
+            <div class="sub">${names}${ongkirNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
+          </div>
+          <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
         </div>
-        <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
+        ${financialStripHtml}
       </div>
       <div class="bk-row-actions">
         ${isIn ? `<div class="bk-icon-btn print-dotmatrix-btn" title="Unduh nota PDF (dot matrix)">&#9099;</div>` : ''}
