@@ -1133,7 +1133,7 @@ window.storage = {
   }
 
   // ---------- FORM (pembelian / penjualan) ----------
-  function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '' }; }
+  function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '', serial: '', codeManuallySet: false }; }
   let formState = {
     pembelian: { items: [blankItem()], party: '', note: '', ongkosKirim: '' },
     penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id },
@@ -1154,6 +1154,11 @@ window.storage = {
       ${!isEdit ? `<div class="bk-quickai">
         <input id="bk-quick-input" placeholder="${isJual ? 'Tulis bebas, mis: jual 2 kopi susu 15000, 1 roti bakar 12000' : 'Tulis bebas, mis: beli tepung 5kg 12000, gula 3kg 15000'}" />
         <button class="bk-btn accent" id="bk-quick-btn">Isi otomatis (AI)</button>
+      </div>` : ''}
+      ${!isEdit && !isJual ? `<div class="bk-field" style="margin-top:-4px;">
+        <label>Scan Barcode / No. Seri (pakai scanner USB/Bluetooth, arahkan kursor ke sini lalu scan)</label>
+        <input id="bk-barcode-scan" placeholder="Sorot kursor ke sini, lalu scan barcode/serial number..." style="font-family:'IBM Plex Mono',monospace;" autocomplete="off" />
+        <div style="font-size:11.5px; color:var(--ink-soft); margin-top:4px;">Kalau barcode/seri ini pernah discan sebelumnya, item baru otomatis terisi lengkap. Kalau baru, item baru ditambahkan dan tinggal isi nama &amp; harganya &mdash; kategori Laptop/Onderdil otomatis terdeteksi dari nama (tetap bisa diubah manual di dropdown Kode).</div>
       </div>` : ''}
       <div class="bk-field">
         <label>${isJual ? 'Nama pembeli (opsional)' : 'Nama supplier (opsional)'}</label>
@@ -1215,6 +1220,37 @@ window.storage = {
       document.getElementById('bk-rekening').addEventListener('change', e => st.rekening = e.target.value);
     } else {
       document.getElementById('bk-ongkir').addEventListener('input', e => { st.ongkosKirim = e.target.value; refreshTotal(type); });
+      const scanInput = document.getElementById('bk-barcode-scan');
+      if (scanInput) {
+        scanInput.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          const serial = scanInput.value.trim();
+          if (!serial) return;
+          const serialReg = getItemSerialRegistry();
+          const match = serialReg[serial.toLowerCase()];
+          // Kalau baris kosong terakhir masih benar-benar kosong, pakai baris itu; kalau tidak, tambah baris baru
+          let target = st.items.find(i => !i.name && !i.code && !i.serial);
+          if (!target) { target = blankItem(); st.items.push(target); }
+          target.serial = serial;
+          if (match) {
+            target.name = match.name;
+            target.unit = match.unit || 'pcs';
+            target.code = match.code || '';
+            if (match.price) target.price = match.price;
+            target.codeManuallySet = true; // kode dari histori scan, jangan ditimpa deteksi kata kunci
+            showToast(`Barcode dikenali: ${match.name}`);
+          } else {
+            showToast('Barcode baru dicatat. Isi nama barangnya, kategori akan terdeteksi otomatis.');
+          }
+          scanInput.value = '';
+          renderForm(type);
+          setTimeout(() => {
+            const freshScan = document.getElementById('bk-barcode-scan');
+            if (freshScan) freshScan.focus();
+          }, 30);
+        });
+      }
     }
 
     document.getElementById('bk-add-item').addEventListener('click', () => {
@@ -1229,10 +1265,12 @@ window.storage = {
       if (codeInput) {
         codeInput.addEventListener('input', e => {
           item.code = e.target.value;
+          if (type === 'pembelian') item.codeManuallySet = true;
           applyItemCodeLookup(item, type);
         });
         codeInput.addEventListener('change', e => {
           item.code = e.target.value;
+          if (type === 'pembelian') item.codeManuallySet = true;
           applyItemCodeLookup(item, type);
         });
         codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); applyItemCodeLookup(item, type); } });
@@ -1242,6 +1280,17 @@ window.storage = {
         if (type === 'penjualan') {
           const found = applyItemNameLookup(item);
           if (found) { renderForm(type); showToast(`Kode otomatis terisi: ${item.code}`); }
+        } else if (type === 'pembelian' && !item.codeManuallySet) {
+          const prefix = detectKategoriFromName(item.name);
+          const currentPrefix = (item.code || '').split('-')[0];
+          if (item.name.trim() && currentPrefix !== prefix) {
+            item.code = generateItemCodeSequence(prefix, 1)[0];
+            const selectEl = row.querySelector('.f-code');
+            if (selectEl) {
+              selectEl.innerHTML = `<option value="">-- manual --</option>${itemCodeDropdownOptionsHtml(item.code)}`;
+              selectEl.value = item.code;
+            }
+          }
         }
       });
       row.querySelector('.f-qty').addEventListener('input', e => { item.qty = e.target.value; refreshTotal(type); });
@@ -1357,6 +1406,27 @@ window.storage = {
     }).join('');
   }
 
+  // Deteksi kategori dari kata kunci di nama barang (dipakai untuk auto-arahkan dropdown kode
+  // saat scan barcode/ketik nama), tapi hasilnya tetap bisa diubah manual oleh pengguna.
+  const LAPTOP_KEYWORDS = ['laptop', 'notebook', 'macbook', 'asus', 'lenovo', 'thinkpad', 'acer', 'hp ', 'hp-', 'dell', 'msi', 'axioo', 'toshiba', 'fujitsu', 'huawei', 'gigabyte', 'razer', 'chromebook', 'zenbook', 'ideapad', 'aspire', 'pavilion', 'vivobook'];
+  function detectKategoriFromName(name) {
+    const n = (' ' + (name || '').toLowerCase() + ' ');
+    return LAPTOP_KEYWORDS.some(k => n.includes(k)) ? 'LPSTK' : 'LPSRV';
+  }
+  // Registry nomor seri/barcode hasil scan -> data barang, dibangun dari riwayat pembelian
+  // supaya kalau barcode yang sama pernah discan sebelumnya, nama & kode langsung dikenali.
+  function getItemSerialRegistry() {
+    const bySerial = {};
+    [...txns].filter(t => t.type === 'pembelian').sort((a,b) => (a.createdAt||0) - (b.createdAt||0)).forEach(t => {
+      (t.items || []).forEach(i => {
+        if (i.serial && i.serial.trim()) {
+          bySerial[i.serial.trim().toLowerCase()] = { name: i.name, unit: i.unit || '', code: i.code || '', price: i.price };
+        }
+      });
+    });
+    return bySerial;
+  }
+
   function getKnownItemNames() {
     const set = new Set();
     txns.forEach(t => {
@@ -1465,7 +1535,7 @@ window.storage = {
       id: isEdit ? editingTxnId : uid(),
       type,
       kodeTransaksi: isEdit && existing ? existing.kodeTransaksi : generateTxnCode(type),
-      items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim() })),
+      items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim(), serial: (i.serial||'').trim() })),
       total,
       ongkosKirim: type === 'pembelian' ? ongkosKirim : undefined,
       customerName: type === 'penjualan' ? st.party : '',
