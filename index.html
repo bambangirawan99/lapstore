@@ -3338,31 +3338,40 @@ window.storage = {
       return;
     }
     errEl.style.display = 'none';
-    const s = {
-      id: uid(),
-      kodeService: (serviceFormState.kodeService || generateServiceCode()).trim(),
-      customerName: name,
-      customerPhone: serviceFormState.customerPhone.trim(),
-      device,
-      complaint,
-      accessories: serviceFormState.accessories.trim(),
-      estimasiBiaya: Number(serviceFormState.estimasiBiaya) || 0,
-      rekening: serviceFormState.rekening || BANK_ACCOUNTS[0].id,
-      catatanDiagnosa: '',
-      biayaFinal: 0,
-      dpAmount: 0,
-      dpTxnId: null,
-      paid: true,
-      status: 'diterima',
-      linkedTxnId: null,
-      createdAt: Date.now(),
-      createdBy: currentUser ? currentUser.email : null,
-      updatedAt: Date.now(),
-      history: [{ status: 'diterima', at: Date.now() }],
-    };
+    const chosenKode = (serviceFormState.kodeService || '').trim();
     const btn = document.getElementById('bk-svc-save-btn');
     btn.disabled = true; btn.textContent = 'Menyimpan...';
     try {
+      // Muat ulang data service dari server dulu (bukan cache lokal) supaya kode yang dipilih
+      // tidak bentrok kalau ada admin/perangkat lain yang barusan membuat service dengan kode yang sama.
+      await loadServices();
+      const usedCodes = new Set(services.map(x => (x.kodeService || '').trim().toUpperCase()));
+      let kodeFinal = chosenKode;
+      if (!kodeFinal || usedCodes.has(kodeFinal.toUpperCase())) {
+        kodeFinal = generateServiceCode(); // otomatis dihitung ulang dari data server yang sudah terbaru
+      }
+      const s = {
+        id: uid(),
+        kodeService: kodeFinal,
+        customerName: name,
+        customerPhone: serviceFormState.customerPhone.trim(),
+        device,
+        complaint,
+        accessories: serviceFormState.accessories.trim(),
+        estimasiBiaya: Number(serviceFormState.estimasiBiaya) || 0,
+        rekening: serviceFormState.rekening || BANK_ACCOUNTS[0].id,
+        catatanDiagnosa: '',
+        biayaFinal: 0,
+        dpAmount: 0,
+        dpTxnId: null,
+        paid: true,
+        status: 'diterima',
+        linkedTxnId: null,
+        createdAt: Date.now(),
+        createdBy: currentUser ? currentUser.email : null,
+        updatedAt: Date.now(),
+        history: [{ status: 'diterima', at: Date.now() }],
+      };
       await saveService(s);
       services.unshift(s);
       serviceFormState = blankServiceForm();
@@ -3531,6 +3540,13 @@ window.storage = {
       if (!name || !device || !complaint) {
         if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Nama pelanggan, merk/tipe laptop, dan keluhan wajib diisi.'; }
         return;
+      }
+      if (kodeService) {
+        const dupe = services.find(x => x.id !== id && (x.kodeService||'').trim().toUpperCase() === kodeService.toUpperCase());
+        if (dupe) {
+          if (errEl) { errEl.style.display = 'block'; errEl.textContent = `Kode "${kodeService}" sudah dipakai oleh service milik ${dupe.customerName || 'pelanggan lain'}. Pakai kode lain.`; }
+          return;
+        }
       }
       await updateService(id, { kodeService, customerName: name, customerPhone: phone, device, accessories, complaint, rekening });
       editingServiceDetailId = null;
