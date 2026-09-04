@@ -821,6 +821,84 @@ window.storage = {
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs', code: '' }; }
   let serviceFormState = blankServiceForm();
 
+  // ---------- DRAFT OTOMATIS (autosave lokal di perangkat) ----------
+  // Menyimpan form yang sedang diisi ke localStorage tiap beberapa detik, supaya kalau tiba-tiba
+  // error/koneksi putus/tab tertutup sebelum sempat klik simpan, isian form tidak hilang percuma.
+  // Ini TIDAK menggantikan penyimpanan ke database - cuma jaring pengaman selama proses mengetik.
+  const DRAFT_KEYS = { pembelian: 'lapstore-draft-pembelian', penjualan: 'lapstore-draft-penjualan', service: 'lapstore-draft-service' };
+  function isFormStateFilled(type) {
+    if (type === 'service') {
+      return !!(serviceFormState.customerName || serviceFormState.customerPhone || serviceFormState.device || serviceFormState.complaint);
+    }
+    const st = formState[type];
+    return !!(st.party || (st.items && st.items.some(i => i.name || i.qty || i.price)));
+  }
+  function saveDraftsToLocal() {
+    try {
+      if (!editingTxnId && !editingServiceDetailId) {
+        if (activeTab === 'pembelian' && isFormStateFilled('pembelian')) {
+          localStorage.setItem(DRAFT_KEYS.pembelian, JSON.stringify({ data: formState.pembelian, savedAt: Date.now() }));
+        }
+        if (activeTab === 'penjualan' && isFormStateFilled('penjualan')) {
+          localStorage.setItem(DRAFT_KEYS.penjualan, JSON.stringify({ data: formState.penjualan, savedAt: Date.now() }));
+        }
+        if (activeTab === 'service' && isFormStateFilled('service')) {
+          localStorage.setItem(DRAFT_KEYS.service, JSON.stringify({ data: serviceFormState, savedAt: Date.now() }));
+        }
+      }
+    } catch (e) { /* localStorage penuh/diblokir browser, abaikan diam-diam */ }
+  }
+  function clearDraft(type) {
+    try { localStorage.removeItem(DRAFT_KEYS[type]); } catch (e) { /* abaikan */ }
+  }
+  function checkAndOfferDraftRestore() {
+    const found = [];
+    ['pembelian', 'penjualan', 'service'].forEach(type => {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEYS[type]);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        // Draft lebih dari 3 hari dianggap kedaluwarsa, buang saja
+        if (!parsed.savedAt || (Date.now() - parsed.savedAt) > 3 * 24 * 60 * 60 * 1000) { clearDraft(type); return; }
+        found.push({ type, ...parsed });
+      } catch (e) { clearDraft(type); }
+    });
+    if (found.length) showDraftRestorePrompt(found);
+  }
+  function showDraftRestorePrompt(drafts) {
+    const labelOf = { pembelian: 'Catat Pembelian', penjualan: 'Catat Penjualan', service: 'Terima Service' };
+    modalSlot.innerHTML = `
+      <div class="bk-overlay" id="bk-draft-overlay">
+        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:360px; width:100%;">
+          <div style="font-size:15px; font-weight:700; margin-bottom:8px; color:var(--ink);">Ada draft belum tersimpan</div>
+          <div style="font-size:13px; color:var(--ink-soft); margin-bottom:14px; line-height:1.5;">Sepertinya sesi sebelumnya sempat mengisi form ini tapi belum sempat disimpan (koneksi putus/tertutup tiba-tiba). Pulihkan isiannya?</div>
+          <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
+            ${drafts.map(d => `<div style="font-size:12.5px; padding:8px 10px; background:var(--accent-bg); border-radius:8px; color:var(--accent-ink);">${labelOf[d.type]} &middot; ${new Date(d.savedAt).toLocaleString('id-ID')}</div>`).join('')}
+          </div>
+          <div style="display:flex; gap:10px;">
+            <button class="bk-btn ghost" id="bk-draft-discard" style="flex:1;">Buang draft</button>
+            <button class="bk-btn primary" id="bk-draft-restore" style="flex:1;">Pulihkan</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = () => { modalSlot.innerHTML = ''; };
+    document.getElementById('bk-draft-discard').addEventListener('click', () => {
+      drafts.forEach(d => clearDraft(d.type));
+      close();
+    });
+    document.getElementById('bk-draft-restore').addEventListener('click', () => {
+      drafts.forEach(d => {
+        if (d.type === 'service') serviceFormState = d.data;
+        else formState[d.type] = d.data;
+      });
+      close();
+      activeTab = drafts[0].type;
+      renderTabs(); renderBody();
+      showToast('Draft dipulihkan. Cek kembali datanya sebelum disimpan.');
+    });
+  }
+
   function monthKey(ts) {
     const d = new Date(ts);
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
@@ -1565,6 +1643,7 @@ window.storage = {
       formState[type] = type === 'penjualan'
         ? { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id }
         : { items: [blankItem()], party: '', note: '', ongkosKirim: '' };
+      clearDraft(type);
       if (wasEdit) {
         activeTab = 'riwayat';
         renderTabs(); renderBody();
@@ -3375,6 +3454,7 @@ window.storage = {
       await saveService(s);
       services.unshift(s);
       serviceFormState = blankServiceForm();
+      clearDraft('service');
       renderService();
       showServiceReceivedPrompt(s);
     } catch (e) {
@@ -4940,6 +5020,7 @@ window.storage = {
         <div class="bk-chip ${laporanView==='utang'?'active':''}" data-lv="utang">Utang/Kewajiban</div>
         <div class="bk-chip ${laporanView==='stokbulanan'?'active':''}" data-lv="stokbulanan">Stok Bulanan</div>
         <div class="bk-chip ${laporanView==='rekening'?'active':''}" data-lv="rekening">Per Rekening</div>
+        <div class="bk-chip ${laporanView==='backup'?'active':''}" data-lv="backup">Backup &amp; Restore</div>
       </div>
       <button class="bk-btn primary" id="bk-download-semua-excel" style="margin-bottom:20px;">Unduh semua laporan (Excel, 1 file)</button>
       <div id="bk-laporan-slot">${
@@ -4949,6 +5030,7 @@ window.storage = {
         laporanView === 'beban' ? renderBebanHtml() :
         laporanView === 'utang' ? renderUtangHtml() :
         laporanView === 'stokbulanan' ? renderStokBulananHtml() :
+        laporanView === 'backup' ? renderBackupRestoreHtml() :
         renderRekeningHtml()
       }</div>
     `;
@@ -4965,6 +5047,120 @@ window.storage = {
     else if (laporanView === 'utang') wireUtangEvents();
     else if (laporanView === 'stokbulanan') wireStokBulananEvents();
     else if (laporanView === 'rekening') wireRekeningEvents();
+    else if (laporanView === 'backup') wireBackupRestoreEvents();
+  }
+
+  // ---------- BACKUP & RESTORE DATABASE LENGKAP ----------
+  function renderBackupRestoreHtml() {
+    const totalRecords = txns.length + services.length + bebanList.length + closings.length + utangList.length + utangPayments.length + modalEntries.length + manualTagihan.length;
+    return `
+      <div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">Unduh Backup Lengkap</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Simpan seluruh data (transaksi, service, beban, utang, modal, tagihan manual, pricelist) jadi satu file. Simpan file ini di tempat aman (Google Drive/email/flashdisk) sebagai cadangan &mdash; kalau suatu saat data di database rusak/terhapus/hilang, bisa dipulihkan lagi dari file ini.</div>
+        <div class="bk-stok-note" style="margin:0 0 12px;">Total data saat ini: <strong>${totalRecords.toLocaleString('id-ID')} catatan</strong>.</div>
+        <button class="bk-btn primary" id="bk-backup-download">Unduh Backup Sekarang (.json)</button>
+      </div>
+      <div class="bk-ai-box">
+        <div class="ai-head"><div class="ai-title">Pulihkan dari Backup</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Upload file backup (.json) yang pernah diunduh sebelumnya untuk memulihkan data. Data dari file akan <strong>ditambahkan/menimpa</strong> data yang ada sekarang berdasarkan ID masing-masing catatan (data lain yang tidak ada di file tidak akan terhapus).</div>
+        <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih File Backup (.json)
+          <input type="file" id="bk-backup-upload-input" accept=".json" style="display:none;" />
+        </label>
+        <div id="bk-backup-restore-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+    `;
+  }
+  function wireBackupRestoreEvents() {
+    document.getElementById('bk-backup-download').addEventListener('click', downloadFullBackup);
+    document.getElementById('bk-backup-upload-input').addEventListener('change', handleBackupRestoreUpload);
+  }
+
+  function downloadFullBackup() {
+    const backup = {
+      appName: 'LAPSTORE',
+      exportedAt: new Date().toISOString(),
+      storeName: document.getElementById('bk-storename').value || 'Toko Saya',
+      txns, services, bebanList, closings, utangList, utangPayments, modalEntries, manualTagihan, pricelistData,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup-lapstore-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Backup berhasil diunduh.');
+  }
+
+  function handleBackupRestoreUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('bk-backup-restore-status');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      let backup;
+      try { backup = JSON.parse(ev.target.result); }
+      catch (err) { statusEl.style.color = 'var(--money-out)'; statusEl.textContent = 'File tidak bisa dibaca. Pastikan ini file backup .json yang benar.'; e.target.value = ''; return; }
+      const counts = {
+        txns: Array.isArray(backup.txns) ? backup.txns.length : 0,
+        services: Array.isArray(backup.services) ? backup.services.length : 0,
+        beban: Array.isArray(backup.bebanList) ? backup.bebanList.length : 0,
+        utang: Array.isArray(backup.utangList) ? backup.utangList.length : 0,
+      };
+      showConfirm(`File backup dari ${backup.exportedAt ? new Date(backup.exportedAt).toLocaleString('id-ID') : 'tanggal tidak diketahui'} berisi ${counts.txns} transaksi, ${counts.services} service, ${counts.beban} beban, ${counts.utang} utang (dan data lain). Data ini akan dipulihkan ke database sekarang. Lanjutkan?`, async () => {
+        statusEl.style.color = 'var(--ink-soft)';
+        statusEl.textContent = 'Memulihkan data, mohon tunggu...';
+        try {
+          await restoreFullBackup(backup);
+          statusEl.style.color = 'var(--money-in)';
+          statusEl.textContent = 'Backup berhasil dipulihkan!';
+          showToast('Data berhasil dipulihkan dari backup.');
+          await refreshDataForced();
+        } catch (err) {
+          console.error(err);
+          statusEl.style.color = 'var(--money-out)';
+          statusEl.textContent = 'Terjadi kesalahan saat memulihkan data. Coba lagi.';
+        } finally {
+          e.target.value = '';
+        }
+      });
+    };
+    reader.readAsText(file);
+  }
+
+  async function restoreFullBackup(backup) {
+    const jobs = [];
+    (backup.txns || []).forEach(t => jobs.push(saveTxn(t)));
+    (backup.services || []).forEach(s => jobs.push(saveService(s)));
+    (backup.bebanList || []).forEach(b => jobs.push(saveBebanItem(b)));
+    (backup.closings || []).forEach(c => jobs.push(saveClosingSnapshot(c)));
+    (backup.utangList || []).forEach(u => jobs.push(saveUtangItem(u)));
+    (backup.utangPayments || []).forEach(p => jobs.push(saveUtangPayment(p)));
+    (backup.modalEntries || []).forEach(m => jobs.push(saveModalEntry(m)));
+    (backup.manualTagihan || []).forEach(m => jobs.push(saveManualTagihanItem(m)));
+    if (backup.pricelistData && typeof backup.pricelistData === 'object') {
+      Object.entries(backup.pricelistData).forEach(([key, val]) => {
+        jobs.push(savePricelistMarkup(key, Number(val && val.markup) || 0));
+      });
+    }
+    await Promise.all(jobs);
+  }
+
+  // Refresh paksa (dipakai setelah restore backup) - abaikan pengecekan "sedang mengisi form"
+  // karena restore sengaja dijalankan dari tab Laporan yang aman untuk dimuat ulang.
+  async function refreshDataForced() {
+    await loadTxns();
+    await loadServices();
+    await loadBeban();
+    await loadClosings();
+    await loadUtang();
+    await loadUtangPayments();
+    await loadModalEntries();
+    await loadManualTagihan();
+    await loadPricelistData();
+    renderBody();
   }
 
   function renderArusKasHtml() {
@@ -5686,6 +5882,7 @@ window.storage = {
   let idleTimer = null;
   let idleLogoutTriggered = false;
   let bgRefreshIntervalId = null;
+  let draftSaveIntervalId = null;
   const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 menit tanpa aktivitas
 
   function resetIdleTimer() {
@@ -5778,6 +5975,7 @@ window.storage = {
         currentUser = null;
         stopIdleTimer();
         if (bgRefreshIntervalId) { clearInterval(bgRefreshIntervalId); bgRefreshIntervalId = null; }
+        if (draftSaveIntervalId) { clearInterval(draftSaveIntervalId); draftSaveIntervalId = null; }
         const msg = idleLogoutTriggered ? 'Sesi berakhir otomatis karena tidak ada aktivitas selama 30 menit. Silakan masuk lagi untuk keamanan.' : undefined;
         idleLogoutTriggered = false;
         renderLoginScreen(msg);
@@ -5800,8 +5998,11 @@ window.storage = {
     await loadPricelistData();
     renderTabs();
     renderBody();
+    checkAndOfferDraftRestore();
     if (bgRefreshIntervalId) clearInterval(bgRefreshIntervalId);
     bgRefreshIntervalId = setInterval(() => refreshData(false), 20000);
+    if (draftSaveIntervalId) clearInterval(draftSaveIntervalId);
+    draftSaveIntervalId = setInterval(saveDraftsToLocal, 4000);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && currentUser) refreshData(false);
     });
