@@ -2050,7 +2050,6 @@ window.storage = {
     const labaKotorBulan = masuk - hppBulan;
 
     bodyEl.innerHTML = `
-      ${isOwner() ? `
       <div class="bk-ai-box" style="margin-bottom:18px;">
         <div class="ai-head"><div class="ai-title">Upload Riwayat Penjualan Lama (Migrasi Data)</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan data penjualan dari sebelum pakai sistem ini. Setiap baris otomatis dibuatkan SEPASANG catatan (pembelian historis + penjualan historis bertanggal sama) supaya laporan keuangan &amp; HPP lama ikut akurat &mdash; <strong>tidak memengaruhi stok saat ini</strong> (karena barang itu memang sudah terjual duluan).</div>
@@ -2062,7 +2061,6 @@ window.storage = {
         </div>
         <div id="bk-riwayat-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
-      ` : ''}
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
         <select id="bk-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 11px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
