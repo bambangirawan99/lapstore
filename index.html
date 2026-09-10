@@ -5010,19 +5010,27 @@ window.storage = {
     return byAccount;
   }
 
+  const LAPORAN_OWNER_ONLY_VIEWS = ['jurnal', 'neraca', 'utang', 'stokbulanan', 'rekening', 'backup'];
   function renderLaporan() {
+    if (!isOwner() && LAPORAN_OWNER_ONLY_VIEWS.includes(laporanView)) {
+      laporanView = 'aruskas'; // admin cuma boleh Arus Kas & Beban Operasional
+    }
+    const allChips = [
+      { id: 'aruskas', label: 'Arus Kas' },
+      { id: 'jurnal', label: 'Jurnal Umum' },
+      { id: 'neraca', label: 'Neraca &amp; Tutup Buku' },
+      { id: 'beban', label: 'Beban Operasional' },
+      { id: 'utang', label: 'Utang/Kewajiban' },
+      { id: 'stokbulanan', label: 'Stok Bulanan' },
+      { id: 'rekening', label: 'Per Rekening' },
+      { id: 'backup', label: 'Backup &amp; Restore' },
+    ];
+    const visibleChips = isOwner() ? allChips : allChips.filter(c => !LAPORAN_OWNER_ONLY_VIEWS.includes(c.id));
     bodyEl.innerHTML = `
       <div class="bk-filter" style="margin-bottom:14px;">
-        <div class="bk-chip ${laporanView==='aruskas'?'active':''}" data-lv="aruskas">Arus Kas</div>
-        <div class="bk-chip ${laporanView==='jurnal'?'active':''}" data-lv="jurnal">Jurnal Umum</div>
-        <div class="bk-chip ${laporanView==='neraca'?'active':''}" data-lv="neraca">Neraca &amp; Tutup Buku</div>
-        <div class="bk-chip ${laporanView==='beban'?'active':''}" data-lv="beban">Beban Operasional</div>
-        <div class="bk-chip ${laporanView==='utang'?'active':''}" data-lv="utang">Utang/Kewajiban</div>
-        <div class="bk-chip ${laporanView==='stokbulanan'?'active':''}" data-lv="stokbulanan">Stok Bulanan</div>
-        <div class="bk-chip ${laporanView==='rekening'?'active':''}" data-lv="rekening">Per Rekening</div>
-        <div class="bk-chip ${laporanView==='backup'?'active':''}" data-lv="backup">Backup &amp; Restore</div>
+        ${visibleChips.map(c => `<div class="bk-chip ${laporanView===c.id?'active':''}" data-lv="${c.id}">${c.label}</div>`).join('')}
       </div>
-      <button class="bk-btn primary" id="bk-download-semua-excel" style="margin-bottom:20px;">Unduh semua laporan (Excel, 1 file)</button>
+      ${isOwner() ? `<button class="bk-btn primary" id="bk-download-semua-excel" style="margin-bottom:20px;">Unduh semua laporan (Excel, 1 file)</button>` : ''}
       <div id="bk-laporan-slot">${
         laporanView === 'aruskas' ? renderArusKasHtml() :
         laporanView === 'jurnal' ? renderJurnalUmumHtml() :
@@ -5035,7 +5043,8 @@ window.storage = {
       }</div>
     `;
     bodyEl.querySelectorAll('.bk-filter [data-lv]').forEach(c => c.addEventListener('click', () => { laporanView = c.dataset.lv; laporanBulan = 'semua'; renderLaporan(); }));
-    document.getElementById('bk-download-semua-excel').addEventListener('click', downloadLaporanExcelLengkap);
+    const dlAllBtn = document.getElementById('bk-download-semua-excel');
+    if (dlAllBtn) dlAllBtn.addEventListener('click', downloadLaporanExcelLengkap);
     wireLaporanEvents();
   }
 
