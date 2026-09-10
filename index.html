@@ -2050,6 +2050,19 @@ window.storage = {
     const labaKotorBulan = masuk - hppBulan;
 
     bodyEl.innerHTML = `
+      ${isOwner() ? `
+      <div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">Upload Riwayat Penjualan Lama (Migrasi Data)</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan data penjualan dari sebelum pakai sistem ini. Setiap baris otomatis dibuatkan SEPASANG catatan (pembelian historis + penjualan historis bertanggal sama) supaya laporan keuangan &amp; HPP lama ikut akurat &mdash; <strong>tidak memengaruhi stok saat ini</strong> (karena barang itu memang sudah terjual duluan).</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-riwayat-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-riwayat-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-riwayat-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+      ` : ''}
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
         <select id="bk-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 11px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
@@ -2088,6 +2101,10 @@ window.storage = {
       <div id="bk-riwayat-list">${filtered.length ? filtered.map(t => riwayatRowHtml(t, hppAll)).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
     `;
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
+    const rwTemplateBtn = document.getElementById('bk-riwayat-template-btn');
+    if (rwTemplateBtn) rwTemplateBtn.addEventListener('click', downloadRiwayatUploadTemplate);
+    const rwUploadInput = document.getElementById('bk-riwayat-upload-input');
+    if (rwUploadInput) rwUploadInput.addEventListener('change', handleRiwayatExcelUpload);
     const dlLrBtn = document.getElementById('bk-download-lr');
     if (dlLrBtn) dlLrBtn.addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
     const dlLrExcelBtn = document.getElementById('bk-download-lr-excel');
@@ -2488,6 +2505,130 @@ window.storage = {
         renderStok();
         const errNote = errors.length ? ` (${errors.length} baris dilewati karena data tidak valid: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
         showToast(`${validItems.length} barang berhasil diimpor ke Stok${errNote}.`);
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
+        statusEl.style.color = 'var(--money-out)';
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function downloadRiwayatUploadTemplate() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      ['FORMAT UPLOAD RIWAYAT PENJUALAN LAMA - LAPSTORE'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Tanggal Jual format DD/MM/YYYY (mis: 15/03/2026). Kolom Kode boleh dikosongkan (dibuat otomatis). Status isi persis "Lunas" atau "Belum". Baris contoh boleh dihapus/ditimpa.'],
+      [],
+      [],
+      ['Tanggal Jual', 'Kode', 'Nama Barang', 'Jumlah', 'Harga Beli (saat itu)', 'Harga Jual', 'Nama Pembeli', 'Status'],
+      ['15/03/2026', '', 'Contoh: Baterai Laptop Asus A455', 2, 75000, 120000, 'Budi Santoso', 'Lunas'],
+      ['20/03/2026', '', 'Contoh: Lenovo Thinkpad X390', 1, 3800000, 4300000, 'Rahmi', 'Lunas'],
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Riwayat Penjualan Lama');
+    XLSX.writeFile(wb, 'template-riwayat-penjualan-lama.xlsx');
+  }
+
+  function parseTanggalDDMMYYYY(val) {
+    if (val instanceof Date) return val.getTime();
+    const s = String(val || '').trim();
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (m) {
+      const d = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 12, 0, 0);
+      if (!isNaN(d.getTime())) return d.getTime();
+    }
+    // fallback: kalau Excel menyimpan sebagai serial number tanggal
+    const num = Number(val);
+    if (num && num > 20000) {
+      const excelEpoch = new Date(1899, 11, 30).getTime();
+      return excelEpoch + num * 86400000 + 12 * 3600000;
+    }
+    return null;
+  }
+
+  function handleRiwayatExcelUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('bk-riwayat-upload-status');
+    statusEl.style.color = 'var(--ink-soft)';
+    statusEl.textContent = 'Membaca file...';
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        if (!window.XLSX) { statusEl.textContent = 'Modul Excel belum siap, coba lagi sebentar.'; statusEl.style.color = 'var(--money-out)'; return; }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        let headerIdx = raw.findIndex(row => row.some(c => String(c).trim().toLowerCase().includes('nama barang')));
+        if (headerIdx === -1) headerIdx = 0;
+        const dataRows = raw.slice(headerIdx + 1);
+        const jobs = [];
+        const errors = [];
+        let successCount = 0;
+        dataRows.forEach((row, idx) => {
+          const [tglRaw, kode, nama, jumlah, hargaBeli, hargaJual, pembeli, status] = row;
+          if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
+          const rowNum = headerIdx + idx + 2;
+          const saleTime = parseTanggalDDMMYYYY(tglRaw);
+          if (!saleTime) { errors.push(`Baris ${rowNum}: tanggal jual tidak valid (pakai format DD/MM/YYYY)`); return; }
+          const qty = Number(jumlah);
+          const priceBeli = Number(hargaBeli);
+          const priceJual = Number(hargaJual);
+          if (!qty || qty <= 0) { errors.push(`Baris ${rowNum}: jumlah tidak valid`); return; }
+          if (!(priceBeli >= 0) || !(priceJual >= 0)) { errors.push(`Baris ${rowNum}: harga beli/jual tidak valid`); return; }
+          let code = String(kode || '').trim();
+          if (!code) {
+            const prefix = detectKategoriFromName(String(nama));
+            code = generateItemCodeSequence(prefix, 1)[0];
+          }
+          const isLunas = String(status || 'Lunas').trim().toLowerCase() !== 'belum';
+          const purchaseTxn = {
+            id: uid(),
+            type: 'pembelian',
+            kodeTransaksi: generateTxnCode('pembelian'),
+            items: [{ code, name: String(nama).trim(), qty, unit: 'pcs', price: priceBeli }],
+            total: qty * priceBeli,
+            supplierName: 'Migrasi data lama',
+            createdAt: saleTime - 1000, // 1 detik sebelum penjualan, supaya urutan kronologis benar untuk HPP
+            createdBy: currentUser ? currentUser.email : null,
+          };
+          const saleTxn = {
+            id: uid(),
+            type: 'penjualan',
+            kodeTransaksi: generateTxnCode('penjualan'),
+            items: [{ code, name: String(nama).trim(), qty, unit: 'pcs', price: priceJual }],
+            total: qty * priceJual,
+            customerName: String(pembeli || '').trim() || 'Migrasi data lama',
+            customerPhone: '',
+            paid: isLunas,
+            rekening: BANK_ACCOUNTS[0].id,
+            createdAt: saleTime,
+            createdBy: currentUser ? currentUser.email : null,
+          };
+          jobs.push((async () => {
+            await saveTxn(purchaseTxn);
+            await saveTxn(saleTxn);
+            txns.push(purchaseTxn, saleTxn);
+          })());
+          successCount++;
+        });
+        if (!jobs.length) {
+          statusEl.textContent = 'Tidak ada baris valid ditemukan. Pastikan format file sesuai template (unduh template dulu kalau belum).';
+          statusEl.style.color = 'var(--money-out)';
+          return;
+        }
+        statusEl.textContent = `Memproses ${jobs.length} baris...`;
+        await Promise.all(jobs);
+        txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+        renderRiwayat();
+        const errNote = errors.length ? ` (${errors.length} baris dilewati: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
+        statusEl.style.color = 'var(--money-in)';
+        statusEl.textContent = `${successCount} riwayat penjualan lama berhasil dimigrasi${errNote}. Stok saat ini tidak berubah.`;
+        showToast(`${successCount} riwayat penjualan lama berhasil dimigrasi.`);
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
