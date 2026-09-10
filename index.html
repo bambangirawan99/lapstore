@@ -564,7 +564,7 @@ window.storage = {
     { id: 'service', label: 'Service Laptop' },
     { id: 'piutang', label: 'Piutang', ownerOnly: true },
     { id: 'riwayat', label: 'Riwayat' },
-    { id: 'laporan', label: 'Laporan', ownerOnly: true },
+    { id: 'laporan', label: 'Laporan' },
     { id: 'cari', label: 'Cari' },
   ];
   let activeTab = 'dashboard';
@@ -998,7 +998,7 @@ window.storage = {
   }
 
   function renderBody() {
-    if ((activeTab === 'laporan' || activeTab === 'piutang') && !isOwner()) {
+    if (activeTab === 'piutang' && !isOwner()) {
       activeTab = 'dashboard';
     }
     if (activeTab === 'dashboard') return renderDashboard();
