@@ -2482,6 +2482,7 @@ window.storage = {
 
 
   let stokView = 'laptop'; // laptop | onderdil
+  let stokDeletedListOpen = false;
   let selectedStokNames = new Set();
   function renderStok() {
     const stockMap = computeStock();
@@ -2521,15 +2522,20 @@ window.storage = {
         <button class="bk-btn ghost" id="bk-stok-fix-duplicate-btn" style="border-color:var(--money-out); color:var(--money-out);">Cek &amp; Perbaiki Kode Duplikat</button>
         <div id="bk-stok-fix-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>` : ''}
-      ${isOwner() && deletedStokNames.size > 0 ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
-        <div class="ai-head"><div class="ai-title">Item yang Sudah Dihapus (${deletedStokNames.size})</div></div>
-        <div class="ai-body" style="margin-bottom:12px;">Barang-barang ini sengaja disembunyikan dari Stok (lewat tombol/hapus massal sebelumnya). Kalau ada yang ternyata terhapus tidak sengaja, klik "Pulihkan" untuk memunculkannya lagi di Stok.</div>
+      ${isOwner() && deletedStokNames.size > 0 ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent); padding-bottom:${stokDeletedListOpen ? '18px' : '10px'};">
+        <div class="ai-head" id="bk-stok-deleted-toggle" style="cursor:pointer; user-select:none;">
+          <div class="ai-title">Item yang Sudah Dihapus (${deletedStokNames.size})</div>
+          <div style="color:var(--ink-soft); font-size:16px; transition:transform .2s;">${stokDeletedListOpen ? '&#9650;' : '&#9660;'}</div>
+        </div>
+        ${stokDeletedListOpen ? `
+        <div class="ai-body" style="margin:10px 0 12px;">Barang-barang ini sengaja disembunyikan dari Stok (lewat tombol hapus sebelumnya). Kalau ada yang ternyata terhapus tidak sengaja, klik "Pulihkan" untuk memunculkannya lagi di Stok. Barang yang direstock ulang (dibeli/diupload lagi) juga otomatis pulih sendiri.</div>
         <div id="bk-stok-deleted-list">${Array.from(deletedStokNames).sort().map(n => `
           <div class="bk-list-row">
             <div class="bk-list-left"><div class="nm">${escapeAttr(n)}</div></div>
             <button class="bk-btn ghost stok-restore-btn" data-name="${escapeAttr(n)}" style="padding:6px 14px; font-size:12px;">Pulihkan</button>
           </div>
         `).join('')}</div>
+        ` : ''}
       </div>` : ''}
       <div class="bk-filter" style="margin-bottom:14px;">
         <div class="bk-chip ${stokView==='laptop'?'active':''}" data-sv="laptop">Stock Laptop (${countLaptop})</div>
@@ -2588,6 +2594,8 @@ window.storage = {
     document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
     const fixDupBtn = document.getElementById('bk-stok-fix-duplicate-btn');
     if (fixDupBtn) fixDupBtn.addEventListener('click', perbaikiKodeDuplikat);
+    const deletedToggle = document.getElementById('bk-stok-deleted-toggle');
+    if (deletedToggle) deletedToggle.addEventListener('click', () => { stokDeletedListOpen = !stokDeletedListOpen; renderStok(); });
     bodyEl.querySelectorAll('.stok-restore-btn').forEach(btn => btn.addEventListener('click', async () => {
       const name = btn.dataset.name;
       try {
