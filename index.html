@@ -1211,7 +1211,7 @@ window.storage = {
   }
 
   // ---------- FORM (pembelian / penjualan) ----------
-  function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '', serial: '', codeManuallySet: false }; }
+  function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '', serial: '', spec: '', codeManuallySet: false }; }
   let formState = {
     pembelian: { items: [blankItem()], party: '', note: '', ongkosKirim: '' },
     penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id },
@@ -1404,7 +1404,8 @@ window.storage = {
       list.forEach(i => {
         if (i.code && i.code.trim()) {
           const code = i.code.trim();
-          const rec = { name: i.name, unit: i.unit || '', code };
+          const prevSpec = (byCode[code.toLowerCase()] && byCode[code.toLowerCase()].spec) || '';
+          const rec = { name: i.name, unit: i.unit || '', code, spec: (i.spec && i.spec.trim()) || prevSpec || '' };
           byCode[code.toLowerCase()] = rec;
           if (i.name) { byName[i.name.trim().toLowerCase()] = code; byNameFull[i.name.trim().toLowerCase()] = rec; }
         }
@@ -1613,7 +1614,7 @@ window.storage = {
       id: isEdit ? editingTxnId : uid(),
       type,
       kodeTransaksi: isEdit && existing ? existing.kodeTransaksi : generateTxnCode(type),
-      items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim(), serial: (i.serial||'').trim() })),
+      items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim(), serial: (i.serial||'').trim(), spec: (i.spec||'').trim() })),
       total,
       ongkosKirim: type === 'pembelian' ? ongkosKirim : undefined,
       customerName: type === 'penjualan' ? st.party : '',
@@ -2409,12 +2410,15 @@ window.storage = {
           <tbody>
             ${rows.map(r => {
               const code = codeReg.byName[r.name.trim().toLowerCase()];
+              const specRec = codeReg.byNameFull[r.name.trim().toLowerCase()];
+              const spec = specRec ? specRec.spec : '';
               const unitCost = hpp.getCurrentUnitCost(r.name);
               const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
               const low = r.qty <= 0 || r.qty < STOK_AMBANG_DEFAULT;
               return `<tr>
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}
+                  ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; white-space:normal;">${escapeAttr(spec)}</div>` : ''}
                 </td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft);">${r.unit || '-'}</td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; ${low ? 'color:var(--money-out);' : ''}">${r.qty.toLocaleString('id-ID')}</td>
@@ -2436,12 +2440,13 @@ window.storage = {
     const wb = XLSX.utils.book_new();
     const aoa = [
       ['FORMAT UPLOAD STOK BARANG - LAPSTORE'],
-      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Kolom Kode boleh dikosongkan (dibuat otomatis sesuai Kategori). Kolom Kategori isi persis "Laptop" atau "Onderdil". Hasil upload otomatis dipisah jadi 2 transaksi pembelian: Stock Laptop dan Stock Sparepart/Logistik. Baris contoh di bawah boleh dihapus/ditimpa.'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-6. Kolom Kode boleh dikosongkan (dibuat otomatis sesuai Kategori). Kolom Kategori isi persis "Laptop" atau "Onderdil". Kolom Harga Jual & Spesifikasi Laptop boleh dikosongkan (opsional). Hasil upload otomatis dipisah jadi 2 transaksi pembelian: Stock Laptop dan Stock Sparepart/Logistik. Harga Jual otomatis mengisi tab Pricelist. Baris contoh di bawah boleh dihapus/ditimpa.'],
       [],
       [],
-      ['Kode', 'Nama Barang', 'Kategori (Laptop/Onderdil)', 'Jumlah', 'Satuan', 'Harga Beli per Satuan'],
-      ['', 'Contoh: Baterai Laptop Asus A455', 'Onderdil', 10, 'pcs', 85000],
-      ['', 'Contoh: Lenovo Thinkpad X390', 'Laptop', 2, 'pcs', 4200000],
+      [],
+      ['Kode', 'Nama Barang', 'Kategori (Laptop/Onderdil)', 'Jumlah', 'Satuan', 'Harga Beli per Satuan', 'Harga Jual (opsional)', 'Spesifikasi Laptop (opsional)'],
+      ['', 'Contoh: Baterai Laptop Asus A455', 'Onderdil', 10, 'pcs', 85000, 120000, ''],
+      ['', 'Contoh: Lenovo Thinkpad X390', 'Laptop', 2, 'pcs', 4200000, 4850000, 'Intel Core i5-8350U, RAM 8GB, SSD 256GB, 13.3" FHD, Windows 10'],
     ];
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Template Stok');
     XLSX.writeFile(wb, 'template-upload-stok.xlsx');
@@ -2465,9 +2470,10 @@ window.storage = {
         if (headerIdx === -1) headerIdx = 0;
         const dataRows = raw.slice(headerIdx + 1);
         const validItems = [];
+        const pricelistJobs = []; // {itemKey, hargaBeli, hargaJual} - diproses setelah kode barang final ditentukan
         const errors = [];
         dataRows.forEach((row, idx) => {
-          const [kode, nama, kategori, jumlah, satuan, harga] = row;
+          const [kode, nama, kategori, jumlah, satuan, harga, hargaJualRaw, spesifikasiRaw] = row;
           if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
           const qty = Number(jumlah);
           const price = Number(harga);
@@ -2483,7 +2489,14 @@ window.storage = {
           else if (code) isLaptop = /^LPSTK/i.test(code);
           else isLaptop = detectKategoriFromName(String(nama)) === 'LPSTK';
           if (!code) code = generateItemCodeSequence(isLaptop ? 'LPSTK' : 'LPSRV', 1)[0];
-          validItems.push({ code, name: String(nama).trim(), qty, unit: (String(satuan || '').trim() || 'pcs'), price, _isLaptop: isLaptop });
+          const spec = String(spesifikasiRaw || '').trim();
+          const hargaJual = Number(hargaJualRaw) || 0;
+          validItems.push({ code, name: String(nama).trim(), qty, unit: (String(satuan || '').trim() || 'pcs'), price, spec, _isLaptop: isLaptop });
+          if (hargaJual > 0) {
+            const itemKey = pricelistKeyFor(code, String(nama).trim());
+            const markup = price > 0 ? Math.round(((hargaJual / price) - 1) * 10000) / 100 : 0;
+            pricelistJobs.push({ itemKey, markup });
+          }
         });
         if (!validItems.length) {
           statusEl.textContent = 'Tidak ada baris valid ditemukan. Pastikan format file sesuai template (unduh template dulu kalau belum).';
@@ -2514,12 +2527,14 @@ window.storage = {
         }
         await Promise.all(createdTxns.map(t => saveTxn(t)));
         createdTxns.forEach(t => txns.unshift(t));
+        if (pricelistJobs.length) await Promise.all(pricelistJobs.map(j => savePricelistMarkup(j.itemKey, j.markup)));
         renderStok();
         const errNote = errors.length ? ` (${errors.length} baris dilewati karena data tidak valid: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
         const parts = [];
         if (laptopItems.length) parts.push(`${laptopItems.length} barang Laptop`);
         if (sparepartItems.length) parts.push(`${sparepartItems.length} barang Sparepart/Logistik`);
-        showToast(`Berhasil diimpor ke Stok: ${parts.join(' & ')}${errNote}.`);
+        const priceNote = pricelistJobs.length ? ` Harga jual untuk ${pricelistJobs.length} barang otomatis masuk ke Pricelist.` : '';
+        showToast(`Berhasil diimpor ke Stok: ${parts.join(' & ')}${errNote}.${priceNote}`);
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
@@ -2699,12 +2714,15 @@ window.storage = {
           <tbody id="bk-pricelist-tbody">
             ${rows.map(({ r, code }) => {
               const itemKey = pricelistKeyFor(code, r.name);
+              const specRec = codeReg.byNameFull[r.name.trim().toLowerCase()];
+              const spec = specRec ? specRec.spec : '';
               const unitCost = hpp.getCurrentUnitCost(r.name);
               const markup = pricelistData[itemKey] ? (Number(pricelistData[itemKey].markup) || 0) : 0;
               const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
               return `<tr data-key="${itemKey}" data-cost="${unitCost}">
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${escapeAttr(r.name)}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}
+                  ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${escapeAttr(spec)}</div>` : ''}
                 </td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft);">${r.unit || '-'}</td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace;">${r.qty.toLocaleString('id-ID')}</td>
