@@ -1540,6 +1540,27 @@ window.storage = {
     for (let i = 0; i < n; i++) result.push(prefix + '-' + String(start + i).padStart(5, '0'));
     return result;
   }
+  // Dipakai saat upload banyak baris sekaligus (Excel): nextItemCodeNumber() cuma melihat data yang
+  // SUDAH TERSIMPAN, jadi kalau dipanggil berulang untuk tiap baris dalam satu proses upload, semua
+  // baris akan dapat kode yang SAMA (karena belum ada yang tersimpan saat baris berikutnya diproses).
+  // Fungsi ini membuat "penghitung lokal" yang diingat & dinaikkan sendiri selama proses upload berjalan.
+  function makeLocalItemCodeCounter() {
+    const counters = {};
+    return function nextLocalCode(prefix) {
+      if (!(prefix in counters)) counters[prefix] = nextItemCodeNumber(prefix);
+      const code = prefix + '-' + String(counters[prefix]).padStart(5, '0');
+      counters[prefix]++;
+      return code;
+    };
+  }
+  function makeLocalServiceCodeCounter() {
+    let counter = nextServiceNumber();
+    return function nextLocalServiceCode() {
+      const code = SVC_KODE_PREFIX + String(counter).padStart(5, '0');
+      counter++;
+      return code;
+    };
+  }
   function itemCodeDropdownOptionsHtml(selectedVal) {
     return ITEM_KATEGORI.map(k => {
       const opts = generateItemCodeSequence(k.prefix, 3);
@@ -2645,6 +2666,7 @@ window.storage = {
         const validItems = [];
         const pricelistJobs = []; // {itemKey, hargaBeli, hargaJual} - diproses setelah kode barang final ditentukan
         const errors = [];
+        const nextLocalCode = makeLocalItemCodeCounter();
         dataRows.forEach((row, idx) => {
           const [kode, nama, kategori, jumlah, satuan, harga, hargaJualRaw, spesifikasiRaw] = row;
           if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
@@ -2661,7 +2683,7 @@ window.storage = {
           else if (katText.startsWith('onderdil') || katText.startsWith('sparepart')) isLaptop = false;
           else if (code) isLaptop = /^LPSTK/i.test(code);
           else isLaptop = detectKategoriFromName(String(nama)) === 'LPSTK';
-          if (!code) code = generateItemCodeSequence(isLaptop ? 'LPSTK' : 'LPSRV', 1)[0];
+          if (!code) code = nextLocalCode(isLaptop ? 'LPSTK' : 'LPSRV');
           const spec = String(spesifikasiRaw || '').trim();
           const hargaJual = Number(hargaJualRaw) || 0;
           validItems.push({ code, name: String(nama).trim(), qty, unit: (String(satuan || '').trim() || 'pcs'), price, spec, _isLaptop: isLaptop });
@@ -2772,6 +2794,7 @@ window.storage = {
         const jobs = [];
         const errors = [];
         let successCount = 0;
+        const nextLocalCode = makeLocalItemCodeCounter();
         dataRows.forEach((row, idx) => {
           const [tglRaw, kode, nama, jumlah, hargaBeli, hargaJual, pembeli, status] = row;
           if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
@@ -2786,7 +2809,7 @@ window.storage = {
           let code = String(kode || '').trim();
           if (!code) {
             const prefix = detectKategoriFromName(String(nama));
-            code = generateItemCodeSequence(prefix, 1)[0];
+            code = nextLocalCode(prefix);
           }
           const isLunas = String(status || 'Lunas').trim().toLowerCase() !== 'belum';
           const purchaseTxn = {
@@ -2882,6 +2905,7 @@ window.storage = {
         const jobs = [];
         const errors = [];
         let successCount = 0;
+        const nextLocalServiceCode = makeLocalServiceCodeCounter();
         dataRows.forEach((row, idx) => {
           const [tglRaw, kodeRaw, nama, hp, device, keluhan, biayaRaw, status, rekeningLabel] = row;
           if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
@@ -2892,7 +2916,7 @@ window.storage = {
           if (!(biaya >= 0)) { errors.push(`Baris ${rowNum}: biaya service tidak valid`); return; }
           if (!device || String(device).trim() === '') { errors.push(`Baris ${rowNum}: merk/tipe laptop wajib diisi`); return; }
           let kode = String(kodeRaw || '').trim();
-          if (!kode || usedCodes.has(kode.toUpperCase())) { kode = generateServiceCode(); }
+          while (!kode || usedCodes.has(kode.toUpperCase())) { kode = nextLocalServiceCode(); }
           usedCodes.add(kode.toUpperCase());
           const isLunas = String(status || 'Lunas').trim().toLowerCase() !== 'belum';
           const accMatch = BANK_ACCOUNTS.find(a => a.label.toLowerCase() === String(rekeningLabel || '').trim().toLowerCase());
