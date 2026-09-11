@@ -2370,6 +2370,7 @@ window.storage = {
 
 
   let stokView = 'laptop'; // laptop | onderdil
+  let selectedStokNames = new Set();
   function renderStok() {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
@@ -2407,11 +2408,19 @@ window.storage = {
         <div class="bk-chip ${stokView==='onderdil'?'active':''}" data-sv="onderdil">Stock Onderdil (${countOnderdil})</div>
       </div>
       <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
+      ${rows.length && isOwner() ? `<div class="bk-select-bar">
+        <label class="bk-select-all">
+          <input type="checkbox" id="bk-stok-select-all" ${rows.length && rows.every(r=>selectedStokNames.has(r.name)) ? 'checked' : ''} />
+          Pilih semua (${rows.length})
+        </label>
+        <button class="bk-btn bk-bulk-del ${selectedStokNames.size ? 'show' : ''}" id="bk-stok-bulk-del-btn">Hapus terpilih (${selectedStokNames.size})</button>
+      </div>` : ''}
       ${rows.length ? `
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
         <table style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
           <thead>
             <tr>
+              ${isOwner() ? `<th style="padding:8px 6px 8px 0; width:26px;"></th>` : ''}
               <th style="text-align:left; padding:8px 10px 8px 0; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Nama item</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Satuan</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Sisa stok</th>
@@ -2428,7 +2437,9 @@ window.storage = {
               const unitCost = hpp.getCurrentUnitCost(r.name);
               const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
               const low = r.qty <= 0 || r.qty < STOK_AMBANG_DEFAULT;
+              const checked = selectedStokNames.has(r.name) ? 'checked' : '';
               return `<tr>
+                ${isOwner() ? `<td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line);"><input type="checkbox" class="bk-row-check stok-row-check" data-name="${escapeAttr(r.name)}" ${checked} /></td>` : ''}
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}
                   ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; white-space:normal;">${escapeAttr(spec)}</div>` : ''}
@@ -2447,10 +2458,25 @@ window.storage = {
     `;
     document.getElementById('bk-stok-template-btn').addEventListener('click', downloadStokUploadTemplate);
     document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
-    bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; renderStok(); }));
+    bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); renderStok(); }));
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
     }));
+    bodyEl.querySelectorAll('.stok-row-check').forEach(chk => chk.addEventListener('change', () => {
+      if (chk.checked) selectedStokNames.add(chk.dataset.name); else selectedStokNames.delete(chk.dataset.name);
+      renderStok();
+    }));
+    const selectAllBox = document.getElementById('bk-stok-select-all');
+    if (selectAllBox) selectAllBox.addEventListener('change', () => {
+      if (selectAllBox.checked) rows.forEach(r => selectedStokNames.add(r.name));
+      else rows.forEach(r => selectedStokNames.delete(r.name));
+      renderStok();
+    });
+    const bulkDelBtn = document.getElementById('bk-stok-bulk-del-btn');
+    if (bulkDelBtn) bulkDelBtn.addEventListener('click', () => {
+      if (!selectedStokNames.size) return;
+      hapusStokItemsMassal(Array.from(selectedStokNames), rows);
+    });
   }
 
   // Menghapus stok = mencatat PENYESUAIAN STOK (bukan menghapus riwayat transaksi lama).
@@ -2483,6 +2509,44 @@ window.storage = {
       } catch (e) {
         console.error(e);
         showToast('Gagal menghapus stok, coba lagi.');
+      }
+    });
+  }
+
+  // Hapus massal - sama seperti hapusStokItem tapi untuk banyak item sekaligus dalam satu transaksi penyesuaian
+  async function hapusStokItemsMassal(names, currentRows) {
+    if (!requireOwnerForDelete()) return;
+    const targets = names.map(n => currentRows.find(r => r.name === n)).filter(r => r && r.qty > 0);
+    if (!targets.length) { showToast('Item terpilih sudah tidak ada stoknya.'); selectedStokNames.clear(); renderStok(); return; }
+    const daftar = targets.map(r => `${r.name} (${r.qty.toLocaleString('id-ID')} ${r.unit||''})`).join(', ');
+    showConfirm(`Hapus stok ${targets.length} item terpilih: ${daftar}? Ini akan mencatat penyesuaian stok supaya sisanya jadi 0 untuk semua item ini. Riwayat transaksi lama TIDAK dihapus.`, async () => {
+      try {
+        const codeReg = getItemCodeRegistry();
+        const items = targets.map(r => ({
+          name: r.name, qty: r.qty, unit: r.unit || 'pcs', price: 0,
+          code: codeReg.byName[r.name.trim().toLowerCase()] || '',
+        }));
+        const txn = {
+          id: uid(),
+          type: 'penjualan',
+          kodeTransaksi: generateTxnCode('penjualan'),
+          items,
+          total: 0,
+          customerName: 'Penyesuaian Stok (Dihapus Massal)',
+          customerPhone: '',
+          paid: true,
+          rekening: BANK_ACCOUNTS[0].id,
+          createdAt: Date.now(),
+          createdBy: currentUser ? currentUser.email : null,
+        };
+        await saveTxn(txn);
+        txns.unshift(txn);
+        selectedStokNames.clear();
+        renderStok();
+        showToast(`${targets.length} item stok berhasil dihapus (dinolkan).`);
+      } catch (e) {
+        console.error(e);
+        showToast('Gagal menghapus stok terpilih, coba lagi.');
       }
     });
   }
