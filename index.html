@@ -2550,6 +2550,11 @@ window.storage = {
         </label>
         <button class="bk-btn bk-bulk-del ${selectedStokNames.size ? 'show' : ''}" id="bk-stok-bulk-del-btn">Hapus terpilih (${selectedStokNames.size})</button>
       </div>
+      ${selectedStokNames.size ? `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; padding:10px 14px; background:var(--paper); border:1.5px dashed var(--accent); border-radius:10px;">
+        <span style="font-size:12.5px; color:var(--ink); font-weight:600;">Ubah seragam sisa stok ${selectedStokNames.size} item terpilih jadi:</span>
+        <input type="number" min="0" step="any" id="bk-stok-uniform-value" placeholder="Angka" style="width:90px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace;" />
+        <button class="bk-btn accent" id="bk-stok-uniform-apply" style="padding:7px 14px; font-size:12px;">Terapkan ke Terpilih</button>
+      </div>` : ''}
       <div id="bk-stok-bulk-edit-bar" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; padding:10px 14px; background:var(--accent-bg); border-radius:10px;">
         <span style="font-size:12.5px; color:var(--accent-ink); font-weight:600;"><span id="bk-stok-edit-count">0</span> perubahan sisa stok belum disimpan</span>
         <div style="display:flex; gap:8px;">
@@ -2580,6 +2585,8 @@ window.storage = {
               const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
               const low = r.qty <= 0 || r.qty < STOK_AMBANG_DEFAULT;
               const checked = selectedStokNames.has(r.name) ? 'checked' : '';
+              const pending = pendingStokEdits.get(r.name);
+              const displayQty = pending ? pending.newQty : r.qty;
               return `<tr>
                 ${isOwner() ? `<td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line);"><input type="checkbox" class="bk-row-check stok-row-check" data-name="${escapeAttr(r.name)}" ${checked} /></td>` : ''}
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
@@ -2588,7 +2595,7 @@ window.storage = {
                 </td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft);">${r.unit || '-'}</td>
                 <td style="padding:6px 10px; border-bottom:1px solid var(--line); text-align:right;">
-                  ${isOwner() ? `<input type="number" step="any" class="stok-qty-edit" data-name="${escapeAttr(r.name)}" data-unit="${escapeAttr(r.unit||'')}" data-orig="${r.qty}" value="${r.qty}" style="width:80px; text-align:right; border:1.5px solid ${low?'var(--money-out)':'var(--line)'}; border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; font-weight:600; ${low ? 'color:var(--money-out);' : ''}" />`
+                  ${isOwner() ? `<input type="number" step="any" class="stok-qty-edit" data-name="${escapeAttr(r.name)}" data-unit="${escapeAttr(r.unit||'')}" data-orig="${r.qty}" value="${displayQty}" style="width:80px; text-align:right; border:1.5px solid ${pending ? 'var(--accent)' : (low?'var(--money-out)':'var(--line)')}; border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; font-weight:600; ${!pending && low ? 'color:var(--money-out);' : ''}" />`
                   : `<span style="font-family:'IBM Plex Mono',monospace; font-weight:600; ${low ? 'color:var(--money-out);' : ''}">${r.qty.toLocaleString('id-ID')}</span>`}
                 </td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; color:var(--ink-soft);">${rupiah(unitCost)}</td>
@@ -2640,6 +2647,22 @@ window.storage = {
       renderStok();
     });
     document.getElementById('bk-stok-edit-simpan') && document.getElementById('bk-stok-edit-simpan').addEventListener('click', simpanSemuaPerubahanStok);
+    const uniformApplyBtn = document.getElementById('bk-stok-uniform-apply');
+    if (uniformApplyBtn) uniformApplyBtn.addEventListener('click', () => {
+      const valInput = document.getElementById('bk-stok-uniform-value');
+      const target = Number(valInput.value);
+      if (valInput.value === '' || isNaN(target) || target < 0) { showToast('Isi dulu angka sisa stok yang valid.'); return; }
+      let appliedCount = 0;
+      selectedStokNames.forEach(name => {
+        const row = rows.find(r => r.name === name);
+        if (!row) return;
+        if (target === row.qty) { pendingStokEdits.delete(name); return; }
+        pendingStokEdits.set(name, { unit: row.unit, orig: row.qty, newQty: target });
+        appliedCount++;
+      });
+      renderStok();
+      showToast(`Sisa stok seragam ${target.toLocaleString('id-ID')} disiapkan untuk ${appliedCount} item. Cek daftar lalu klik "Simpan Semua Perubahan".`);
+    });
     bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); pendingStokEdits.clear(); renderStok(); }));
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
