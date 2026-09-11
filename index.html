@@ -812,10 +812,18 @@ window.storage = {
       }));
     } catch (e) { console.error('Gagal memuat data pricelist', e); }
   }
-  async function savePricelistMarkup(itemKey, markup) {
-    pricelistData[itemKey] = { markup };
-    try { await window.storage.set('pricelist:' + itemKey, JSON.stringify({ markup }), true); }
-    catch (e) { console.error(e); showToast('Gagal menyimpan markup, coba lagi.'); }
+  // Menyimpan entri pricelist: hargaJual adalah sumber kebenaran utama (persis seperti yang diinput,
+  // baik dari upload Excel Stok maupun diketik manual). markup dihitung & disimpan sebagai referensi tampilan saja.
+  async function savePricelistEntry(itemKey, hargaJual, markup) {
+    const entry = { hargaJual, markup };
+    pricelistData[itemKey] = entry;
+    try { await window.storage.set('pricelist:' + itemKey, JSON.stringify(entry), true); }
+    catch (e) { console.error(e); showToast('Gagal menyimpan harga jual, coba lagi.'); }
+  }
+  // Dipertahankan untuk kompatibilitas - menyimpan lewat markup%, hargaJual dihitung dari HPP saat ini.
+  async function savePricelistMarkup(itemKey, markup, unitCost) {
+    const hargaJual = Math.round((unitCost || 0) * (1 + markup / 100) / 100) * 100;
+    await savePricelistEntry(itemKey, hargaJual, markup);
   }
 
   // ---------- DAFTAR NAMA BARANG YANG DIBERSIHKAN (dihapus total dari stok/dropdown/kode) ----------
@@ -2641,7 +2649,7 @@ window.storage = {
           if (hargaJual > 0) {
             const itemKey = pricelistKeyFor(code, String(nama).trim());
             const markup = price > 0 ? Math.round(((hargaJual / price) - 1) * 10000) / 100 : 0;
-            pricelistJobs.push({ itemKey, markup });
+            pricelistJobs.push({ itemKey, markup, hargaJual });
           }
         });
         if (!validItems.length) {
@@ -2673,7 +2681,7 @@ window.storage = {
         }
         await Promise.all(createdTxns.map(t => saveTxn(t)));
         createdTxns.forEach(t => txns.unshift(t));
-        if (pricelistJobs.length) await Promise.all(pricelistJobs.map(j => savePricelistMarkup(j.itemKey, j.markup)));
+        if (pricelistJobs.length) await Promise.all(pricelistJobs.map(j => savePricelistEntry(j.itemKey, j.hargaJual, j.markup)));
         renderStok();
         const errNote = errors.length ? ` (${errors.length} baris dilewati karena data tidak valid: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
         const parts = [];
@@ -2834,16 +2842,16 @@ window.storage = {
     const countOnderdil = rowsWithMeta.filter(x => x.kategori === 'onderdil').length;
     const rows = rowsWithMeta.filter(x => x.kategori === pricelistView);
     bodyEl.innerHTML = `
-      <div class="bk-stok-note">Harga jual otomatis dihitung dari <strong>HPP/unit &times; (1 + Markup%)</strong>, dibulatkan ke Rp100 terdekat. Bisa isi salah satu saja: ketik "Markup (%)" (harga jual ikut menyesuaikan), ATAU ketik langsung "Harga Jual" (markup-nya ikut dihitung ulang otomatis). File Excel yang diunduh hanya berisi Kode, Nama, Satuan &amp; Harga Jual (bersih, siap dibagikan ke pelanggan tanpa membocorkan HPP/margin).</div>
+      <div class="bk-stok-note">Ter-link langsung dengan tab Stok &mdash; kalau Harga Jual sudah diisi saat upload Excel di Stok, angka itu yang ditampilkan persis di sini (bukan dihitung ulang). Bisa isi salah satu saja: ketik "Markup (%)" (harga jual ikut menyesuaikan dari HPP saat ini), ATAU ketik langsung "Harga Jual" (markup-nya ikut dihitung ulang otomatis untuk referensi). File Excel yang diunduh hanya berisi Kode, Nama, Satuan &amp; Harga Jual (bersih, siap dibagikan ke pelanggan tanpa membocorkan HPP/margin).</div>
       <div class="bk-filter" style="margin-bottom:14px;">
-        <div class="bk-chip ${pricelistView==='barang'?'active':''}" data-pv="barang">Stock Barang (${countBarang})</div>
+        <div class="bk-chip ${pricelistView==='barang'?'active':''}" data-pv="barang">Stock Laptop (${countBarang})</div>
         <div class="bk-chip ${pricelistView==='onderdil'?'active':''}" data-pv="onderdil">Stock Onderdil (${countOnderdil})</div>
       </div>
       <div class="bk-two-col" style="margin-bottom:10px; max-width:460px;">
         <input id="bk-pricelist-default-markup" type="number" min="0" step="any" placeholder="Markup default % (mis: 20)" />
         <button class="bk-btn ghost" id="bk-pricelist-apply-default">Terapkan ke yang masih 0%</button>
       </div>
-      <button class="bk-btn primary" id="bk-pricelist-download" style="margin-bottom:18px;">Unduh Pricelist ${pricelistView === 'barang' ? 'Stock Barang' : 'Stock Onderdil'} (Excel)</button>
+      <button class="bk-btn primary" id="bk-pricelist-download" style="margin-bottom:18px;">Unduh Pricelist ${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'} (Excel)</button>
       ${rows.length ? `
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
         <table style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
@@ -2854,7 +2862,7 @@ window.storage = {
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Stok</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">HPP/unit</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Markup (%)</th>
-              <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Harga Jual (bisa ketik manual)</th>
+              <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Harga Jual (dari Stok / bisa ketik manual)</th>
             </tr>
           </thead>
           <tbody id="bk-pricelist-tbody">
@@ -2863,8 +2871,11 @@ window.storage = {
               const specRec = codeReg.byNameFull[r.name.trim().toLowerCase()];
               const spec = specRec ? specRec.spec : '';
               const unitCost = hpp.getCurrentUnitCost(r.name);
-              const markup = pricelistData[itemKey] ? (Number(pricelistData[itemKey].markup) || 0) : 0;
-              const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
+              const entry = pricelistData[itemKey];
+              // hargaJual: pakai yang sudah tersimpan persis (mis. dari upload Stok) kalau ada,
+              // fallback hitung dari markup% cuma untuk data lama yang belum punya hargaJual tersimpan.
+              const markup = entry ? (Number(entry.markup) || 0) : 0;
+              const hargaJual = (entry && entry.hargaJual != null) ? Number(entry.hargaJual) : Math.round(unitCost * (1 + markup / 100) / 100) * 100;
               return `<tr data-key="${itemKey}" data-cost="${unitCost}">
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${escapeAttr(r.name)}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}
@@ -2884,7 +2895,7 @@ window.storage = {
           </tbody>
         </table>
       </div>
-      ` : `<div class="bk-empty">Belum ada barang di kategori ${pricelistView === 'barang' ? 'Stock Barang' : 'Stock Onderdil'}.</div>`}
+      ` : `<div class="bk-empty">Belum ada barang di kategori ${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'}.</div>`}
     `;
 
     bodyEl.querySelectorAll('.bk-filter [data-pv]').forEach(c => c.addEventListener('click', () => { pricelistView = c.dataset.pv; renderPricelist(); }));
@@ -2897,7 +2908,7 @@ window.storage = {
         const markup = Number(e.target.value) || 0;
         const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
         tr.querySelector('.pricelist-hargajual-input').value = hargaJual;
-        await savePricelistMarkup(itemKey, markup);
+        await savePricelistEntry(itemKey, hargaJual, markup);
       });
     });
 
@@ -2910,7 +2921,8 @@ window.storage = {
         const markup = unitCost > 0 ? ((hargaJual / unitCost) - 1) * 100 : 0;
         const markupRounded = Math.round(markup * 100) / 100;
         tr.querySelector('.pricelist-markup-input').value = markupRounded;
-        await savePricelistMarkup(itemKey, markupRounded);
+        // hargaJual disimpan PERSIS seperti yang diketik, tidak dibulatkan/dihitung ulang
+        await savePricelistEntry(itemKey, hargaJual, markupRounded);
       });
     });
 
@@ -2927,7 +2939,7 @@ window.storage = {
         markupInput.value = defVal;
         const hargaJual = Math.round(unitCost * (1 + defVal / 100) / 100) * 100;
         tr.querySelector('.pricelist-hargajual-input').value = hargaJual;
-        await savePricelistMarkup(tr.dataset.key, defVal);
+        await savePricelistEntry(tr.dataset.key, hargaJual, defVal);
       }
       showToast(`Markup ${defVal}% diterapkan ke ${trsToUpdate.length} barang.`);
     });
@@ -2941,7 +2953,7 @@ window.storage = {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
-    const kategoriLabel = pricelistView === 'barang' ? 'Stock Barang' : 'Stock Onderdil';
+    const kategoriLabel = pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil';
     const rows = Object.values(stockMap)
       .filter(r => !/^Jasa Service Laptop/i.test(r.name) && !deletedStokNames.has(r.name.trim().toLowerCase()))
       .map(r => ({ r, code: codeReg.byName[r.name.trim().toLowerCase()] || '' }))
@@ -2958,8 +2970,9 @@ window.storage = {
     rows.forEach(({ r, code }) => {
       const itemKey = pricelistKeyFor(code, r.name);
       const unitCost = hpp.getCurrentUnitCost(r.name);
-      const markup = pricelistData[itemKey] ? (Number(pricelistData[itemKey].markup) || 0) : 0;
-      const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
+      const entry = pricelistData[itemKey];
+      const markup = entry ? (Number(entry.markup) || 0) : 0;
+      const hargaJual = (entry && entry.hargaJual != null) ? Number(entry.hargaJual) : Math.round(unitCost * (1 + markup / 100) / 100) * 100;
       aoa.push([code || '-', r.name, r.unit || '-', hargaJual]);
     });
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), kategoriLabel);
@@ -5471,7 +5484,9 @@ window.storage = {
     (backup.manualTagihan || []).forEach(m => jobs.push(saveManualTagihanItem(m)));
     if (backup.pricelistData && typeof backup.pricelistData === 'object') {
       Object.entries(backup.pricelistData).forEach(([key, val]) => {
-        jobs.push(savePricelistMarkup(key, Number(val && val.markup) || 0));
+        const markup = Number(val && val.markup) || 0;
+        const hargaJual = (val && val.hargaJual != null) ? Number(val.hargaJual) : null;
+        jobs.push(savePricelistEntry(key, hargaJual, markup));
       });
     }
     await Promise.all(jobs);
