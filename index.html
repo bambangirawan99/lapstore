@@ -868,6 +868,16 @@ window.storage = {
     await saveDeletedStokNames();
     invalidateStockCaches();
   }
+  // Dipanggil otomatis setiap kali ada barang BARU masuk (pembelian manual, upload Excel, migrasi data)
+  // dengan nama yang PERNAH dihapus sebelumnya. Tanpa ini, barang yang di-restock ulang dengan nama sama
+  // akan tetap "disembunyikan" dari Stok/Pricelist walau transaksi pembeliannya berhasil tersimpan.
+  async function autoReviveStokNames(names) {
+    const toRevive = (names || []).filter(n => n && deletedStokNames.has(n.trim().toLowerCase()));
+    if (!toRevive.length) return;
+    toRevive.forEach(n => deletedStokNames.delete(n.trim().toLowerCase()));
+    await saveDeletedStokNames();
+    invalidateStockCaches();
+  }
 
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs', code: '' }; }
   let serviceFormState = blankServiceForm();
@@ -1749,6 +1759,7 @@ window.storage = {
     if (otherBtn) otherBtn.disabled = true;
     try {
       await saveTxn(txn);
+      if (type === 'pembelian') await autoReviveStokNames(validItems.map(i => i.name));
       if (isEdit) {
         const idx = txns.findIndex(x => x.id === editingTxnId);
         if (idx >= 0) txns[idx] = txn; else txns.unshift(txn);
@@ -2782,6 +2793,7 @@ window.storage = {
         }
         await Promise.all(createdTxns.map(t => saveTxn(t)));
         createdTxns.forEach(t => txns.unshift(t));
+        await autoReviveStokNames(validItems.map(i => i.name));
         if (pricelistJobs.length) {
           const priceResults = await runJobsInChunks(pricelistJobs.map(j => () => savePricelistEntry(j.itemKey, j.hargaJual, j.markup)));
           priceResults.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan harga jual:', r.reason); });
@@ -2908,6 +2920,7 @@ window.storage = {
         const dataRows = raw.slice(headerIdx + 1);
         const jobs = [];
         const errors = [];
+        const migratedNames = [];
         let successCount = 0;
         const nextLocalCode = makeLocalItemCodeCounter();
         dataRows.forEach((row, idx) => {
@@ -2921,6 +2934,7 @@ window.storage = {
           const priceJual = Number(hargaJual);
           if (!qty || qty <= 0) { errors.push(`Baris ${rowNum}: jumlah tidak valid`); return; }
           if (!(priceBeli >= 0) || !(priceJual >= 0)) { errors.push(`Baris ${rowNum}: harga beli/jual tidak valid`); return; }
+          migratedNames.push(String(nama).trim());
           let code = String(kode || '').trim();
           if (!code) {
             const prefix = detectKategoriFromName(String(nama));
@@ -2968,6 +2982,7 @@ window.storage = {
         const failedCount = results.filter(r => r.status === 'rejected').length;
         results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan baris migrasi:', r.reason); });
         const actualSuccess = jobs.length - failedCount;
+        await autoReviveStokNames(migratedNames);
         txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
         const errNote = errors.length ? ` ${errors.length} baris dilewati (format tidak valid).` : '';
         const failNote = failedCount ? ` ${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
