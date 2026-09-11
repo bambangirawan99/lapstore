@@ -991,11 +991,20 @@ window.storage = {
       txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     } catch (e) { console.error('Gagal memuat transaksi', e); }
   }
+  // Dipanggil setiap kali data transaksi berubah (simpan/hapus) supaya cache Stok & Kode Barang
+  // TIDAK PERNAH menampilkan data basi - sebelumnya cache ini cuma kedaluwarsa otomatis tiap 1.5 detik,
+  // jadi data yang baru saja diupload/disimpan bisa terlihat "belum tercatat" untuk sesaat.
+  function invalidateStockCaches() {
+    _computeStockCache = null;
+    _itemCodeRegistryCache = null;
+  }
   async function saveTxn(t) {
     await window.storage.set('txn:' + t.id, JSON.stringify(t), true);
+    invalidateStockCaches();
   }
   async function deleteTxnFromStore(id) {
     await window.storage.delete('txn:' + id, true);
+    invalidateStockCaches();
   }
 
   async function loadServices() {
