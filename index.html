@@ -2384,7 +2384,7 @@ window.storage = {
       ` : ''}
       <div class="bk-ai-box" style="margin-bottom:18px;">
         <div class="ai-head"><div class="ai-title">Upload Stok dari Excel</div></div>
-        <div class="ai-body" style="margin-bottom:12px;">Unduh dulu format template-nya, isi datanya, lalu upload di sini. Otomatis tercatat sebagai satu transaksi pembelian dan langsung menambah Stok &amp; muncul di Dashboard.</div>
+        <div class="ai-body" style="margin-bottom:12px;">Unduh dulu format template-nya, isi datanya, lalu upload di sini. Otomatis dipisah jadi 2 transaksi pembelian terpisah (<strong>Stock Laptop</strong> dan <strong>Stock Sparepart/Logistik</strong>) sesuai kolom Kategori, langsung menambah Stok &amp; muncul di Dashboard.</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           <button class="bk-btn ghost" id="bk-stok-template-btn">Unduh Template Excel</button>
           <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
@@ -2436,7 +2436,7 @@ window.storage = {
     const wb = XLSX.utils.book_new();
     const aoa = [
       ['FORMAT UPLOAD STOK BARANG - LAPSTORE'],
-      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Kolom Kode boleh dikosongkan (dibuat otomatis sesuai Kategori). Kolom Kategori isi persis "Laptop" atau "Onderdil". Baris contoh di bawah boleh dihapus/ditimpa.'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Kolom Kode boleh dikosongkan (dibuat otomatis sesuai Kategori). Kolom Kategori isi persis "Laptop" atau "Onderdil". Hasil upload otomatis dipisah jadi 2 transaksi pembelian: Stock Laptop dan Stock Sparepart/Logistik. Baris contoh di bawah boleh dihapus/ditimpa.'],
       [],
       [],
       ['Kode', 'Nama Barang', 'Kategori (Laptop/Onderdil)', 'Jumlah', 'Satuan', 'Harga Beli per Satuan'],
@@ -2475,34 +2475,51 @@ window.storage = {
           if (!qty || qty <= 0) { errors.push(`Baris ${rowNum}: jumlah tidak valid`); return; }
           if (!(price >= 0)) { errors.push(`Baris ${rowNum}: harga tidak valid`); return; }
           let code = String(kode || '').trim();
-          if (!code) {
-            const kat = String(kategori || '').trim().toLowerCase();
-            const prefix = kat.startsWith('laptop') ? 'LPSTK' : 'LPSRV';
-            code = generateItemCodeSequence(prefix, 1)[0];
-          }
-          validItems.push({ code, name: String(nama).trim(), qty, unit: (String(satuan || '').trim() || 'pcs'), price });
+          // Tentukan kategori: kolom Kategori dulu, lalu prefix kode kalau ada, baru kata kunci nama
+          const katText = String(kategori || '').trim().toLowerCase();
+          let isLaptop;
+          if (katText.startsWith('laptop')) isLaptop = true;
+          else if (katText.startsWith('onderdil') || katText.startsWith('sparepart')) isLaptop = false;
+          else if (code) isLaptop = /^LPSTK/i.test(code);
+          else isLaptop = detectKategoriFromName(String(nama)) === 'LPSTK';
+          if (!code) code = generateItemCodeSequence(isLaptop ? 'LPSTK' : 'LPSRV', 1)[0];
+          validItems.push({ code, name: String(nama).trim(), qty, unit: (String(satuan || '').trim() || 'pcs'), price, _isLaptop: isLaptop });
         });
         if (!validItems.length) {
           statusEl.textContent = 'Tidak ada baris valid ditemukan. Pastikan format file sesuai template (unduh template dulu kalau belum).';
           statusEl.style.color = 'var(--money-out)';
           return;
         }
-        const total = validItems.reduce((s,i) => s + i.qty * i.price, 0);
-        const txn = {
-          id: uid(),
-          type: 'pembelian',
-          kodeTransaksi: generateTxnCode('pembelian'),
-          items: validItems,
-          total,
-          supplierName: 'Import Excel',
-          createdAt: Date.now(),
-          createdBy: currentUser ? currentUser.email : null,
-        };
-        await saveTxn(txn);
-        txns.unshift(txn);
+        // Pisahkan berdasarkan kategori yang sudah ditentukan tiap baris (kolom Kategori > prefix kode > kata kunci nama)
+        const stripFlag = (i) => { const { _isLaptop, ...rest } = i; return rest; };
+        const laptopItems = validItems.filter(i => i._isLaptop).map(stripFlag);
+        const sparepartItems = validItems.filter(i => !i._isLaptop).map(stripFlag);
+
+        const createdTxns = [];
+        if (laptopItems.length) {
+          const totalLaptop = laptopItems.reduce((s,i) => s + i.qty * i.price, 0);
+          createdTxns.push({
+            id: uid(), type: 'pembelian', kodeTransaksi: generateTxnCode('pembelian'),
+            items: laptopItems, total: totalLaptop, supplierName: 'Import Excel - Stock Laptop',
+            createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null,
+          });
+        }
+        if (sparepartItems.length) {
+          const totalSparepart = sparepartItems.reduce((s,i) => s + i.qty * i.price, 0);
+          createdTxns.push({
+            id: uid(), type: 'pembelian', kodeTransaksi: generateTxnCode('pembelian'),
+            items: sparepartItems, total: totalSparepart, supplierName: 'Import Excel - Stock Sparepart/Logistik',
+            createdAt: Date.now() + 1, createdBy: currentUser ? currentUser.email : null,
+          });
+        }
+        await Promise.all(createdTxns.map(t => saveTxn(t)));
+        createdTxns.forEach(t => txns.unshift(t));
         renderStok();
         const errNote = errors.length ? ` (${errors.length} baris dilewati karena data tidak valid: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
-        showToast(`${validItems.length} barang berhasil diimpor ke Stok${errNote}.`);
+        const parts = [];
+        if (laptopItems.length) parts.push(`${laptopItems.length} barang Laptop`);
+        if (sparepartItems.length) parts.push(`${sparepartItems.length} barang Sparepart/Logistik`);
+        showToast(`Berhasil diimpor ke Stok: ${parts.join(' & ')}${errNote}.`);
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
