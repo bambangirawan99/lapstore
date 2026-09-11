@@ -2726,7 +2726,7 @@ window.storage = {
     if (!pendingStokEdits.size) return;
     const codeReg = getItemCodeRegistry();
     const entries = Array.from(pendingStokEdits.entries());
-    const daftar = entries.map(([name, e]) => `${name}: ${e.orig.toLocaleString('id-ID')} &rarr; ${e.newQty.toLocaleString('id-ID')} ${e.unit||''}`).join('<br>');
+    const daftar = entries.map(([name, e]) => `${escapeAttr(name)}: ${e.orig.toLocaleString('id-ID')} &rarr; ${e.newQty.toLocaleString('id-ID')} ${escapeAttr(e.unit||'')}`).join('<br>');
     showConfirm(`Simpan ${entries.length} perubahan sisa stok sekaligus?<br><br><span style="font-size:12px; color:var(--ink-soft); text-align:left; display:block;">${daftar}</span><br>Riwayat transaksi lama tidak diubah.`, async () => {
       const jobFns = entries.map(([name, e]) => async () => {
         const code = codeReg.byName[name.trim().toLowerCase()] || '';
@@ -2737,12 +2737,16 @@ window.storage = {
         await autoReviveStokNames([name]);
       });
       const results = await runJobsInChunks(jobFns);
-      const failedCount = results.filter(r => r.status === 'rejected').length;
-      results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan perubahan stok:', r.reason); });
-      pendingStokEdits.clear();
+      const failedNames = [];
+      results.forEach((r, idx) => { if (r.status === 'rejected') { failedNames.push(entries[idx][0]); console.error('Gagal menyimpan perubahan stok untuk', entries[idx][0], ':', r.reason); } });
+      // Hanya hapus dari antrian yang BENAR-BENAR berhasil - yang gagal tetap di pendingStokEdits supaya bisa dicoba lagi
+      entries.forEach(([name]) => { if (!failedNames.includes(name)) pendingStokEdits.delete(name); });
       renderStok();
-      const failNote = failedCount ? ` ${failedCount} GAGAL tersimpan, coba lagi untuk item itu.` : '';
-      showToast(`${entries.length - failedCount} perubahan sisa stok berhasil disimpan.${failNote}`);
+      if (failedNames.length) {
+        showToast(`${entries.length - failedNames.length} berhasil disimpan. ${failedNames.length} GAGAL (masalah koneksi): ${failedNames.slice(0,3).join(', ')}${failedNames.length>3?', dst':''} - masih di daftar, klik "Simpan Semua Perubahan" lagi untuk coba ulang.`);
+      } else {
+        showToast(`${entries.length} perubahan sisa stok berhasil disimpan.`);
+      }
     }, () => renderStok());
   }
 
