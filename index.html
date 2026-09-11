@@ -2484,6 +2484,7 @@ window.storage = {
   let stokView = 'laptop'; // laptop | onderdil
   let stokDeletedListOpen = false;
   let selectedStokNames = new Set();
+  let pendingStokEdits = new Map(); // name -> { unit, orig, newQty } - perubahan sisa stok yang belum disimpan
   function renderStok() {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
@@ -2548,6 +2549,13 @@ window.storage = {
           Pilih semua (${rows.length})
         </label>
         <button class="bk-btn bk-bulk-del ${selectedStokNames.size ? 'show' : ''}" id="bk-stok-bulk-del-btn">Hapus terpilih (${selectedStokNames.size})</button>
+      </div>
+      <div id="bk-stok-bulk-edit-bar" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; padding:10px 14px; background:var(--accent-bg); border-radius:10px;">
+        <span style="font-size:12.5px; color:var(--accent-ink); font-weight:600;"><span id="bk-stok-edit-count">0</span> perubahan sisa stok belum disimpan</span>
+        <div style="display:flex; gap:8px;">
+          <button class="bk-btn ghost" id="bk-stok-edit-batal" style="padding:7px 14px; font-size:12px;">Batal semua</button>
+          <button class="bk-btn accent" id="bk-stok-edit-simpan" style="padding:7px 14px; font-size:12px;">Simpan Semua Perubahan</button>
+        </div>
       </div>` : ''}
       ${rows.length ? `
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
@@ -2611,19 +2619,28 @@ window.storage = {
       }
     }));
     bodyEl.querySelectorAll('.stok-qty-edit').forEach(input => {
-      const commit = () => {
+      input.addEventListener('input', () => {
         const name = input.dataset.name;
         const unit = input.dataset.unit;
         const orig = Number(input.dataset.orig);
-        const newQty = Number(input.value);
-        if (isNaN(newQty) || newQty < 0) { input.value = orig; return; }
-        if (newQty === orig) return;
-        editStokQty(name, unit, orig, newQty);
-      };
+        const newVal = input.value === '' ? NaN : Number(input.value);
+        if (isNaN(newVal) || newVal < 0 || newVal === orig) {
+          pendingStokEdits.delete(name);
+          input.style.borderColor = 'var(--line)';
+        } else {
+          pendingStokEdits.set(name, { unit, orig, newQty: newVal });
+          input.style.borderColor = 'var(--accent)';
+        }
+        updateStokBulkEditBar();
+      });
       input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
-      input.addEventListener('blur', commit);
     });
-    bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); renderStok(); }));
+    document.getElementById('bk-stok-edit-batal') && document.getElementById('bk-stok-edit-batal').addEventListener('click', () => {
+      pendingStokEdits.clear();
+      renderStok();
+    });
+    document.getElementById('bk-stok-edit-simpan') && document.getElementById('bk-stok-edit-simpan').addEventListener('click', simpanSemuaPerubahanStok);
+    bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); pendingStokEdits.clear(); renderStok(); }));
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
     }));
@@ -2650,40 +2667,62 @@ window.storage = {
   // Edit manual sisa stok = mencatat PENYESUAIAN STOK (bukan mengubah riwayat transaksi lama).
   // Selisih antara angka lama dan angka baru dibuatkan satu transaksi penyesuaian senilai Rp0,
   // supaya sisa stok item ini persis sesuai yang diketik, sekaligus tetap tercatat & bisa dilacak.
-  async function editStokQty(name, unit, orig, newQty) {
-    if (!requireOwnerForDelete()) { renderStok(); return; }
-    const selisih = newQty - orig;
+  // Membuat satu transaksi penyesuaian stok (dipakai bareng oleh simpanSemuaPerubahanStok)
+  function buildStokAdjustmentTxn(name, unit, code, selisih) {
     const naik = selisih > 0;
-    showConfirm(`Ubah sisa stok "${name}" dari ${orig.toLocaleString('id-ID')} menjadi ${newQty.toLocaleString('id-ID')} ${unit||''}? Ini akan mencatat penyesuaian stok sejumlah ${naik?'+':''}${selisih.toLocaleString('id-ID')}. Riwayat transaksi lama tidak diubah.`, async () => {
-      try {
-        const codeReg = getItemCodeRegistry();
+    return {
+      id: uid(),
+      type: naik ? 'pembelian' : 'penjualan',
+      kodeTransaksi: generateTxnCode(naik ? 'pembelian' : 'penjualan'),
+      items: [{ name, qty: Math.abs(selisih), unit: unit || 'pcs', price: 0, code }],
+      total: 0,
+      supplierName: naik ? 'Penyesuaian Stok (Edit Manual)' : undefined,
+      customerName: !naik ? 'Penyesuaian Stok (Edit Manual)' : undefined,
+      customerPhone: '',
+      paid: true,
+      rekening: !naik ? BANK_ACCOUNTS[0].id : undefined,
+      createdAt: Date.now(),
+      createdBy: currentUser ? currentUser.email : null,
+    };
+  }
+  function updateStokBulkEditBar() {
+    const bar = document.getElementById('bk-stok-bulk-edit-bar');
+    if (!bar) return;
+    const countEl = document.getElementById('bk-stok-edit-count');
+    if (pendingStokEdits.size > 0) {
+      bar.style.display = 'flex';
+      if (countEl) countEl.textContent = pendingStokEdits.size;
+    } else {
+      bar.style.display = 'none';
+    }
+  }
+  // Simpan banyak perubahan sisa stok sekaligus dalam SATU konfirmasi (bukan konfirmasi per baris),
+  // supaya edit stok banyak barang jadi jauh lebih cepat.
+  async function simpanSemuaPerubahanStok() {
+    if (!requireOwnerForDelete()) { renderStok(); return; }
+    if (!pendingStokEdits.size) return;
+    const codeReg = getItemCodeRegistry();
+    const entries = Array.from(pendingStokEdits.entries());
+    const daftar = entries.map(([name, e]) => `${name}: ${e.orig.toLocaleString('id-ID')} &rarr; ${e.newQty.toLocaleString('id-ID')} ${e.unit||''}`).join('<br>');
+    showConfirm(`Simpan ${entries.length} perubahan sisa stok sekaligus?<br><br><span style="font-size:12px; color:var(--ink-soft); text-align:left; display:block;">${daftar}</span><br>Riwayat transaksi lama tidak diubah.`, async () => {
+      const jobFns = entries.map(([name, e]) => async () => {
         const code = codeReg.byName[name.trim().toLowerCase()] || '';
-        const txn = {
-          id: uid(),
-          type: naik ? 'pembelian' : 'penjualan',
-          kodeTransaksi: generateTxnCode(naik ? 'pembelian' : 'penjualan'),
-          items: [{ name, qty: Math.abs(selisih), unit: unit || 'pcs', price: 0, code }],
-          total: 0,
-          supplierName: naik ? 'Penyesuaian Stok (Edit Manual)' : undefined,
-          customerName: !naik ? 'Penyesuaian Stok (Edit Manual)' : undefined,
-          customerPhone: '',
-          paid: true,
-          rekening: !naik ? BANK_ACCOUNTS[0].id : undefined,
-          createdAt: Date.now(),
-          createdBy: currentUser ? currentUser.email : null,
-        };
+        const selisih = e.newQty - e.orig;
+        const txn = buildStokAdjustmentTxn(name, e.unit, code, selisih);
         await saveTxn(txn);
         txns.unshift(txn);
         await autoReviveStokNames([name]);
-        renderStok();
-        showToast(`Sisa stok "${name}" berhasil diubah jadi ${newQty.toLocaleString('id-ID')} ${unit||''}.`);
-      } catch (e) {
-        console.error(e);
-        showToast('Gagal mengubah sisa stok, coba lagi.');
-        renderStok();
-      }
+      });
+      const results = await runJobsInChunks(jobFns);
+      const failedCount = results.filter(r => r.status === 'rejected').length;
+      results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan perubahan stok:', r.reason); });
+      pendingStokEdits.clear();
+      renderStok();
+      const failNote = failedCount ? ` ${failedCount} GAGAL tersimpan, coba lagi untuk item itu.` : '';
+      showToast(`${entries.length - failedCount} perubahan sisa stok berhasil disimpan.${failNote}`);
     }, () => renderStok());
   }
+
 
   async function hapusStokItem(name, qty, unit) {
     if (!requireOwnerForDelete()) return;
