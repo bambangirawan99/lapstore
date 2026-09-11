@@ -565,6 +565,7 @@ window.storage = {
     { id: 'piutang', label: 'Piutang', ownerOnly: true },
     { id: 'riwayat', label: 'Riwayat' },
     { id: 'laporan', label: 'Laporan' },
+    { id: 'migrasi', label: 'Migrasi Data' },
     { id: 'cari', label: 'Cari' },
   ];
   let activeTab = 'dashboard';
@@ -1098,6 +1099,7 @@ window.storage = {
     if (activeTab === 'piutang') return renderPiutang();
     if (activeTab === 'riwayat') return renderRiwayat();
     if (activeTab === 'laporan') return renderLaporan();
+    if (activeTab === 'migrasi') return renderMigrasiData();
     if (activeTab === 'cari') return renderCari();
   }
 
@@ -3249,7 +3251,9 @@ window.storage = {
         const failNote = failedCount ? ` ${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
         showToast(`${actualSuccess} riwayat service lama berhasil dimigrasi.${errNote}${failNote} Langsung masuk ke laporan keuangan.`);
         svcView = 'riwayat';
-        renderService();
+        activeTab = 'service';
+        renderTabs();
+        renderBody();
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
@@ -6561,6 +6565,69 @@ window.storage = {
         }
       });
     }));
+  }
+
+  // ---------- MIGRASI DATA (kumpulan semua alat upload data lama, dalam satu tempat) ----------
+  function renderMigrasiData() {
+    bodyEl.innerHTML = `
+      <div class="bk-section-title">Migrasi Data Lama</div>
+      <div class="bk-stok-note">Semua alat untuk memasukkan data dari sebelum pakai sistem ini, dikumpulkan di satu tempat. Setiap upload otomatis terhubung ke Stok, Riwayat, dan Laporan Keuangan yang sesuai &mdash; tidak perlu input ulang manual satu-satu.</div>
+
+      <div class="bk-ai-box" style="margin:18px 0;">
+        <div class="ai-head"><div class="ai-title">1. Migrasi Stok Barang (Stock Ready)</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan barang yang MASIH ADA sekarang beserta jumlah &amp; harga belinya. Otomatis dipisah jadi Stock Laptop dan Stock Sparepart/Logistik. Bisa juga isi Harga Jual &amp; Spesifikasi sekalian (opsional).</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-stok-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-stok-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-stok-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+
+      <div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">2. Migrasi Riwayat Penjualan Lama</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk barang yang sudah TERJUAL sebelum pakai sistem ini. Setiap baris otomatis dibuatkan sepasang catatan (pembelian + penjualan historis bertanggal sama) supaya Laba Rugi &amp; HPP lama ikut akurat &mdash; <strong>tidak memengaruhi stok saat ini</strong>.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-riwayat-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-riwayat-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-riwayat-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+
+      <div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">3. Migrasi Riwayat Service Lama</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk service yang sudah SELESAI &amp; diambil sebelum pakai sistem ini. Setiap baris otomatis dibuatkan catatan Service "Sudah diambil" sekaligus transaksi pemasukannya &mdash; langsung masuk ke laporan keuangan.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-svc-migrasi-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-svc-migrasi-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-svc-migrasi-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+
+      ${isOwner() ? `<div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">4. Backup &amp; Restore Database Lengkap</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Simpan cadangan seluruh data sebelum migrasi besar, atau pulihkan data dari backup sebelumnya. Ada di Laporan &rarr; Backup &amp; Restore.</div>
+        <button class="bk-btn ghost" id="bk-migrasi-goto-backup">Buka Backup &amp; Restore</button>
+      </div>` : ''}
+    `;
+    document.getElementById('bk-stok-template-btn').addEventListener('click', downloadStokUploadTemplate);
+    document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
+    document.getElementById('bk-riwayat-template-btn').addEventListener('click', downloadRiwayatUploadTemplate);
+    document.getElementById('bk-riwayat-upload-input').addEventListener('change', handleRiwayatExcelUpload);
+    document.getElementById('bk-svc-migrasi-template-btn').addEventListener('click', downloadServiceMigrasiTemplate);
+    document.getElementById('bk-svc-migrasi-upload-input').addEventListener('change', handleServiceMigrasiUpload);
+    const gotoBackupBtn = document.getElementById('bk-migrasi-goto-backup');
+    if (gotoBackupBtn) gotoBackupBtn.addEventListener('click', () => {
+      activeTab = 'laporan';
+      laporanView = 'backup';
+      renderTabs();
+      renderBody();
+    });
   }
 
   // ---------- CARI (pencarian lintas modul) ----------
