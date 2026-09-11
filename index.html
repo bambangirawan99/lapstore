@@ -1257,6 +1257,17 @@ window.storage = {
         <input id="bk-barcode-scan" placeholder="Sorot kursor ke sini, lalu scan barcode/serial number..." style="font-family:'IBM Plex Mono',monospace;" autocomplete="off" />
         <div style="font-size:11.5px; color:var(--ink-soft); margin-top:4px;">Kalau barcode/seri ini pernah discan sebelumnya, item baru otomatis terisi lengkap. Kalau baru, item baru ditambahkan dan tinggal isi nama &amp; harganya &mdash; kategori Laptop/Onderdil otomatis terdeteksi dari nama (tetap bisa diubah manual di dropdown Kode).</div>
       </div>` : ''}
+      ${!isEdit && isJual ? `<div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">Upload Riwayat Penjualan Lama (Migrasi Data)</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan data penjualan dari sebelum pakai sistem ini. Setiap baris otomatis dibuatkan SEPASANG catatan (pembelian historis + penjualan historis bertanggal sama) supaya laporan keuangan &amp; HPP lama ikut akurat &mdash; <strong>tidak memengaruhi stok saat ini</strong> (karena barang itu memang sudah terjual duluan).</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-riwayat-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-riwayat-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-riwayat-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>` : ''}
       <div class="bk-field">
         <label>${isJual ? 'Nama pembeli (opsional)' : 'Nama supplier (opsional)'}</label>
         <input id="bk-party" value="${escapeAttr(st.party)}" placeholder="${isJual ? 'Nama pelanggan' : 'Nama toko/pemasok'}" />
@@ -1404,6 +1415,12 @@ window.storage = {
     if (!isEdit) document.getElementById('bk-quick-btn').addEventListener('click', () => runQuickAi(type));
     document.getElementById('bk-save-btn').addEventListener('click', () => saveTransaction(type, true));
     if (!isEdit && isJual) document.getElementById('bk-save-noresi-btn').addEventListener('click', () => saveTransaction(type, false));
+    if (!isEdit && isJual) {
+      const rwTemplateBtn = document.getElementById('bk-riwayat-template-btn');
+      if (rwTemplateBtn) rwTemplateBtn.addEventListener('click', downloadRiwayatUploadTemplate);
+      const rwUploadInput = document.getElementById('bk-riwayat-upload-input');
+      if (rwUploadInput) rwUploadInput.addEventListener('change', handleRiwayatExcelUpload);
+    }
   }
 
   // ---------- KODE BARANG (barcode) ----------
@@ -2071,17 +2088,6 @@ window.storage = {
     const labaKotorBulan = masuk - hppBulan;
 
     bodyEl.innerHTML = `
-      <div class="bk-ai-box" style="margin-bottom:18px;">
-        <div class="ai-head"><div class="ai-title">Upload Riwayat Penjualan Lama (Migrasi Data)</div></div>
-        <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan data penjualan dari sebelum pakai sistem ini. Setiap baris otomatis dibuatkan SEPASANG catatan (pembelian historis + penjualan historis bertanggal sama) supaya laporan keuangan &amp; HPP lama ikut akurat &mdash; <strong>tidak memengaruhi stok saat ini</strong> (karena barang itu memang sudah terjual duluan).</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <button class="bk-btn ghost" id="bk-riwayat-template-btn">Unduh Template Excel</button>
-          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
-            <input type="file" id="bk-riwayat-upload-input" accept=".xlsx,.xls" style="display:none;" />
-          </label>
-        </div>
-        <div id="bk-riwayat-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
-      </div>
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
         <select id="bk-month-select" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 11px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
@@ -2120,10 +2126,6 @@ window.storage = {
       <div id="bk-riwayat-list">${filtered.length ? filtered.map(t => riwayatRowHtml(t, hppAll)).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
     `;
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
-    const rwTemplateBtn = document.getElementById('bk-riwayat-template-btn');
-    if (rwTemplateBtn) rwTemplateBtn.addEventListener('click', downloadRiwayatUploadTemplate);
-    const rwUploadInput = document.getElementById('bk-riwayat-upload-input');
-    if (rwUploadInput) rwUploadInput.addEventListener('change', handleRiwayatExcelUpload);
     const dlLrBtn = document.getElementById('bk-download-lr');
     if (dlLrBtn) dlLrBtn.addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
     const dlLrExcelBtn = document.getElementById('bk-download-lr-excel');
@@ -2798,11 +2800,11 @@ window.storage = {
         statusEl.textContent = `Memproses ${jobs.length} baris...`;
         await Promise.all(jobs);
         txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-        renderRiwayat();
         const errNote = errors.length ? ` (${errors.length} baris dilewati: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
-        statusEl.style.color = 'var(--money-in)';
-        statusEl.textContent = `${successCount} riwayat penjualan lama berhasil dimigrasi${errNote}. Stok saat ini tidak berubah.`;
-        showToast(`${successCount} riwayat penjualan lama berhasil dimigrasi.`);
+        showToast(`${successCount} riwayat penjualan lama berhasil dimigrasi${errNote}. Stok saat ini tidak berubah.`);
+        activeTab = 'riwayat';
+        renderTabs();
+        renderBody();
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
