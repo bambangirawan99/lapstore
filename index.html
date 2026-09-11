@@ -863,6 +863,11 @@ window.storage = {
     names.forEach(n => deletedStokNames.add(n.trim().toLowerCase()));
     await saveDeletedStokNames();
   }
+  async function pulihkanStokNama(name) {
+    deletedStokNames.delete(name.trim().toLowerCase());
+    await saveDeletedStokNames();
+    invalidateStockCaches();
+  }
 
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs', code: '' }; }
   let serviceFormState = blankServiceForm();
@@ -2505,6 +2510,16 @@ window.storage = {
         <button class="bk-btn ghost" id="bk-stok-fix-duplicate-btn" style="border-color:var(--money-out); color:var(--money-out);">Cek &amp; Perbaiki Kode Duplikat</button>
         <div id="bk-stok-fix-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>` : ''}
+      ${isOwner() && deletedStokNames.size > 0 ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Item yang Sudah Dihapus (${deletedStokNames.size})</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Barang-barang ini sengaja disembunyikan dari Stok (lewat tombol/hapus massal sebelumnya). Kalau ada yang ternyata terhapus tidak sengaja, klik "Pulihkan" untuk memunculkannya lagi di Stok.</div>
+        <div id="bk-stok-deleted-list">${Array.from(deletedStokNames).sort().map(n => `
+          <div class="bk-list-row">
+            <div class="bk-list-left"><div class="nm">${escapeAttr(n)}</div></div>
+            <button class="bk-btn ghost stok-restore-btn" data-name="${escapeAttr(n)}" style="padding:6px 14px; font-size:12px;">Pulihkan</button>
+          </div>
+        `).join('')}</div>
+      </div>` : ''}
       <div class="bk-filter" style="margin-bottom:14px;">
         <div class="bk-chip ${stokView==='laptop'?'active':''}" data-sv="laptop">Stock Laptop (${countLaptop})</div>
         <div class="bk-chip ${stokView==='onderdil'?'active':''}" data-sv="onderdil">Stock Onderdil (${countOnderdil})</div>
@@ -2562,6 +2577,17 @@ window.storage = {
     document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
     const fixDupBtn = document.getElementById('bk-stok-fix-duplicate-btn');
     if (fixDupBtn) fixDupBtn.addEventListener('click', perbaikiKodeDuplikat);
+    bodyEl.querySelectorAll('.stok-restore-btn').forEach(btn => btn.addEventListener('click', async () => {
+      const name = btn.dataset.name;
+      try {
+        await pulihkanStokNama(name);
+        showToast(`"${name}" berhasil dipulihkan, cek kembali di tab Stok.`);
+        renderStok();
+      } catch (e) {
+        console.error(e);
+        showToast('Gagal memulihkan, coba lagi.');
+      }
+    }));
     bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); renderStok(); }));
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
