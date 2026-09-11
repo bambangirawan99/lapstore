@@ -2843,6 +2843,132 @@ window.storage = {
     reader.readAsArrayBuffer(file);
   }
 
+  // ---------- UPLOAD RIWAYAT SERVICE LAMA (Migrasi Data) ----------
+  function downloadServiceMigrasiTemplate() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      ['FORMAT UPLOAD RIWAYAT SERVICE LAMA - LAPSTORE'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Tanggal Selesai format DD/MM/YYYY. Kolom Kode Service boleh dikosongkan (dibuat otomatis). Status isi persis "Lunas" atau "Belum". Kolom Rekening isi persis salah satu: ' + BANK_ACCOUNTS.map(a=>a.label).join(' / ') + ' (boleh dikosongkan, default rekening pertama). Setiap baris otomatis membuat catatan Service berstatus "Sudah diambil" + transaksi pemasukan yang langsung masuk ke laporan keuangan. Baris contoh boleh dihapus/ditimpa.'],
+      [],
+      [],
+      ['Tanggal Selesai', 'Kode Service', 'Nama Pelanggan', 'No. HP', 'Merk/Tipe Laptop', 'Keluhan', 'Biaya Service', 'Status', 'Rekening'],
+      ['15/02/2026', '', 'Budi Santoso', '081234567890', 'Asus A455L', 'Mati total tidak bisa cas', 250000, 'Lunas', BANK_ACCOUNTS[0].label],
+      ['20/02/2026', '', 'Rahmi', '081280572167', 'Lenovo Thinkpad X390', 'Ganti baterai', 350000, 'Lunas', BANK_ACCOUNTS[0].label],
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Template Riwayat Service');
+    XLSX.writeFile(wb, 'template-riwayat-service-lama.xlsx');
+  }
+
+  function handleServiceMigrasiUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('bk-svc-migrasi-status');
+    statusEl.style.color = 'var(--ink-soft)';
+    statusEl.textContent = 'Membaca file...';
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        if (!window.XLSX) { statusEl.textContent = 'Modul Excel belum siap, coba lagi sebentar.'; statusEl.style.color = 'var(--money-out)'; return; }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        let headerIdx = raw.findIndex(row => row.some(c => String(c).trim().toLowerCase().includes('nama pelanggan')));
+        if (headerIdx === -1) headerIdx = 0;
+        const dataRows = raw.slice(headerIdx + 1);
+        await loadServices(); // muat ulang dulu supaya kode service tidak bentrok dengan data terbaru di server
+        const usedCodes = new Set(services.map(x => (x.kodeService || '').trim().toUpperCase()));
+        const jobs = [];
+        const errors = [];
+        let successCount = 0;
+        dataRows.forEach((row, idx) => {
+          const [tglRaw, kodeRaw, nama, hp, device, keluhan, biayaRaw, status, rekeningLabel] = row;
+          if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
+          const rowNum = headerIdx + idx + 2;
+          const selesaiTime = parseTanggalDDMMYYYY(tglRaw);
+          if (!selesaiTime) { errors.push(`Baris ${rowNum}: tanggal selesai tidak valid (pakai format DD/MM/YYYY)`); return; }
+          const biaya = Number(biayaRaw);
+          if (!(biaya >= 0)) { errors.push(`Baris ${rowNum}: biaya service tidak valid`); return; }
+          if (!device || String(device).trim() === '') { errors.push(`Baris ${rowNum}: merk/tipe laptop wajib diisi`); return; }
+          let kode = String(kodeRaw || '').trim();
+          if (!kode || usedCodes.has(kode.toUpperCase())) { kode = generateServiceCode(); }
+          usedCodes.add(kode.toUpperCase());
+          const isLunas = String(status || 'Lunas').trim().toLowerCase() !== 'belum';
+          const accMatch = BANK_ACCOUNTS.find(a => a.label.toLowerCase() === String(rekeningLabel || '').trim().toLowerCase());
+          const rekening = accMatch ? accMatch.id : BANK_ACCOUNTS[0].id;
+          const deviceTrim = String(device).trim();
+          const txn = {
+            id: uid(),
+            type: 'penjualan',
+            kodeTransaksi: generateTxnCode('penjualan'),
+            items: [{ name: `Jasa Service Laptop - ${deviceTrim}`, qty: 1, unit: 'jasa', price: biaya }],
+            total: biaya,
+            customerName: String(nama).trim(),
+            customerPhone: String(hp || '').trim(),
+            paid: isLunas,
+            rekening,
+            createdAt: selesaiTime,
+            createdBy: currentUser ? currentUser.email : null,
+          };
+          const svc = {
+            id: uid(),
+            kodeService: kode,
+            customerName: String(nama).trim(),
+            customerPhone: String(hp || '').trim(),
+            device: deviceTrim,
+            complaint: String(keluhan || '').trim(),
+            accessories: '',
+            estimasiBiaya: biaya,
+            rekening,
+            catatanDiagnosa: '',
+            biayaFinal: biaya,
+            dpAmount: 0,
+            dpTxnId: null,
+            paid: isLunas,
+            status: 'diambil',
+            linkedTxnId: txn.id,
+            createdAt: selesaiTime - 2000,
+            createdBy: currentUser ? currentUser.email : null,
+            updatedAt: selesaiTime,
+            history: [
+              { status: 'diterima', at: selesaiTime - 2000 },
+              { status: 'selesai', at: selesaiTime - 1000 },
+              { status: 'diambil', at: selesaiTime },
+            ],
+          };
+          jobs.push((async () => {
+            await saveTxn(txn);
+            await saveService(svc);
+            txns.push(txn);
+            services.push(svc);
+          })());
+          successCount++;
+        });
+        if (!jobs.length) {
+          statusEl.textContent = 'Tidak ada baris valid ditemukan. Pastikan format file sesuai template (unduh template dulu kalau belum).';
+          statusEl.style.color = 'var(--money-out)';
+          return;
+        }
+        statusEl.textContent = `Memproses ${jobs.length} baris...`;
+        await Promise.all(jobs);
+        txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+        services.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+        const errNote = errors.length ? ` (${errors.length} baris dilewati: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
+        showToast(`${successCount} riwayat service lama berhasil dimigrasi${errNote}. Langsung masuk ke laporan keuangan.`);
+        svcView = 'riwayat';
+        renderService();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
+        statusEl.style.color = 'var(--money-out)';
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   // ---------- PRICELIST (harga jual dari HPP + markup, siap ekspor Excel) ----------
   let pricelistView = 'barang'; // barang | onderdil
   function pricelistCategoryOf(code) {
@@ -3293,6 +3419,18 @@ window.storage = {
       <div id="bk-svc-form-err" class="bk-err" style="display:none;"></div>
       <button class="bk-btn primary" id="bk-svc-save-btn" style="margin-bottom:26px;">Terima service masuk</button>
 
+      <div class="bk-ai-box" style="margin-bottom:26px;">
+        <div class="ai-head"><div class="ai-title">Upload Riwayat Service Lama (Migrasi Data)</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan data service dari sebelum pakai sistem ini. Setiap baris otomatis dibuatkan catatan Service berstatus "Sudah diambil" <strong>sekaligus</strong> transaksi pemasukannya &mdash; langsung ikut terhitung di Laba Rugi, Jurnal Umum, Arus Kas, dan Dashboard.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-svc-migrasi-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-svc-migrasi-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-svc-migrasi-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+
       <div class="bk-section-title">Sedang berjalan</div>
       <div class="bk-filter bk-service-status-bar">
         <div class="bk-chip ${svcFilter==='semua'?'active':''}" data-f="semua">Semua (${pool.length})</div>
@@ -3313,6 +3451,8 @@ window.storage = {
     document.getElementById('bk-svc-rekening').addEventListener('change', e => serviceFormState.rekening = e.target.value);
     document.getElementById('bk-svc-save-btn').addEventListener('click', saveNewService);
     document.getElementById('bk-svc-quick-btn').addEventListener('click', runQuickAiService);
+    document.getElementById('bk-svc-migrasi-template-btn').addEventListener('click', downloadServiceMigrasiTemplate);
+    document.getElementById('bk-svc-migrasi-upload-input').addEventListener('change', handleServiceMigrasiUpload);
     bodyEl.querySelectorAll('.bk-service-status-bar .bk-chip').forEach(c => c.addEventListener('click', () => { svcFilter = c.dataset.f; renderService(); }));
     wireServiceCardEvents();
   }
