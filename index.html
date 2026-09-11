@@ -593,10 +593,29 @@ window.storage = {
   let bebanList = [];
   let modalAwal = 0;
   let closings = [];
+  let transferRekening = [];
   let laporanView = 'aruskas'; // aruskas | jurnal | neraca | beban | utang | stokbulanan | rekening
   let laporanBulan = 'semua';
   function blankBebanForm() { return { kategori: BEBAN_KATEGORI[0], kategoriCustom: '', nominal: '', keterangan: '' }; }
   let bebanFormState = blankBebanForm();
+
+  // ---------- PEMINDAHAN DANA ANTAR REKENING ----------
+  async function loadTransferRekening() {
+    transferRekening = [];
+    try {
+      const listRes = await window.storage.list('transfer-rek:', true);
+      const keys = (listRes && listRes.keys) || [];
+      await Promise.all(keys.map(async (k) => {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) transferRekening.push(JSON.parse(r.value));
+        } catch (e) { /* skip */ }
+      }));
+      transferRekening.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    } catch (e) { console.error('Gagal memuat transfer rekening', e); }
+  }
+  async function saveTransferItem(item) { await window.storage.set('transfer-rek:' + item.id, JSON.stringify(item), true); }
+  async function deleteTransferFromStore(id) { await window.storage.delete('transfer-rek:' + id, true); }
 
   async function loadBeban() {
     bebanList = [];
@@ -4669,11 +4688,16 @@ window.storage = {
     BANK_ACCOUNTS.forEach(acc => {
       const d = byAccount[acc.id];
       aoa.push([`${acc.label} (${acc.nomor})`]);
-      aoa.push(['Total masuk', d.total]);
+      aoa.push(['Saldo (setelah pemindahan dana)', d.total]);
       aoa.push(['Nama pelanggan', 'Tanggal', 'Jumlah']);
       d.transactions.forEach(t => aoa.push([t.customerName || 'Tanpa nama', new Date(t.createdAt).toLocaleDateString('id-ID'), t.total]));
       aoa.push([]);
     });
+    if (transferRekening.length) {
+      aoa.push(['Riwayat Pemindahan Dana Antar Rekening']);
+      aoa.push(['Dari', 'Ke', 'Jumlah', 'Keterangan', 'Tanggal']);
+      transferRekening.forEach(tr => aoa.push([bankAccountLabel(tr.dariRekening), bankAccountLabel(tr.keRekening), tr.jumlah, tr.keterangan || '-', new Date(tr.createdAt).toLocaleDateString('id-ID')]));
+    }
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Per Rekening');
     XLSX.writeFile(wb, 'laporan-per-rekening.xlsx');
   }
@@ -5339,6 +5363,12 @@ window.storage = {
         byAccount[t.rekening].transactions.push(t);
       }
     });
+    // Terapkan efek pemindahan dana antar rekening: berkurang di rekening asal, bertambah di rekening tujuan
+    transferRekening.forEach(tr => {
+      const jumlah = Number(tr.jumlah) || 0;
+      if (byAccount[tr.dariRekening]) byAccount[tr.dariRekening].total -= jumlah;
+      if (byAccount[tr.keRekening]) byAccount[tr.keRekening].total += jumlah;
+    });
     Object.values(byAccount).forEach(a => a.transactions.sort((x,y) => (y.createdAt||0) - (x.createdAt||0)));
     return byAccount;
   }
@@ -5505,6 +5535,7 @@ window.storage = {
     await loadManualTagihan();
     await loadPricelistData();
     await loadDeletedStokNames();
+    await loadTransferRekening();
     renderBody();
   }
 
@@ -5987,14 +6018,42 @@ window.storage = {
   function renderRekeningHtml() {
     const byAccount = computeRekeningReport();
     return `
-      <div class="bk-stok-note">Total uang masuk dihitung dari penjualan/service yang sudah lunas dan tercatat dibayar ke rekening terkait.</div>
+      <div class="bk-stok-note">Saldo dihitung dari penjualan/service yang sudah lunas dan tercatat dibayar ke rekening terkait, ditambah/dikurangi pemindahan dana antar rekening di bawah.</div>
       <button class="bk-btn ghost" id="bk-rekening-excel" style="margin-bottom:16px;">Unduh Excel</button>
+
+      <div class="bk-ai-box" style="margin-bottom:20px;">
+        <div class="ai-head"><div class="ai-title">Catat Pemindahan Dana Antar Rekening</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Kalau uang dipindah manual dari satu rekening ke rekening lain (mis. dari BCA Yusuf ke BCA Ogi), catat di sini supaya laporan Per Rekening tetap akurat mencerminkan saldo yang sebenarnya sudah berpindah.</div>
+        <div class="bk-two-col" style="margin-bottom:8px;">
+          <div>
+            <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">Dari rekening</label>
+            <select id="bk-transfer-dari" style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
+              ${BANK_ACCOUNTS.map(a => `<option value="${a.id}">${escapeAttr(a.label)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11.5px; color:var(--ink-soft); display:block; margin-bottom:4px;">Ke rekening</label>
+            <select id="bk-transfer-ke" style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
+              ${BANK_ACCOUNTS.map((a,idx) => `<option value="${a.id}" ${idx===1?'selected':''}>${escapeAttr(a.label)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="bk-field" style="margin-bottom:8px;">
+          <input id="bk-transfer-jumlah" type="number" min="0" placeholder="Jumlah dipindahkan (Rp)" style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px;" />
+        </div>
+        <div class="bk-field" style="margin-bottom:8px;">
+          <input id="bk-transfer-ket" placeholder="Keterangan (opsional)" style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px;" />
+        </div>
+        <div id="bk-transfer-err" class="bk-err" style="display:none;"></div>
+        <button class="bk-btn accent" id="bk-transfer-save">Catat Pemindahan Dana</button>
+      </div>
+
       ${BANK_ACCOUNTS.map(acc => {
         const data = byAccount[acc.id];
         return `
           <div class="bk-section-title">${acc.label} <span style="color:var(--ink-soft); font-weight:500; font-size:13px;">(${acc.nomor})</span></div>
           <div class="bk-stats" style="margin-bottom:14px; grid-template-columns: 1fr;">
-            <div class="bk-stat in"><div class="lbl">Total uang masuk</div><div class="val">${rupiah(data.total)}</div></div>
+            <div class="bk-stat in"><div class="lbl">Saldo (setelah pemindahan dana)</div><div class="val">${rupiah(data.total)}</div></div>
           </div>
           ${data.transactions.length ? data.transactions.slice(0, 100).map(t => `
             <div class="bk-list-row"><div class="bk-list-left"><div class="nm">${t.customerName || 'Tanpa nama'}</div><div class="sub">${new Date(t.createdAt).toLocaleDateString('id-ID')}</div></div><div class="bk-list-amt in">+${rupiah(t.total)}</div></div>
@@ -6002,10 +6061,74 @@ window.storage = {
           <div style="margin-bottom:20px;"></div>
         `;
       }).join('')}
+
+      <div class="bk-section-title">Riwayat Pemindahan Dana</div>
+      <div id="bk-transfer-list">${transferRekening.length ? transferRekening.map(tr => transferRowHtml(tr)).join('') : '<div class="bk-empty">Belum ada pemindahan dana antar rekening.</div>'}</div>
     `;
+  }
+  function transferRowHtml(tr) {
+    const dari = bankAccountLabel(tr.dariRekening);
+    const ke = bankAccountLabel(tr.keRekening);
+    return `<div class="bk-list-row-wrap" data-id="${tr.id}">
+      <div class="bk-list-row">
+        <div class="bk-list-left">
+          <div class="nm">${escapeAttr(dari)} &rarr; ${escapeAttr(ke)}</div>
+          <div class="sub">${tr.keterangan ? escapeAttr(tr.keterangan) + ' &middot; ' : ''}${new Date(tr.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(tr)}</div>
+        </div>
+        <div class="bk-list-amt" style="color:var(--accent-ink);">${rupiah(tr.jumlah)}</div>
+      </div>
+      <div class="bk-row-actions">
+        <div class="bk-icon-btn danger transfer-del-btn" title="Hapus catatan pemindahan">&times;</div>
+      </div>
+    </div>`;
   }
   function wireRekeningEvents() {
     document.getElementById('bk-rekening-excel').addEventListener('click', downloadRekeningExcel);
+    document.getElementById('bk-transfer-save').addEventListener('click', async () => {
+      const dari = document.getElementById('bk-transfer-dari').value;
+      const ke = document.getElementById('bk-transfer-ke').value;
+      const jumlah = Number(document.getElementById('bk-transfer-jumlah').value) || 0;
+      const keterangan = document.getElementById('bk-transfer-ket').value.trim();
+      const errEl = document.getElementById('bk-transfer-err');
+      if (dari === ke) { errEl.style.display = 'block'; errEl.textContent = 'Rekening asal dan tujuan tidak boleh sama.'; return; }
+      if (jumlah <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi jumlah yang valid.'; return; }
+      errEl.style.display = 'none';
+      const item = {
+        id: uid(),
+        dariRekening: dari,
+        keRekening: ke,
+        jumlah,
+        keterangan,
+        createdAt: Date.now(),
+        createdBy: currentUser ? currentUser.email : null,
+      };
+      try {
+        await saveTransferItem(item);
+        transferRekening.unshift(item);
+        renderLaporan();
+        showToast(`Pemindahan dana ${rupiah(jumlah)} dari ${bankAccountLabel(dari)} ke ${bankAccountLabel(ke)} tercatat.`);
+      } catch (e) {
+        console.error(e);
+        errEl.style.display = 'block';
+        errEl.textContent = 'Gagal menyimpan, coba lagi.';
+      }
+    });
+    bodyEl.querySelectorAll('.transfer-del-btn').forEach(btn => btn.addEventListener('click', () => {
+      if (!requireOwnerForDelete()) return;
+      const wrap = btn.closest('[data-id]');
+      const id = wrap.dataset.id;
+      showConfirm('Hapus catatan pemindahan dana ini? Saldo per rekening akan dihitung ulang tanpa pemindahan ini.', async () => {
+        try {
+          await deleteTransferFromStore(id);
+          transferRekening = transferRekening.filter(x => x.id !== id);
+          renderLaporan();
+          showToast('Catatan pemindahan dana dihapus.');
+        } catch (e) {
+          console.error(e);
+          showToast('Gagal menghapus, coba lagi.');
+        }
+      });
+    }));
   }
 
   // ---------- CARI (pencarian lintas modul) ----------
@@ -6210,6 +6333,7 @@ window.storage = {
       await loadManualTagihan();
       await loadPricelistData();
       await loadDeletedStokNames();
+      await loadTransferRekening();
       renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
     } catch (e) {
@@ -6343,6 +6467,7 @@ window.storage = {
     await loadManualTagihan();
     await loadPricelistData();
     await loadDeletedStokNames();
+    await loadTransferRekening();
     renderTabs();
     renderBody();
     checkAndOfferDraftRestore();
