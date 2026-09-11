@@ -2417,6 +2417,7 @@ window.storage = {
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Sisa stok</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">HPP/unit</th>
               ${showNilai ? `<th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Total nilai</th>` : ''}
+              ${isOwner() ? `<th style="text-align:center; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);"></th>` : ''}
             </tr>
           </thead>
           <tbody>
@@ -2436,6 +2437,7 @@ window.storage = {
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:600; ${low ? 'color:var(--money-out);' : ''}">${r.qty.toLocaleString('id-ID')}</td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; color:var(--ink-soft);">${rupiah(unitCost)}</td>
                 ${showNilai ? `<td style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700;">${rupiah(totalNilai)}</td>` : ''}
+                ${isOwner() ? `<td style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:center;"><div class="bk-icon-btn danger stok-hapus-btn" data-name="${escapeAttr(r.name)}" data-qty="${r.qty}" data-unit="${escapeAttr(r.unit||'')}" title="Hapus stok (penyesuaian jadi 0)">&times;</div></td>` : ''}
               </tr>`;
             }).join('')}
           </tbody>
@@ -2446,6 +2448,43 @@ window.storage = {
     document.getElementById('bk-stok-template-btn').addEventListener('click', downloadStokUploadTemplate);
     document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
     bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; renderStok(); }));
+    bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
+      hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
+    }));
+  }
+
+  // Menghapus stok = mencatat PENYESUAIAN STOK (bukan menghapus riwayat transaksi lama).
+  // Dibuat sebagai transaksi penjualan senilai Rp0 supaya sisa stok item ini jadi 0,
+  // sekaligus tetap tercatat & bisa dilacak di Riwayat (audit trail tetap utuh).
+  async function hapusStokItem(name, qty, unit) {
+    if (!requireOwnerForDelete()) return;
+    if (qty <= 0) { showToast('Stok item ini sudah 0, tidak ada yang perlu dihapus.'); return; }
+    showConfirm(`Hapus stok "${name}" (sisa ${qty.toLocaleString('id-ID')} ${unit||''})? Ini akan mencatat penyesuaian stok supaya sisanya jadi 0. Riwayat transaksi lama TIDAK dihapus, hanya stok saat ini yang dinolkan.`, async () => {
+      try {
+        const codeReg = getItemCodeRegistry();
+        const code = codeReg.byName[name.trim().toLowerCase()] || '';
+        const txn = {
+          id: uid(),
+          type: 'penjualan',
+          kodeTransaksi: generateTxnCode('penjualan'),
+          items: [{ name, qty, unit: unit || 'pcs', price: 0, code }],
+          total: 0,
+          customerName: 'Penyesuaian Stok (Dihapus)',
+          customerPhone: '',
+          paid: true,
+          rekening: BANK_ACCOUNTS[0].id,
+          createdAt: Date.now(),
+          createdBy: currentUser ? currentUser.email : null,
+        };
+        await saveTxn(txn);
+        txns.unshift(txn);
+        renderStok();
+        showToast(`Stok "${name}" berhasil dihapus (dinolkan).`);
+      } catch (e) {
+        console.error(e);
+        showToast('Gagal menghapus stok, coba lagi.');
+      }
+    });
   }
 
   function downloadStokUploadTemplate() {
