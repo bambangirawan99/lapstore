@@ -1327,16 +1327,9 @@ window.storage = {
         <input id="bk-barcode-scan" placeholder="Sorot kursor ke sini, lalu scan barcode/serial number..." style="font-family:'IBM Plex Mono',monospace;" autocomplete="off" />
         <div style="font-size:11.5px; color:var(--ink-soft); margin-top:4px;">Kalau barcode/seri ini pernah discan sebelumnya, item baru otomatis terisi lengkap. Kalau baru, item baru ditambahkan dan tinggal isi nama &amp; harganya &mdash; kategori Laptop/Onderdil otomatis terdeteksi dari nama (tetap bisa diubah manual di dropdown Kode).</div>
       </div>` : ''}
-      ${!isEdit && isJual ? `<div class="bk-ai-box" style="margin-bottom:18px;">
-        <div class="ai-head"><div class="ai-title">Upload Riwayat Penjualan Lama (Migrasi Data)</div></div>
-        <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan data penjualan dari sebelum pakai sistem ini. Setiap baris otomatis dibuatkan SEPASANG catatan (pembelian historis + penjualan historis bertanggal sama) supaya laporan keuangan &amp; HPP lama ikut akurat &mdash; <strong>tidak memengaruhi stok saat ini</strong> (karena barang itu memang sudah terjual duluan).</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <button class="bk-btn ghost" id="bk-riwayat-template-btn">Unduh Template Excel</button>
-          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
-            <input type="file" id="bk-riwayat-upload-input" accept=".xlsx,.xls" style="display:none;" />
-          </label>
-        </div>
-        <div id="bk-riwayat-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      ${!isEdit && isJual ? `<div class="bk-stok-note" style="margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <span>Mau masukkan riwayat penjualan lama sebelum pakai sistem ini? Sekarang ada di tab <strong>Migrasi Data</strong>.</span>
+        <button class="bk-btn ghost" id="bk-penjualan-goto-migrasi" style="padding:6px 14px; font-size:12px;">Buka Migrasi Data</button>
       </div>` : ''}
       <div class="bk-field">
         <label>${isJual ? 'Nama pembeli (opsional)' : 'Nama supplier (opsional)'}</label>
@@ -1486,10 +1479,12 @@ window.storage = {
     document.getElementById('bk-save-btn').addEventListener('click', () => saveTransaction(type, true));
     if (!isEdit && isJual) document.getElementById('bk-save-noresi-btn').addEventListener('click', () => saveTransaction(type, false));
     if (!isEdit && isJual) {
-      const rwTemplateBtn = document.getElementById('bk-riwayat-template-btn');
-      if (rwTemplateBtn) rwTemplateBtn.addEventListener('click', downloadRiwayatUploadTemplate);
-      const rwUploadInput = document.getElementById('bk-riwayat-upload-input');
-      if (rwUploadInput) rwUploadInput.addEventListener('change', handleRiwayatExcelUpload);
+      const gotoMigrasiBtn = document.getElementById('bk-penjualan-goto-migrasi');
+      if (gotoMigrasiBtn) gotoMigrasiBtn.addEventListener('click', () => {
+        activeTab = 'migrasi';
+        renderTabs();
+        renderBody();
+      });
     }
   }
 
@@ -2508,17 +2503,11 @@ window.storage = {
         <div class="bk-stat"><div class="lbl">Total nilai ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'} saat ini (HPP)</div><div class="val">${rupiah(totalNilaiView)}</div></div>
       </div>
       ` : ''}
-      <div class="bk-ai-box" style="margin-bottom:18px;">
-        <div class="ai-head"><div class="ai-title">Upload Stok dari Excel</div></div>
-        <div class="ai-body" style="margin-bottom:12px;">Unduh dulu format template-nya, isi datanya, lalu upload di sini. Otomatis dipisah jadi 2 transaksi pembelian terpisah (<strong>Stock Laptop</strong> dan <strong>Stock Sparepart/Logistik</strong>) sesuai kolom Kategori, langsung menambah Stok &amp; muncul di Dashboard.</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <button class="bk-btn ghost" id="bk-stok-template-btn">Unduh Template Excel</button>
-          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
-            <input type="file" id="bk-stok-upload-input" accept=".xlsx,.xls" style="display:none;" />
-          </label>
-        </div>
-        <div id="bk-stok-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      <div class="bk-stok-note" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <span>Mau upload banyak barang sekaligus dari Excel? Sekarang ada di tab <strong>Migrasi Data</strong>.</span>
+        <button class="bk-btn ghost" id="bk-stok-goto-migrasi" style="padding:6px 14px; font-size:12px;">Buka Migrasi Data</button>
       </div>
+      <div style="margin-bottom:14px;"></div>
       ${isOwner() ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--money-out);">
         <div class="ai-head"><div class="ai-title">Perbaiki Kode Barang Duplikat</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Kalau ada beberapa barang berbeda yang ternyata dapat kode yang sama persis (misal semua tertulis LPSTK-00006), klik tombol ini untuk otomatis memberi kode baru yang unik ke barang-barang yang bentrok. Data pembelian lama tidak dihapus, hanya kode yang diperbaiki.</div>
@@ -2610,8 +2599,11 @@ window.storage = {
       </div>
       ` : `<div class="bk-empty">Belum ada barang di kategori ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'}.</div>`}
     `;
-    document.getElementById('bk-stok-template-btn').addEventListener('click', downloadStokUploadTemplate);
-    document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
+    document.getElementById('bk-stok-goto-migrasi').addEventListener('click', () => {
+      activeTab = 'migrasi';
+      renderTabs();
+      renderBody();
+    });
     const fixDupBtn = document.getElementById('bk-stok-fix-duplicate-btn');
     if (fixDupBtn) fixDupBtn.addEventListener('click', perbaikiKodeDuplikat);
     const deletedToggle = document.getElementById('bk-stok-deleted-toggle');
@@ -3715,16 +3707,9 @@ window.storage = {
       <div id="bk-svc-form-err" class="bk-err" style="display:none;"></div>
       <button class="bk-btn primary" id="bk-svc-save-btn" style="margin-bottom:26px;">Terima service masuk</button>
 
-      <div class="bk-ai-box" style="margin-bottom:26px;">
-        <div class="ai-head"><div class="ai-title">Upload Riwayat Service Lama (Migrasi Data)</div></div>
-        <div class="ai-body" style="margin-bottom:12px;">Untuk memasukkan data service dari sebelum pakai sistem ini. Setiap baris otomatis dibuatkan catatan Service berstatus "Sudah diambil" <strong>sekaligus</strong> transaksi pemasukannya &mdash; langsung ikut terhitung di Laba Rugi, Jurnal Umum, Arus Kas, dan Dashboard.</div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <button class="bk-btn ghost" id="bk-svc-migrasi-template-btn">Unduh Template Excel</button>
-          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
-            <input type="file" id="bk-svc-migrasi-upload-input" accept=".xlsx,.xls" style="display:none;" />
-          </label>
-        </div>
-        <div id="bk-svc-migrasi-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      <div class="bk-stok-note" style="margin-bottom:26px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <span>Mau masukkan riwayat service lama sebelum pakai sistem ini? Sekarang ada di tab <strong>Migrasi Data</strong>.</span>
+        <button class="bk-btn ghost" id="bk-svc-goto-migrasi" style="padding:6px 14px; font-size:12px;">Buka Migrasi Data</button>
       </div>
 
       <div class="bk-section-title">Sedang berjalan</div>
@@ -3747,8 +3732,11 @@ window.storage = {
     document.getElementById('bk-svc-rekening').addEventListener('change', e => serviceFormState.rekening = e.target.value);
     document.getElementById('bk-svc-save-btn').addEventListener('click', saveNewService);
     document.getElementById('bk-svc-quick-btn').addEventListener('click', runQuickAiService);
-    document.getElementById('bk-svc-migrasi-template-btn').addEventListener('click', downloadServiceMigrasiTemplate);
-    document.getElementById('bk-svc-migrasi-upload-input').addEventListener('change', handleServiceMigrasiUpload);
+    document.getElementById('bk-svc-goto-migrasi').addEventListener('click', () => {
+      activeTab = 'migrasi';
+      renderTabs();
+      renderBody();
+    });
     bodyEl.querySelectorAll('.bk-service-status-bar .bk-chip').forEach(c => c.addEventListener('click', () => { svcFilter = c.dataset.f; renderService(); }));
     wireServiceCardEvents();
   }
