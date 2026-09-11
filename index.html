@@ -869,7 +869,7 @@ window.storage = {
     const labelOf = { pembelian: 'Catat Pembelian', penjualan: 'Catat Penjualan', service: 'Terima Service' };
     modalSlot.innerHTML = `
       <div class="bk-overlay" id="bk-draft-overlay">
-        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:360px; width:100%;">
+        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:360px; width:100%; max-height:85vh; overflow-y:auto; display:flex; flex-direction:column;">
           <div style="font-size:15px; font-weight:700; margin-bottom:8px; color:var(--ink);">Ada draft belum tersimpan</div>
           <div style="font-size:13px; color:var(--ink-soft); margin-bottom:14px; line-height:1.5;">Sepertinya sesi sebelumnya sempat mengisi form ini tapi belum sempat disimpan (koneksi putus/tertutup tiba-tiba). Pulihkan isiannya?</div>
           <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
@@ -1994,9 +1994,9 @@ window.storage = {
   function showConfirm(message, onYes) {
     modalSlot.innerHTML = `
       <div class="bk-overlay" id="bk-confirm-overlay">
-        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:320px; width:100%; text-align:center;">
-          <div style="font-size:14px; margin-bottom:18px; color:var(--ink); line-height:1.5;">${message}</div>
-          <div style="display:flex; gap:10px;">
+        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:320px; width:100%; max-height:85vh; overflow-y:auto; display:flex; flex-direction:column; text-align:center;">
+          <div style="font-size:14px; margin-bottom:18px; color:var(--ink); line-height:1.5; overflow-wrap:break-word;">${message}</div>
+          <div style="display:flex; gap:10px; flex-shrink:0;">
             <button class="bk-btn ghost" id="bk-confirm-cancel" style="flex:1;">Batal</button>
             <button class="bk-btn primary" id="bk-confirm-ok" style="flex:1; background:var(--money-out);">Lanjut</button>
           </div>
@@ -2013,7 +2013,7 @@ window.storage = {
     const hasPhone = !!(s.customerPhone || '').replace(/[^0-9]/g, '');
     modalSlot.innerHTML = `
       <div class="bk-overlay" id="bk-svc-wa-overlay">
-        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:340px; width:100%; text-align:center;">
+        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:340px; width:100%; max-height:85vh; overflow-y:auto; text-align:center;">
           <div style="font-size:15px; font-weight:700; margin-bottom:6px; color:var(--ink);">Service tercatat &mdash; ${escapeAttr(s.kodeService||'')}</div>
           <div style="font-size:13px; margin-bottom:18px; color:var(--ink-soft); line-height:1.5;">Kirim konfirmasi ke pelanggan lewat WhatsApp? Isinya mencakup seri laptop, keluhan, dan kelengkapan yang baru saja diinput.</div>
           <div style="display:flex; gap:10px;">
