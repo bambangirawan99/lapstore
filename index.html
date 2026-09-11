@@ -2473,6 +2473,12 @@ window.storage = {
         </div>
         <div id="bk-stok-upload-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
+      ${isOwner() ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--money-out);">
+        <div class="ai-head"><div class="ai-title">Perbaiki Kode Barang Duplikat</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Kalau ada beberapa barang berbeda yang ternyata dapat kode yang sama persis (misal semua tertulis LPSTK-00006), klik tombol ini untuk otomatis memberi kode baru yang unik ke barang-barang yang bentrok. Data pembelian lama tidak dihapus, hanya kode yang diperbaiki.</div>
+        <button class="bk-btn ghost" id="bk-stok-fix-duplicate-btn" style="border-color:var(--money-out); color:var(--money-out);">Cek &amp; Perbaiki Kode Duplikat</button>
+        <div id="bk-stok-fix-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>` : ''}
       <div class="bk-filter" style="margin-bottom:14px;">
         <div class="bk-chip ${stokView==='laptop'?'active':''}" data-sv="laptop">Stock Laptop (${countLaptop})</div>
         <div class="bk-chip ${stokView==='onderdil'?'active':''}" data-sv="onderdil">Stock Onderdil (${countOnderdil})</div>
@@ -2528,6 +2534,8 @@ window.storage = {
     `;
     document.getElementById('bk-stok-template-btn').addEventListener('click', downloadStokUploadTemplate);
     document.getElementById('bk-stok-upload-input').addEventListener('change', handleStokExcelUpload);
+    const fixDupBtn = document.getElementById('bk-stok-fix-duplicate-btn');
+    if (fixDupBtn) fixDupBtn.addEventListener('click', perbaikiKodeDuplikat);
     bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); renderStok(); }));
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
@@ -2740,6 +2748,58 @@ window.storage = {
     };
     reader.readAsArrayBuffer(file);
   }
+
+  // Perbaikan data lama: kalau beberapa barang BERBEDA ternyata punya kode barang yang SAMA persis
+  // (bisa terjadi dari upload sebelum ada perbaikan penghitung kode), fungsi ini otomatis memberi
+  // kode baru yang unik ke barang-barang yang bentrok. Transaksi pembelian lama TIDAK dihapus,
+  // hanya field "code" pada item yang bentrok yang diperbarui lalu disimpan ulang.
+  async function perbaikiKodeDuplikat() {
+    if (!requireOwnerForDelete()) return;
+    const statusEl = document.getElementById('bk-stok-fix-status');
+    if (statusEl) { statusEl.style.color = 'var(--ink-soft)'; statusEl.textContent = 'Memindai kode barang...'; }
+    try {
+      const relevant = [...txns].filter(t => t.type === 'pembelian' || t.type === 'produksi').sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+      const seenCodeToName = {}; // kode (huruf kecil) -> nama barang pertama yang memakainya
+      const touchedTxnIds = new Set();
+      const nextLocalCode = makeLocalItemCodeCounter();
+      let fixedCount = 0;
+      relevant.forEach(t => {
+        const list = t.type === 'pembelian' ? (t.items || []) : (t.hasil || []);
+        list.forEach(item => {
+          if (!item.code || !item.code.trim()) return;
+          const codeLower = item.code.trim().toLowerCase();
+          const nameLower = (item.name || '').trim().toLowerCase();
+          if (!(codeLower in seenCodeToName)) {
+            seenCodeToName[codeLower] = nameLower;
+          } else if (seenCodeToName[codeLower] !== nameLower) {
+            // Kode ini sudah lebih dulu dipakai barang LAIN -> beri kode baru yang unik
+            const prefix = (item.code.trim().split('-')[0] || 'LPSTK').toUpperCase();
+            let newCode = nextLocalCode(prefix);
+            while (newCode.toLowerCase() in seenCodeToName) newCode = nextLocalCode(prefix);
+            item.code = newCode;
+            seenCodeToName[newCode.toLowerCase()] = nameLower;
+            touchedTxnIds.add(t.id);
+            fixedCount++;
+          }
+        });
+      });
+      if (!fixedCount) {
+        if (statusEl) { statusEl.style.color = 'var(--money-in)'; statusEl.textContent = 'Tidak ditemukan kode duplikat. Semua kode barang sudah unik.'; }
+        showToast('Tidak ada kode duplikat ditemukan.');
+        return;
+      }
+      const txnsToSave = relevant.filter(t => touchedTxnIds.has(t.id));
+      await Promise.all(txnsToSave.map(t => saveTxn(t)));
+      _itemCodeRegistryCache = null; // paksa hitung ulang registry supaya kode baru langsung terlihat
+      renderStok();
+      if (statusEl) { statusEl.style.color = 'var(--money-in)'; statusEl.textContent = `${fixedCount} kode duplikat berhasil diperbaiki di ${txnsToSave.length} transaksi.`; }
+      showToast(`${fixedCount} kode duplikat berhasil diperbaiki.`);
+    } catch (err) {
+      console.error(err);
+      if (statusEl) { statusEl.style.color = 'var(--money-out)'; statusEl.textContent = 'Gagal memperbaiki kode, coba lagi.'; }
+    }
+  }
+
 
   function downloadRiwayatUploadTemplate() {
     if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
