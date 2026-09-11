@@ -818,6 +818,25 @@ window.storage = {
     catch (e) { console.error(e); showToast('Gagal menyimpan markup, coba lagi.'); }
   }
 
+  // ---------- DAFTAR NAMA BARANG YANG DIBERSIHKAN (dihapus total dari stok/dropdown/kode) ----------
+  // Disimpan sebagai satu key gabungan berisi array nama (huruf kecil), supaya efisien.
+  let deletedStokNames = new Set();
+  async function loadDeletedStokNames() {
+    deletedStokNames = new Set();
+    try {
+      const r = await window.storage.get('stok-hapus-list', true);
+      if (r && r.value) JSON.parse(r.value).forEach(n => deletedStokNames.add(n));
+    } catch (e) { /* belum ada data, normal untuk pertama kali */ }
+  }
+  async function saveDeletedStokNames() {
+    try { await window.storage.set('stok-hapus-list', JSON.stringify(Array.from(deletedStokNames)), true); }
+    catch (e) { console.error(e); showToast('Gagal menyimpan status hapus, coba lagi.'); }
+  }
+  async function markStokNamesDeleted(names) {
+    names.forEach(n => deletedStokNames.add(n.trim().toLowerCase()));
+    await saveDeletedStokNames();
+  }
+
   function blankSvcPart() { return { id: uid(), name: '', qty: '', unit: 'pcs', code: '' }; }
   let serviceFormState = blankServiceForm();
 
@@ -1402,6 +1421,7 @@ window.storage = {
     relevant.forEach(t => {
       const list = t.type === 'pembelian' ? (t.items || []) : (t.hasil || []);
       list.forEach(i => {
+        if (i.name && deletedStokNames.has(i.name.trim().toLowerCase())) return; // sudah dibersihkan, jangan didaftarkan lagi
         if (i.code && i.code.trim()) {
           const code = i.code.trim();
           const prevSpec = (byCode[code.toLowerCase()] && byCode[code.toLowerCase()].spec) || '';
@@ -1516,7 +1536,7 @@ window.storage = {
         (t.hasil || []).forEach(i => { if (i.name) set.add(i.name.trim()); });
       }
     });
-    return Array.from(set).sort();
+    return Array.from(set).filter(n => !deletedStokNames.has(n.trim().toLowerCase())).sort();
   }
   function itemNamesDatalistHtml() {
     return `<datalist id="bk-item-names">${getKnownItemNames().map(n => `<option value="${escapeAttr(n)}"></option>`).join('')}</datalist>`;
@@ -2375,7 +2395,7 @@ window.storage = {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
-    const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.qty - b.qty);
+    const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name) && !deletedStokNames.has(r.name.trim().toLowerCase())).sort((a,b) => a.qty - b.qty);
     const rowsWithKategori = allRows.map(r => {
       const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
       return { r, code, kategori: pricelistCategoryOf(code) === 'barang' ? 'laptop' : 'onderdil' };
@@ -2484,28 +2504,31 @@ window.storage = {
   // sekaligus tetap tercatat & bisa dilacak di Riwayat (audit trail tetap utuh).
   async function hapusStokItem(name, qty, unit) {
     if (!requireOwnerForDelete()) return;
-    if (qty <= 0) { showToast('Stok item ini sudah 0, tidak ada yang perlu dihapus.'); return; }
-    showConfirm(`Hapus stok "${name}" (sisa ${qty.toLocaleString('id-ID')} ${unit||''})? Ini akan mencatat penyesuaian stok supaya sisanya jadi 0. Riwayat transaksi lama TIDAK dihapus, hanya stok saat ini yang dinolkan.`, async () => {
+    showConfirm(`Hapus "${name}" sepenuhnya (nama, kode, dan sisa stok ${qty.toLocaleString('id-ID')} ${unit||''})? Item ini tidak akan muncul lagi di Stok, Pricelist, atau dropdown mana pun. Riwayat transaksi lama TIDAK dihapus (untuk jejak audit), tapi item ini bersih dari sistem ke depannya.`, async () => {
       try {
         const codeReg = getItemCodeRegistry();
         const code = codeReg.byName[name.trim().toLowerCase()] || '';
-        const txn = {
-          id: uid(),
-          type: 'penjualan',
-          kodeTransaksi: generateTxnCode('penjualan'),
-          items: [{ name, qty, unit: unit || 'pcs', price: 0, code }],
-          total: 0,
-          customerName: 'Penyesuaian Stok (Dihapus)',
-          customerPhone: '',
-          paid: true,
-          rekening: BANK_ACCOUNTS[0].id,
-          createdAt: Date.now(),
-          createdBy: currentUser ? currentUser.email : null,
-        };
-        await saveTxn(txn);
-        txns.unshift(txn);
+        if (qty > 0) {
+          const txn = {
+            id: uid(),
+            type: 'penjualan',
+            kodeTransaksi: generateTxnCode('penjualan'),
+            items: [{ name, qty, unit: unit || 'pcs', price: 0, code }],
+            total: 0,
+            customerName: 'Penyesuaian Stok (Dihapus)',
+            customerPhone: '',
+            paid: true,
+            rekening: BANK_ACCOUNTS[0].id,
+            createdAt: Date.now(),
+            createdBy: currentUser ? currentUser.email : null,
+          };
+          await saveTxn(txn);
+          txns.unshift(txn);
+        }
+        await markStokNamesDeleted([name]);
+        _itemCodeRegistryCache = null; // paksa hitung ulang registry supaya item ini langsung hilang
         renderStok();
-        showToast(`Stok "${name}" berhasil dihapus (dinolkan).`);
+        showToast(`"${name}" berhasil dihapus sepenuhnya dari sistem.`);
       } catch (e) {
         console.error(e);
         showToast('Gagal menghapus stok, coba lagi.');
@@ -2516,34 +2539,39 @@ window.storage = {
   // Hapus massal - sama seperti hapusStokItem tapi untuk banyak item sekaligus dalam satu transaksi penyesuaian
   async function hapusStokItemsMassal(names, currentRows) {
     if (!requireOwnerForDelete()) return;
-    const targets = names.map(n => currentRows.find(r => r.name === n)).filter(r => r && r.qty > 0);
-    if (!targets.length) { showToast('Item terpilih sudah tidak ada stoknya.'); selectedStokNames.clear(); renderStok(); return; }
+    const targets = names.map(n => currentRows.find(r => r.name === n)).filter(Boolean);
+    if (!targets.length) { showToast('Tidak ada item yang bisa dihapus.'); selectedStokNames.clear(); renderStok(); return; }
+    const withStock = targets.filter(r => r.qty > 0);
     const daftar = targets.map(r => `${r.name} (${r.qty.toLocaleString('id-ID')} ${r.unit||''})`).join(', ');
-    showConfirm(`Hapus stok ${targets.length} item terpilih: ${daftar}? Ini akan mencatat penyesuaian stok supaya sisanya jadi 0 untuk semua item ini. Riwayat transaksi lama TIDAK dihapus.`, async () => {
+    showConfirm(`Hapus ${targets.length} item terpilih sepenuhnya (nama, kode, dan sisa stok): ${daftar}? Item-item ini tidak akan muncul lagi di Stok, Pricelist, atau dropdown mana pun. Riwayat transaksi lama TIDAK dihapus (untuk jejak audit).`, async () => {
       try {
         const codeReg = getItemCodeRegistry();
-        const items = targets.map(r => ({
-          name: r.name, qty: r.qty, unit: r.unit || 'pcs', price: 0,
-          code: codeReg.byName[r.name.trim().toLowerCase()] || '',
-        }));
-        const txn = {
-          id: uid(),
-          type: 'penjualan',
-          kodeTransaksi: generateTxnCode('penjualan'),
-          items,
-          total: 0,
-          customerName: 'Penyesuaian Stok (Dihapus Massal)',
-          customerPhone: '',
-          paid: true,
-          rekening: BANK_ACCOUNTS[0].id,
-          createdAt: Date.now(),
-          createdBy: currentUser ? currentUser.email : null,
-        };
-        await saveTxn(txn);
-        txns.unshift(txn);
+        if (withStock.length) {
+          const items = withStock.map(r => ({
+            name: r.name, qty: r.qty, unit: r.unit || 'pcs', price: 0,
+            code: codeReg.byName[r.name.trim().toLowerCase()] || '',
+          }));
+          const txn = {
+            id: uid(),
+            type: 'penjualan',
+            kodeTransaksi: generateTxnCode('penjualan'),
+            items,
+            total: 0,
+            customerName: 'Penyesuaian Stok (Dihapus Massal)',
+            customerPhone: '',
+            paid: true,
+            rekening: BANK_ACCOUNTS[0].id,
+            createdAt: Date.now(),
+            createdBy: currentUser ? currentUser.email : null,
+          };
+          await saveTxn(txn);
+          txns.unshift(txn);
+        }
+        await markStokNamesDeleted(targets.map(r => r.name));
+        _itemCodeRegistryCache = null; // paksa hitung ulang registry supaya item-item ini langsung hilang
         selectedStokNames.clear();
         renderStok();
-        showToast(`${targets.length} item stok berhasil dihapus (dinolkan).`);
+        showToast(`${targets.length} item berhasil dihapus sepenuhnya dari sistem.`);
       } catch (e) {
         console.error(e);
         showToast('Gagal menghapus stok terpilih, coba lagi.');
@@ -2795,7 +2823,7 @@ window.storage = {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
-    const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name)).sort((a,b) => a.name.localeCompare(b.name));
+    const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name) && !deletedStokNames.has(r.name.trim().toLowerCase())).sort((a,b) => a.name.localeCompare(b.name));
     const rowsWithMeta = allRows.map(r => {
       const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
       return { r, code, kategori: pricelistCategoryOf(code) };
@@ -2913,7 +2941,7 @@ window.storage = {
     const hpp = computeHPP();
     const kategoriLabel = pricelistView === 'barang' ? 'Stock Barang' : 'Stock Onderdil';
     const rows = Object.values(stockMap)
-      .filter(r => !/^Jasa Service Laptop/i.test(r.name))
+      .filter(r => !/^Jasa Service Laptop/i.test(r.name) && !deletedStokNames.has(r.name.trim().toLowerCase()))
       .map(r => ({ r, code: codeReg.byName[r.name.trim().toLowerCase()] || '' }))
       .filter(x => pricelistCategoryOf(x.code) === pricelistView)
       .sort((a,b) => a.r.name.localeCompare(b.r.name));
@@ -5459,6 +5487,7 @@ window.storage = {
     await loadModalEntries();
     await loadManualTagihan();
     await loadPricelistData();
+    await loadDeletedStokNames();
     renderBody();
   }
 
@@ -6163,6 +6192,7 @@ window.storage = {
       await loadModalEntries();
       await loadManualTagihan();
       await loadPricelistData();
+      await loadDeletedStokNames();
       renderBody();
       if (manual) showToast(txns.length !== before ? 'Data diperbarui.' : 'Data sudah yang terbaru.');
     } catch (e) {
@@ -6295,6 +6325,7 @@ window.storage = {
     await loadModalEntries();
     await loadManualTagihan();
     await loadPricelistData();
+    await loadDeletedStokNames();
     renderTabs();
     renderBody();
     checkAndOfferDraftRestore();
