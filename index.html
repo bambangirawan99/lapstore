@@ -1020,13 +1020,14 @@ window.storage = {
   // sehingga SEBAGIAN diam-diam gagal tersimpan tanpa ketahuan. Fungsi ini memproses per kelompok kecil
   // (default 6 baris sekaligus) secara berurutan, dan MENCATAT baris mana saja yang benar-benar gagal
   // (bukan cuma percaya begitu saja kalau prosesnya "selesai").
-  async function runJobsInChunks(jobFns, onProgress, chunkSize = 6) {
+  async function runJobsInChunks(jobFns, onProgress, chunkSize = 3, delayMs = 250) {
     const results = [];
     for (let i = 0; i < jobFns.length; i += chunkSize) {
       const chunk = jobFns.slice(i, i + chunkSize);
       const chunkResults = await Promise.allSettled(chunk.map(fn => fn()));
       results.push(...chunkResults);
       if (onProgress) onProgress(Math.min(i + chunkSize, jobFns.length), jobFns.length);
+      if (i + chunkSize < jobFns.length && delayMs) await new Promise(res => setTimeout(res, delayMs));
     }
     return results;
   }
@@ -2482,6 +2483,7 @@ window.storage = {
   let stokDeletedListOpen = false;
   let selectedStokNames = new Set();
   let pendingStokEdits = new Map(); // name -> { unit, orig, newQty } - perubahan sisa stok yang belum disimpan
+  let stokSaveAttemptFailed = false; // true kalau percobaan simpan terakhir ada yang gagal - tombol berubah jadi "Lanjutkan"
   function renderStok() {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
@@ -2546,11 +2548,11 @@ window.storage = {
         <input type="number" min="0" step="any" id="bk-stok-uniform-value" placeholder="Angka" style="width:90px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace;" />
         <button class="bk-btn accent" id="bk-stok-uniform-apply" style="padding:7px 14px; font-size:12px;">Terapkan ke Terpilih</button>
       </div>` : ''}
-      <div id="bk-stok-bulk-edit-bar" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; padding:10px 14px; background:var(--accent-bg); border-radius:10px;">
-        <span style="font-size:12.5px; color:var(--accent-ink); font-weight:600;"><span id="bk-stok-edit-count">0</span> perubahan sisa stok belum disimpan</span>
+      <div id="bk-stok-bulk-edit-bar" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; padding:10px 14px; background:${stokSaveAttemptFailed ? '#F3E4DF' : 'var(--accent-bg)'}; border-radius:10px;">
+        <span style="font-size:12.5px; color:${stokSaveAttemptFailed ? 'var(--money-out)' : 'var(--accent-ink)'}; font-weight:600;">${stokSaveAttemptFailed ? '<span id="bk-stok-edit-count">0</span> perubahan GAGAL tersimpan sebelumnya - klik Lanjutkan untuk coba lagi' : '<span id="bk-stok-edit-count">0</span> perubahan sisa stok belum disimpan'}</span>
         <div style="display:flex; gap:8px;">
           <button class="bk-btn ghost" id="bk-stok-edit-batal" style="padding:7px 14px; font-size:12px;">Batal semua</button>
-          <button class="bk-btn accent" id="bk-stok-edit-simpan" style="padding:7px 14px; font-size:12px;">Simpan Semua Perubahan</button>
+          <button class="bk-btn accent" id="bk-stok-edit-simpan" style="padding:7px 14px; font-size:12px; ${stokSaveAttemptFailed ? 'background:var(--money-out);' : ''}">${stokSaveAttemptFailed ? 'Lanjutkan Menyimpan' : 'Simpan Semua Perubahan'}</button>
         </div>
       </div>` : ''}
       ${rows.length ? `
@@ -2638,6 +2640,7 @@ window.storage = {
     });
     document.getElementById('bk-stok-edit-batal') && document.getElementById('bk-stok-edit-batal').addEventListener('click', () => {
       pendingStokEdits.clear();
+      stokSaveAttemptFailed = false;
       renderStok();
     });
     document.getElementById('bk-stok-edit-simpan') && document.getElementById('bk-stok-edit-simpan').addEventListener('click', simpanSemuaPerubahanStok);
@@ -2657,7 +2660,7 @@ window.storage = {
       renderStok();
       showToast(`Sisa stok seragam ${target.toLocaleString('id-ID')} disiapkan untuk ${appliedCount} item. Cek daftar lalu klik "Simpan Semua Perubahan".`);
     });
-    bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); pendingStokEdits.clear(); renderStok(); }));
+    bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); pendingStokEdits.clear(); stokSaveAttemptFailed = false; renderStok(); }));
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
     }));
@@ -2748,9 +2751,10 @@ window.storage = {
         if (actual !== e.newQty) failedNames.push(name);
       });
       entries.forEach(([name]) => { if (!failedNames.includes(name)) pendingStokEdits.delete(name); });
+      stokSaveAttemptFailed = failedNames.length > 0;
       renderStok();
       if (failedNames.length) {
-        showToast(`${entries.length - failedNames.length} TERVERIFIKASI tersimpan di server. ${failedNames.length} TIDAK TERSIMPAN (server menolak/koneksi bermasalah): ${failedNames.slice(0,3).join(', ')}${failedNames.length>3?', dst':''} - masih di daftar, coba klik "Simpan Semua Perubahan" lagi (mungkin perlu beberapa kali kalau koneksi tidak stabil).`);
+        showToast(`${entries.length - failedNames.length} TERVERIFIKASI tersimpan di server. ${failedNames.length} TIDAK TERSIMPAN (server menolak/koneksi bermasalah): ${failedNames.slice(0,3).join(', ')}${failedNames.length>3?', dst':''} - masih di daftar, klik "Lanjutkan Menyimpan" untuk coba lagi (mungkin perlu beberapa kali kalau koneksi tidak stabil).`);
       } else {
         showToast(`${entries.length} perubahan sisa stok TERVERIFIKASI tersimpan di server.`);
       }
