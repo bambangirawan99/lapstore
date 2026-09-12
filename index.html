@@ -3312,7 +3312,36 @@ window.storage = {
     const countBarang = rowsWithMeta.filter(x => x.kategori === 'barang').length;
     const countOnderdil = rowsWithMeta.filter(x => x.kategori === 'onderdil').length;
     const rows = rowsWithMeta.filter(x => x.kategori === pricelistView);
+
+    // Proyeksi keuntungan kalau SEMUA sisa stok berhasil terjual di Harga Jual yang tercatat sekarang
+    function hitungProyeksi(list) {
+      let jual = 0, hppTotal = 0;
+      list.forEach(({ r, code }) => {
+        if (r.qty <= 0) return;
+        const itemKey = pricelistKeyFor(code, r.name);
+        const unitCost = hpp.getCurrentUnitCost(r.name);
+        const entry = pricelistData[itemKey];
+        const markup = entry ? (Number(entry.markup) || 0) : 0;
+        const hargaJual = (entry && entry.hargaJual != null) ? Number(entry.hargaJual) : Math.round(unitCost * (1 + markup / 100) / 100) * 100;
+        jual += hargaJual * r.qty;
+        hppTotal += unitCost * r.qty;
+      });
+      return { jual, hppTotal, untung: jual - hppTotal };
+    }
+    const proyeksiSemua = hitungProyeksi(rowsWithMeta);
+    const proyeksiView = hitungProyeksi(rows);
+
     bodyEl.innerHTML = `
+      ${isOwner() ? `
+      <div class="bk-section-title">Proyeksi Kalau Semua Stok Terjual</div>
+      <div class="bk-stats" style="margin-bottom:18px;">
+        <div class="bk-stat"><div class="lbl">Total Nilai Jual (semua kategori)</div><div class="val">${rupiah(proyeksiSemua.jual)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Total HPP (semua kategori)</div><div class="val">${rupiah(proyeksiSemua.hppTotal)}</div></div>
+        <div class="bk-stat in"><div class="lbl">Proyeksi Untung (semua kategori)</div><div class="val" style="color:${proyeksiSemua.untung>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(proyeksiSemua.untung)}</div></div>
+        <div class="bk-stat in"><div class="lbl">Proyeksi Untung (${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'} saja)</div><div class="val" style="color:${proyeksiView.untung>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(proyeksiView.untung)}</div></div>
+      </div>
+      <div class="bk-stok-note" style="margin-bottom:16px;">Dihitung dari <strong>(Harga Jual &minus; HPP) &times; Sisa Stok</strong> untuk semua barang yang stoknya masih ada (belum termasuk barang habis). Angka ini proyeksi kalau SEMUA terjual persis di harga yang tercatat sekarang &mdash; belum tentu sama dengan hasil nyata kalau ada diskon, barang rusak, atau harga jual berubah nanti.</div>
+      ` : ''}
       <div class="bk-stok-note">Ter-link langsung dengan tab Stok &mdash; kalau Harga Jual sudah diisi saat upload Excel di Stok, angka itu yang ditampilkan persis di sini (bukan dihitung ulang). Bisa isi salah satu saja: ketik "Markup (%)" (harga jual ikut menyesuaikan dari HPP saat ini), ATAU ketik langsung "Harga Jual" (markup-nya ikut dihitung ulang otomatis untuk referensi). File Excel yang diunduh hanya berisi Kode, Nama, Satuan &amp; Harga Jual (bersih, siap dibagikan ke pelanggan tanpa membocorkan HPP/margin).</div>
       <div class="bk-filter" style="margin-bottom:14px;">
         <div class="bk-chip ${pricelistView==='barang'?'active':''}" data-pv="barang">Stock Laptop (${countBarang})</div>
