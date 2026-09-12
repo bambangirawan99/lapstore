@@ -2722,24 +2722,37 @@ window.storage = {
     const entries = Array.from(pendingStokEdits.entries());
     const daftar = entries.map(([name, e]) => `${escapeAttr(name)}: ${e.orig.toLocaleString('id-ID')} &rarr; ${e.newQty.toLocaleString('id-ID')} ${escapeAttr(e.unit||'')}`).join('<br>');
     showConfirm(`Simpan ${entries.length} perubahan sisa stok sekaligus?<br><br><span style="font-size:12px; color:var(--ink-soft); text-align:left; display:block;">${daftar}</span><br>Riwayat transaksi lama tidak diubah.`, async () => {
+      showToast(`Menyimpan ${entries.length} perubahan...`);
       const jobFns = entries.map(([name, e]) => async () => {
         const code = codeReg.byName[name.trim().toLowerCase()] || '';
         const selisih = e.newQty - e.orig;
         const txn = buildStokAdjustmentTxn(name, e.unit, code, selisih);
-        await saveTxn(txn);
+        const savedResult = await window.storage.set('txn:' + txn.id, JSON.stringify(txn), true);
+        if (!savedResult) throw new Error('Server menolak simpan (kemungkinan masalah koneksi)');
+        invalidateStockCaches();
         txns.unshift(txn);
         await autoReviveStokNames([name]);
       });
       const results = await runJobsInChunks(jobFns);
+      results.forEach((r, idx) => { if (r.status === 'rejected') console.error('Gagal menyimpan perubahan stok untuk', entries[idx][0], ':', r.reason); });
+
+      // VERIFIKASI NYATA: muat ulang data langsung dari server (bukan percaya update lokal saja),
+      // lalu cek satu-satu apakah sisa stok yang tersimpan benar-benar sesuai target. Ini menangkap
+      // kasus dimana penyimpanan "kelihatan berhasil" tapi sebenarnya gagal diam-diam di server.
+      await loadTxns();
+      invalidateStockCaches();
+      const stockAfter = computeStock();
       const failedNames = [];
-      results.forEach((r, idx) => { if (r.status === 'rejected') { failedNames.push(entries[idx][0]); console.error('Gagal menyimpan perubahan stok untuk', entries[idx][0], ':', r.reason); } });
-      // Hanya hapus dari antrian yang BENAR-BENAR berhasil - yang gagal tetap di pendingStokEdits supaya bisa dicoba lagi
+      entries.forEach(([name, e]) => {
+        const actual = stockAfter[name.trim().toLowerCase()] ? stockAfter[name.trim().toLowerCase()].qty : 0;
+        if (actual !== e.newQty) failedNames.push(name);
+      });
       entries.forEach(([name]) => { if (!failedNames.includes(name)) pendingStokEdits.delete(name); });
       renderStok();
       if (failedNames.length) {
-        showToast(`${entries.length - failedNames.length} berhasil disimpan. ${failedNames.length} GAGAL (masalah koneksi): ${failedNames.slice(0,3).join(', ')}${failedNames.length>3?', dst':''} - masih di daftar, klik "Simpan Semua Perubahan" lagi untuk coba ulang.`);
+        showToast(`${entries.length - failedNames.length} TERVERIFIKASI tersimpan di server. ${failedNames.length} TIDAK TERSIMPAN (server menolak/koneksi bermasalah): ${failedNames.slice(0,3).join(', ')}${failedNames.length>3?', dst':''} - masih di daftar, coba klik "Simpan Semua Perubahan" lagi (mungkin perlu beberapa kali kalau koneksi tidak stabil).`);
       } else {
-        showToast(`${entries.length} perubahan sisa stok berhasil disimpan.`);
+        showToast(`${entries.length} perubahan sisa stok TERVERIFIKASI tersimpan di server.`);
       }
     }, () => renderStok());
   }
@@ -6795,7 +6808,7 @@ window.storage = {
 
   // ---------- REFRESH DATA (agar transaksi dari user lain ikut muncul) ----------
   let isRefreshing = false;
-  const REFRESH_UNSAFE_TABS = ['pembelian', 'penjualan', 'produksi', 'service', 'laporan', 'cari', 'pricelist'];
+  const REFRESH_UNSAFE_TABS = ['pembelian', 'penjualan', 'produksi', 'service', 'laporan', 'cari', 'pricelist', 'stok', 'migrasi'];
   async function refreshData(manual) {
     if (isRefreshing) return;
     const isUnsafe = REFRESH_UNSAFE_TABS.includes(activeTab) || !!editingTxnId || modalSlot.innerHTML.trim() !== '';
