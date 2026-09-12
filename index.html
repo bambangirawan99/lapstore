@@ -109,6 +109,9 @@ body {
   0% { background-position: 220% 0; }
   100% { background-position: -60% 0; }
 }
+@keyframes bk-spin {
+  to { transform: rotate(360deg); }
+}
 #bk-root .bk-header-tagline {
   font-size: 10.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
   color: #E9C577; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2484,6 +2487,7 @@ window.storage = {
   let selectedStokNames = new Set();
   let pendingStokEdits = new Map(); // name -> { unit, orig, newQty } - perubahan sisa stok yang belum disimpan
   let stokSaveAttemptFailed = false; // true kalau percobaan simpan terakhir ada yang gagal - tombol berubah jadi "Lanjutkan"
+  let stokSavingInProgress = false; // true selagi proses simpan+verifikasi berjalan - tampilkan loading, kunci tombol
   function renderStok() {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
@@ -2548,12 +2552,20 @@ window.storage = {
         <input type="number" min="0" step="any" id="bk-stok-uniform-value" placeholder="Angka" style="width:90px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace;" />
         <button class="bk-btn accent" id="bk-stok-uniform-apply" style="padding:7px 14px; font-size:12px;">Terapkan ke Terpilih</button>
       </div>` : ''}
-      <div id="bk-stok-bulk-edit-bar" style="display:none; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; padding:10px 14px; background:${stokSaveAttemptFailed ? '#F3E4DF' : 'var(--accent-bg)'}; border-radius:10px;">
-        <span style="font-size:12.5px; color:${stokSaveAttemptFailed ? 'var(--money-out)' : 'var(--accent-ink)'}; font-weight:600;">${stokSaveAttemptFailed ? '<span id="bk-stok-edit-count">0</span> perubahan GAGAL tersimpan sebelumnya - klik Lanjutkan untuk coba lagi' : '<span id="bk-stok-edit-count">0</span> perubahan sisa stok belum disimpan'}</span>
+      <div id="bk-stok-bulk-edit-bar" style="display:${(pendingStokEdits.size > 0 || stokSavingInProgress) ? 'flex' : 'none'}; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; padding:10px 14px; background:${stokSavingInProgress ? '#FFF6E5' : (stokSaveAttemptFailed ? '#F3E4DF' : 'var(--accent-bg)')}; border-radius:10px;">
+        ${stokSavingInProgress ? `
+        <span style="font-size:12.5px; color:var(--accent-ink); font-weight:600; display:flex; align-items:center; gap:8px;">
+          <span style="display:inline-block; width:15px; height:15px; border:2.5px solid var(--accent); border-top-color:transparent; border-radius:50%; animation:bk-spin 0.8s linear infinite;"></span>
+          Menyimpan &amp; memverifikasi ke server... jangan tutup atau pindah tab dulu
+        </span>
+        <div></div>
+        ` : `
+        <span style="font-size:12.5px; color:${stokSaveAttemptFailed ? 'var(--money-out)' : 'var(--accent-ink)'}; font-weight:600;">${stokSaveAttemptFailed ? `<span id="bk-stok-edit-count">${pendingStokEdits.size}</span> perubahan GAGAL tersimpan sebelumnya - klik Lanjutkan untuk coba lagi` : `<span id="bk-stok-edit-count">${pendingStokEdits.size}</span> perubahan sisa stok belum disimpan`}</span>
         <div style="display:flex; gap:8px;">
           <button class="bk-btn ghost" id="bk-stok-edit-batal" style="padding:7px 14px; font-size:12px;">Batal semua</button>
           <button class="bk-btn accent" id="bk-stok-edit-simpan" style="padding:7px 14px; font-size:12px; ${stokSaveAttemptFailed ? 'background:var(--money-out);' : ''}">${stokSaveAttemptFailed ? 'Lanjutkan Menyimpan' : 'Simpan Semua Perubahan'}</button>
         </div>
+        `}
       </div>` : ''}
       ${rows.length ? `
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
@@ -2725,38 +2737,47 @@ window.storage = {
     const entries = Array.from(pendingStokEdits.entries());
     const daftar = entries.map(([name, e]) => `${escapeAttr(name)}: ${e.orig.toLocaleString('id-ID')} &rarr; ${e.newQty.toLocaleString('id-ID')} ${escapeAttr(e.unit||'')}`).join('<br>');
     showConfirm(`Simpan ${entries.length} perubahan sisa stok sekaligus?<br><br><span style="font-size:12px; color:var(--ink-soft); text-align:left; display:block;">${daftar}</span><br>Riwayat transaksi lama tidak diubah.`, async () => {
-      showToast(`Menyimpan ${entries.length} perubahan...`);
-      const jobFns = entries.map(([name, e]) => async () => {
-        const code = codeReg.byName[name.trim().toLowerCase()] || '';
-        const selisih = e.newQty - e.orig;
-        const txn = buildStokAdjustmentTxn(name, e.unit, code, selisih);
-        const savedResult = await window.storage.set('txn:' + txn.id, JSON.stringify(txn), true);
-        if (!savedResult) throw new Error('Server menolak simpan (kemungkinan masalah koneksi)');
-        invalidateStockCaches();
-        txns.unshift(txn);
-        await autoReviveStokNames([name]);
-      });
-      const results = await runJobsInChunks(jobFns);
-      results.forEach((r, idx) => { if (r.status === 'rejected') console.error('Gagal menyimpan perubahan stok untuk', entries[idx][0], ':', r.reason); });
-
-      // VERIFIKASI NYATA: muat ulang data langsung dari server (bukan percaya update lokal saja),
-      // lalu cek satu-satu apakah sisa stok yang tersimpan benar-benar sesuai target. Ini menangkap
-      // kasus dimana penyimpanan "kelihatan berhasil" tapi sebenarnya gagal diam-diam di server.
-      await loadTxns();
-      invalidateStockCaches();
-      const stockAfter = computeStock();
-      const failedNames = [];
-      entries.forEach(([name, e]) => {
-        const actual = stockAfter[name.trim().toLowerCase()] ? stockAfter[name.trim().toLowerCase()].qty : 0;
-        if (actual !== e.newQty) failedNames.push(name);
-      });
-      entries.forEach(([name]) => { if (!failedNames.includes(name)) pendingStokEdits.delete(name); });
-      stokSaveAttemptFailed = failedNames.length > 0;
+      stokSavingInProgress = true;
       renderStok();
-      if (failedNames.length) {
-        showToast(`${entries.length - failedNames.length} TERVERIFIKASI tersimpan di server. ${failedNames.length} TIDAK TERSIMPAN (server menolak/koneksi bermasalah): ${failedNames.slice(0,3).join(', ')}${failedNames.length>3?', dst':''} - masih di daftar, klik "Lanjutkan Menyimpan" untuk coba lagi (mungkin perlu beberapa kali kalau koneksi tidak stabil).`);
-      } else {
-        showToast(`${entries.length} perubahan sisa stok TERVERIFIKASI tersimpan di server.`);
+      try {
+        const jobFns = entries.map(([name, e]) => async () => {
+          const code = codeReg.byName[name.trim().toLowerCase()] || '';
+          const selisih = e.newQty - e.orig;
+          const txn = buildStokAdjustmentTxn(name, e.unit, code, selisih);
+          const savedResult = await window.storage.set('txn:' + txn.id, JSON.stringify(txn), true);
+          if (!savedResult) throw new Error('Server menolak simpan (kemungkinan masalah koneksi)');
+          invalidateStockCaches();
+          txns.unshift(txn);
+          await autoReviveStokNames([name]);
+        });
+        const results = await runJobsInChunks(jobFns);
+        results.forEach((r, idx) => { if (r.status === 'rejected') console.error('Gagal menyimpan perubahan stok untuk', entries[idx][0], ':', r.reason); });
+
+        // VERIFIKASI NYATA: muat ulang data langsung dari server (bukan percaya update lokal saja),
+        // lalu cek satu-satu apakah sisa stok yang tersimpan benar-benar sesuai target. Ini menangkap
+        // kasus dimana penyimpanan "kelihatan berhasil" tapi sebenarnya gagal diam-diam di server.
+        await loadTxns();
+        invalidateStockCaches();
+        const stockAfter = computeStock();
+        const failedNames = [];
+        entries.forEach(([name, e]) => {
+          const actual = stockAfter[name.trim().toLowerCase()] ? stockAfter[name.trim().toLowerCase()].qty : 0;
+          if (actual !== e.newQty) failedNames.push(name);
+        });
+        entries.forEach(([name]) => { if (!failedNames.includes(name)) pendingStokEdits.delete(name); });
+        stokSaveAttemptFailed = failedNames.length > 0;
+        if (failedNames.length) {
+          showToast(`${entries.length - failedNames.length} TERVERIFIKASI tersimpan di server. ${failedNames.length} TIDAK TERSIMPAN (server menolak/koneksi bermasalah): ${failedNames.slice(0,3).join(', ')}${failedNames.length>3?', dst':''} - masih di daftar, klik "Lanjutkan Menyimpan" untuk coba lagi (mungkin perlu beberapa kali kalau koneksi tidak stabil).`);
+        } else {
+          showToast(`${entries.length} perubahan sisa stok TERVERIFIKASI tersimpan di server.`);
+        }
+      } catch (err) {
+        console.error('Gagal total proses simpan massal stok:', err);
+        stokSaveAttemptFailed = true;
+        showToast('Terjadi kesalahan saat menyimpan. Klik "Lanjutkan Menyimpan" untuk coba lagi.');
+      } finally {
+        stokSavingInProgress = false;
+        renderStok();
       }
     }, () => renderStok());
   }
