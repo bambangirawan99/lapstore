@@ -5921,6 +5921,7 @@ window.storage = {
     const totalProduksi = txns.filter(t => t.type === 'produksi').length;
     const nilaiPembelian = txns.filter(t => t.type === 'pembelian').reduce((s,t) => s + (t.total||0), 0);
     const nilaiPenjualan = txns.filter(t => t.type === 'penjualan').reduce((s,t) => s + (t.total||0), 0);
+    const previewBersih = hitungPreviewBersihkanTerhapus();
     return `
       <div class="bk-ai-box" style="margin-bottom:18px;">
         <div class="ai-head"><div class="ai-title">Unduh Backup Lengkap</div></div>
@@ -5935,6 +5936,15 @@ window.storage = {
           <input type="file" id="bk-backup-upload-input" accept=".json" style="display:none;" />
         </label>
         <div id="bk-backup-restore-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Bersihkan Transaksi untuk Barang yang Sudah Dihapus</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk barang yang sudah kamu hapus dari tab Stok, tapi transaksi pembelian/penjualan aslinya masih ikut terhitung di Dashboard/Pengeluaran/Pemasukan. Alat ini <strong>hanya membuang bagian item yang sudah dihapus itu</strong> dari transaksi terkait &mdash; transaksi yang masih ada item lain yang valid TIDAK dihapus seluruhnya, cuma dikurangi bagian yang sudah tidak relevan. Transaksi lain yang tidak terkait barang terhapus sama sekali TIDAK disentuh.</div>
+        ${previewBersih.jumlahTransaksiTerpengaruh > 0 ? `
+        <div class="bk-stok-note" style="margin-bottom:14px;">Ditemukan: <strong>${previewBersih.jumlahItemDihapus.toLocaleString('id-ID')} item</strong> senilai <strong>${rupiah(previewBersih.totalNilaiDihapus)}</strong>, tersebar di <strong>${previewBersih.jumlahTransaksiTerpengaruh.toLocaleString('id-ID')} transaksi</strong>.</div>
+        <button class="bk-btn accent" id="bk-cleanup-deleted-btn">Bersihkan Sekarang</button>
+        ` : `<div class="bk-empty" style="padding:10px 0;">Tidak ada transaksi yang terkait barang yang sudah dihapus. Tidak ada yang perlu dibersihkan.</div>`}
+        <div id="bk-cleanup-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
       <div class="bk-ai-box" style="border-color:var(--money-out); border-width:2px;">
         <div class="ai-head"><div class="ai-title" style="color:var(--money-out);">Zona Bahaya: Reset Total Data Transaksi</div></div>
@@ -5953,6 +5963,8 @@ window.storage = {
   function wireBackupRestoreEvents() {
     document.getElementById('bk-backup-download').addEventListener('click', downloadFullBackup);
     document.getElementById('bk-backup-upload-input').addEventListener('change', handleBackupRestoreUpload);
+    const cleanupBtn = document.getElementById('bk-cleanup-deleted-btn');
+    if (cleanupBtn) cleanupBtn.addEventListener('click', bersihkanTransaksiBarangTerhapus);
     const confirmInput = document.getElementById('bk-reset-confirm-text');
     const resetBtn = document.getElementById('bk-reset-total-btn');
     confirmInput.addEventListener('input', () => {
@@ -5961,6 +5973,66 @@ window.storage = {
       resetBtn.style.opacity = match ? '1' : '.5';
     });
     resetBtn.addEventListener('click', resetTotalDataTransaksi);
+  }
+
+  // Hitung pratinjau berapa item/transaksi yang terkait barang yang sudah dihapus dari Stok
+  // (deletedStokNames), supaya pemilik tahu dulu skala dampaknya sebelum membersihkan.
+  function hitungPreviewBersihkanTerhapus() {
+    let jumlahTransaksiTerpengaruh = 0, totalNilaiDihapus = 0, jumlahItemDihapus = 0;
+    txns.forEach(t => {
+      if (t.type !== 'pembelian' && t.type !== 'penjualan') return;
+      const items = t.items || [];
+      const matched = items.filter(i => deletedStokNames.has((i.name||'').trim().toLowerCase()));
+      if (matched.length) {
+        jumlahTransaksiTerpengaruh++;
+        jumlahItemDihapus += matched.length;
+        totalNilaiDihapus += matched.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+      }
+    });
+    return { jumlahTransaksiTerpengaruh, totalNilaiDihapus, jumlahItemDihapus };
+  }
+
+  // Membersihkan HANYA bagian item yang sudah dihapus dari Stok, dari transaksi Pembelian/Penjualan
+  // yang masih menyimpannya. Transaksi yang jadi kosong (semua itemnya barang terhapus) dihapus
+  // seluruhnya; transaksi yang masih punya item lain yang valid cuma dikurangi & totalnya dihitung ulang.
+  async function bersihkanTransaksiBarangTerhapus() {
+    if (!requireOwnerForDelete()) return;
+    const preview = hitungPreviewBersihkanTerhapus();
+    if (!preview.jumlahTransaksiTerpengaruh) { showToast('Tidak ada yang perlu dibersihkan.'); return; }
+    showConfirm(`Bersihkan ${preview.jumlahItemDihapus.toLocaleString('id-ID')} item (senilai ${rupiah(preview.totalNilaiDihapus)}) dari ${preview.jumlahTransaksiTerpengaruh.toLocaleString('id-ID')} transaksi yang terkait barang yang sudah dihapus dari Stok? Transaksi lain yang tidak terkait TIDAK akan disentuh. Tindakan ini tidak bisa dibatalkan.`, async () => {
+      const statusEl = document.getElementById('bk-cleanup-status');
+      statusEl.style.color = 'var(--ink-soft)';
+      statusEl.textContent = 'Membersihkan...';
+      try {
+        const toDelete = [];
+        const toUpdate = [];
+        txns.forEach(t => {
+          if (t.type !== 'pembelian' && t.type !== 'penjualan') return;
+          const items = t.items || [];
+          const remaining = items.filter(i => !deletedStokNames.has((i.name||'').trim().toLowerCase()));
+          if (remaining.length === items.length) return; // tidak terpengaruh, lewati
+          if (remaining.length === 0) {
+            toDelete.push(t.id);
+          } else {
+            const newTotal = remaining.reduce((s,i) => s + (Number(i.qty)||0) * (Number(i.price)||0), 0);
+            toUpdate.push({ ...t, items: remaining, total: newTotal });
+          }
+        });
+        const jobFns = [
+          ...toDelete.map(id => () => deleteTxnFromStore(id)),
+          ...toUpdate.map(t => () => saveTxn(t)),
+        ];
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Memproses... (${done}/${total})`; });
+        await loadTxns();
+        invalidateStockCaches();
+        renderLaporan();
+        showToast(`Berhasil dibersihkan: ${preview.jumlahItemDihapus.toLocaleString('id-ID')} item (${rupiah(preview.totalNilaiDihapus)}) dari ${preview.jumlahTransaksiTerpengaruh.toLocaleString('id-ID')} transaksi.`);
+      } catch (err) {
+        console.error(err);
+        statusEl.style.color = 'var(--money-out)';
+        statusEl.textContent = 'Gagal membersihkan, coba lagi.';
+      }
+    });
   }
 
   async function resetTotalDataTransaksi() {
