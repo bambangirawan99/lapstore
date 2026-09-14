@@ -1082,7 +1082,7 @@ window.storage = {
   function totals() {
     let masuk = 0, keluar = 0;
     txns.forEach(t => {
-      if (t.type === 'penjualan') masuk += t.total;
+      if (t.type === 'penjualan' && t.paid !== false) masuk += t.total; // hanya yang sudah lunas dihitung sebagai kas masuk
       else if (t.type === 'pembelian') keluar += t.total;
       // transaksi produksi tidak memengaruhi saldo, hanya memindahkan stok
     });
