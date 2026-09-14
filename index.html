@@ -5916,6 +5916,11 @@ window.storage = {
   // ---------- BACKUP & RESTORE DATABASE LENGKAP ----------
   function renderBackupRestoreHtml() {
     const totalRecords = txns.length + services.length + bebanList.length + closings.length + utangList.length + utangPayments.length + modalEntries.length + manualTagihan.length;
+    const totalPembelian = txns.filter(t => t.type === 'pembelian').length;
+    const totalPenjualan = txns.filter(t => t.type === 'penjualan').length;
+    const totalProduksi = txns.filter(t => t.type === 'produksi').length;
+    const nilaiPembelian = txns.filter(t => t.type === 'pembelian').reduce((s,t) => s + (t.total||0), 0);
+    const nilaiPenjualan = txns.filter(t => t.type === 'penjualan').reduce((s,t) => s + (t.total||0), 0);
     return `
       <div class="bk-ai-box" style="margin-bottom:18px;">
         <div class="ai-head"><div class="ai-title">Unduh Backup Lengkap</div></div>
@@ -5923,7 +5928,7 @@ window.storage = {
         <div class="bk-stok-note" style="margin:0 0 12px;">Total data saat ini: <strong>${totalRecords.toLocaleString('id-ID')} catatan</strong>.</div>
         <button class="bk-btn primary" id="bk-backup-download">Unduh Backup Sekarang (.json)</button>
       </div>
-      <div class="bk-ai-box">
+      <div class="bk-ai-box" style="margin-bottom:18px;">
         <div class="ai-head"><div class="ai-title">Pulihkan dari Backup</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Upload file backup (.json) yang pernah diunduh sebelumnya untuk memulihkan data. Data dari file akan <strong>ditambahkan/menimpa</strong> data yang ada sekarang berdasarkan ID masing-masing catatan (data lain yang tidak ada di file tidak akan terhapus).</div>
         <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih File Backup (.json)
@@ -5931,11 +5936,53 @@ window.storage = {
         </label>
         <div id="bk-backup-restore-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
+      <div class="bk-ai-box" style="border-color:var(--money-out); border-width:2px;">
+        <div class="ai-head"><div class="ai-title" style="color:var(--money-out);">Zona Bahaya: Reset Total Data Transaksi</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk membersihkan data uji coba/tidak sesuai yang menumpuk (misal saat mencoba fitur upload), lalu memulai bersih dari nol sesuai stok fisik yang benar-benar ada sekarang. Ini akan <strong>MENGHAPUS PERMANEN semua transaksi Pembelian, Penjualan, dan Produksi</strong> (data Service, Beban, Utang, Modal TIDAK ikut terhapus). Tindakan ini <strong>TIDAK BISA DIBATALKAN</strong>.</div>
+        <div class="bk-stok-note" style="margin-bottom:14px;">Yang akan terhapus sekarang: <strong>${totalPembelian.toLocaleString('id-ID')} Pembelian</strong> (nilai ${rupiah(nilaiPembelian)}), <strong>${totalPenjualan.toLocaleString('id-ID')} Penjualan</strong> (nilai ${rupiah(nilaiPenjualan)}), <strong>${totalProduksi.toLocaleString('id-ID')} Produksi</strong>. Stok akan otomatis jadi 0 semua sampai kamu upload ulang data stok yang benar lewat tab Migrasi Data.</div>
+        <div class="bk-stok-note" style="margin-bottom:14px; color:var(--money-out); font-weight:600;">Sebaiknya unduh backup dulu (kotak di atas) sebelum lanjutkan, jaga-jaga kalau berubah pikiran.</div>
+        <div class="bk-field" style="margin-bottom:10px;">
+          <label>Ketik persis: <strong>HAPUS SEMUA TRANSAKSI</strong> untuk mengaktifkan tombol reset</label>
+          <input id="bk-reset-confirm-text" placeholder="Ketik di sini" autocomplete="off" />
+        </div>
+        <button class="bk-btn primary" id="bk-reset-total-btn" disabled style="background:var(--money-out); opacity:.5;">Reset Total Data Transaksi</button>
+        <div id="bk-reset-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
     `;
   }
   function wireBackupRestoreEvents() {
     document.getElementById('bk-backup-download').addEventListener('click', downloadFullBackup);
     document.getElementById('bk-backup-upload-input').addEventListener('change', handleBackupRestoreUpload);
+    const confirmInput = document.getElementById('bk-reset-confirm-text');
+    const resetBtn = document.getElementById('bk-reset-total-btn');
+    confirmInput.addEventListener('input', () => {
+      const match = confirmInput.value.trim() === 'HAPUS SEMUA TRANSAKSI';
+      resetBtn.disabled = !match;
+      resetBtn.style.opacity = match ? '1' : '.5';
+    });
+    resetBtn.addEventListener('click', resetTotalDataTransaksi);
+  }
+
+  async function resetTotalDataTransaksi() {
+    if (!requireOwnerForDelete()) return;
+    const targets = [...txns];
+    showConfirm(`Yakin? Ini akan menghapus PERMANEN ${targets.length.toLocaleString('id-ID')} transaksi (Pembelian, Penjualan, Produksi) dari database. Data Service/Beban/Utang/Modal aman, tidak terhapus. Tindakan ini TIDAK BISA DIBATALKAN.`, async () => {
+      const statusEl = document.getElementById('bk-reset-status');
+      statusEl.style.color = 'var(--ink-soft)';
+      statusEl.textContent = `Menghapus ${targets.length} transaksi...`;
+      try {
+        const jobFns = targets.map(t => async () => { await deleteTxnFromStore(t.id); });
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Menghapus... (${done}/${total})`; });
+        await loadTxns();
+        invalidateStockCaches();
+        renderLaporan();
+        showToast(`${targets.length} transaksi berhasil dihapus. Silakan upload stok yang benar lewat tab Migrasi Data.`);
+      } catch (err) {
+        console.error(err);
+        statusEl.style.color = 'var(--money-out)';
+        statusEl.textContent = 'Terjadi kesalahan saat menghapus. Coba lagi.';
+      }
+    });
   }
 
   function downloadFullBackup() {
