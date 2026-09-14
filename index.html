@@ -5958,6 +5958,18 @@ window.storage = {
         <button class="bk-btn primary" id="bk-reset-total-btn" disabled style="background:var(--money-out); opacity:.5;">Reset Total Data Transaksi</button>
         <div id="bk-reset-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
+      <div class="bk-ai-box" style="border-color:var(--money-out); border-width:2px; margin-top:18px;">
+        <div class="ai-head"><div class="ai-title" style="color:var(--money-out);">Zona Bahaya: Reset SEMUA Data Kecuali Service</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk mulai bersih total dari nol, tapi tetap mempertahankan riwayat Service Laptop. Ini akan <strong>MENGHAPUS PERMANEN</strong>: semua transaksi Pembelian/Penjualan/Produksi, Beban Operasional, Utang &amp; cicilannya, Setoran/Penarikan Modal, Tagihan Manual, data Pricelist, dan daftar barang yang sudah dihapus. <strong>Data Service Laptop TIDAK ikut terhapus.</strong> Tindakan ini <strong>TIDAK BISA DIBATALKAN</strong>.</div>
+        <div class="bk-stok-note" style="margin-bottom:14px;">Yang akan terhapus: <strong>${(totalPembelian+totalPenjualan+totalProduksi).toLocaleString('id-ID')} transaksi</strong>, <strong>${bebanList.length.toLocaleString('id-ID')} beban</strong>, <strong>${utangList.length.toLocaleString('id-ID')} utang</strong> (+${utangPayments.length} cicilan), <strong>${modalEntries.length.toLocaleString('id-ID')} catatan modal</strong>, <strong>${manualTagihan.length.toLocaleString('id-ID')} tagihan manual</strong>. Yang TETAP AMAN: <strong>${services.length.toLocaleString('id-ID')} data Service Laptop</strong>.</div>
+        <div class="bk-stok-note" style="margin-bottom:14px; color:var(--money-out); font-weight:600;">Sebaiknya unduh backup dulu (kotak paling atas) sebelum lanjutkan.</div>
+        <div class="bk-field" style="margin-bottom:10px;">
+          <label>Ketik persis: <strong>HAPUS SEMUA KECUALI SERVICE</strong> untuk mengaktifkan tombol reset</label>
+          <input id="bk-reset-all-confirm-text" placeholder="Ketik di sini" autocomplete="off" />
+        </div>
+        <button class="bk-btn primary" id="bk-reset-all-btn" disabled style="background:var(--money-out); opacity:.5;">Reset SEMUA Data Kecuali Service</button>
+        <div id="bk-reset-all-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
     `;
   }
   function wireBackupRestoreEvents() {
@@ -5973,6 +5985,14 @@ window.storage = {
       resetBtn.style.opacity = match ? '1' : '.5';
     });
     resetBtn.addEventListener('click', resetTotalDataTransaksi);
+    const confirmAllInput = document.getElementById('bk-reset-all-confirm-text');
+    const resetAllBtn = document.getElementById('bk-reset-all-btn');
+    confirmAllInput.addEventListener('input', () => {
+      const match = confirmAllInput.value.trim() === 'HAPUS SEMUA KECUALI SERVICE';
+      resetAllBtn.disabled = !match;
+      resetAllBtn.style.opacity = match ? '1' : '.5';
+    });
+    resetAllBtn.addEventListener('click', resetSemuaDataKecualiService);
   }
 
   // Hitung pratinjau berapa item/transaksi yang terkait barang yang sudah dihapus dari Stok
@@ -6049,6 +6069,56 @@ window.storage = {
         invalidateStockCaches();
         renderLaporan();
         showToast(`${targets.length} transaksi berhasil dihapus. Silakan upload stok yang benar lewat tab Migrasi Data.`);
+      } catch (err) {
+        console.error(err);
+        statusEl.style.color = 'var(--money-out)';
+        statusEl.textContent = 'Terjadi kesalahan saat menghapus. Coba lagi.';
+      }
+    });
+  }
+
+  async function resetSemuaDataKecualiService() {
+    if (!requireOwnerForDelete()) return;
+    const targetTxns = [...txns];
+    const targetBeban = [...bebanList];
+    const targetClosings = [...closings];
+    const targetUtang = [...utangList];
+    const targetUtangPay = [...utangPayments];
+    const targetModal = [...modalEntries];
+    const targetTagihan = [...manualTagihan];
+    const pricelistKeys = Object.keys(pricelistData);
+    const totalSemua = targetTxns.length + targetBeban.length + targetClosings.length + targetUtang.length + targetUtangPay.length + targetModal.length + targetTagihan.length + pricelistKeys.length;
+    showConfirm(`Yakin? Ini akan menghapus PERMANEN ${totalSemua.toLocaleString('id-ID')} catatan (transaksi, beban, utang, modal, tagihan manual, pricelist, daftar barang terhapus). Data Service Laptop (${services.length.toLocaleString('id-ID')} catatan) TIDAK ikut terhapus. Tindakan ini TIDAK BISA DIBATALKAN.`, async () => {
+      const statusEl = document.getElementById('bk-reset-all-status');
+      statusEl.style.color = 'var(--ink-soft)';
+      statusEl.textContent = `Menghapus ${totalSemua} catatan...`;
+      try {
+        const jobFns = [
+          ...targetTxns.map(t => () => deleteTxnFromStore(t.id)),
+          ...targetBeban.map(b => () => deleteBebanFromStore(b.id)),
+          ...targetClosings.map(c => () => deleteClosingFromStore(c.id)),
+          ...targetUtang.map(u => () => deleteUtangFromStore(u.id)),
+          ...targetUtangPay.map(p => () => deleteUtangPaymentFromStore(p.id)),
+          ...targetModal.map(m => () => deleteModalEntryFromStore(m.id)),
+          ...targetTagihan.map(m => () => deleteManualTagihanFromStore(m.id)),
+          ...pricelistKeys.map(k => () => window.storage.delete('pricelist:' + k, true)),
+        ];
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Menghapus... (${done}/${total})`; });
+        // Kosongkan juga daftar barang yang sudah dihapus (tidak relevan lagi setelah reset total)
+        deletedStokNames = new Set();
+        await saveDeletedStokNames();
+        // Muat ulang semua koleksi dari server supaya state lokal benar-benar bersih
+        await loadTxns();
+        await loadBeban();
+        await loadClosings();
+        await loadUtang();
+        await loadUtangPayments();
+        await loadModalEntries();
+        await loadManualTagihan();
+        await loadPricelistData();
+        invalidateStockCaches();
+        renderLaporan();
+        showToast(`${totalSemua} catatan berhasil dihapus. Data Service Laptop tetap aman. Silakan upload stok yang benar lewat tab Migrasi Data.`);
       } catch (err) {
         console.error(err);
         statusEl.style.color = 'var(--money-out)';
