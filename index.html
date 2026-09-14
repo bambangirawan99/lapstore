@@ -5922,6 +5922,7 @@ window.storage = {
     const nilaiPembelian = txns.filter(t => t.type === 'pembelian').reduce((s,t) => s + (t.total||0), 0);
     const nilaiPenjualan = txns.filter(t => t.type === 'penjualan').reduce((s,t) => s + (t.total||0), 0);
     const previewBersih = hitungPreviewBersihkanTerhapus();
+    const previewSvcLink = hitungPreviewServiceLinkPutus();
     return `
       <div class="bk-ai-box" style="margin-bottom:18px;">
         <div class="ai-head"><div class="ai-title">Unduh Backup Lengkap</div></div>
@@ -5936,6 +5937,17 @@ window.storage = {
           <input type="file" id="bk-backup-upload-input" accept=".json" style="display:none;" />
         </label>
         <div id="bk-backup-restore-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Perbaiki Tautan Transaksi Service yang Putus</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Kalau transaksi Pembelian/Penjualan pernah dihapus/direset (misal lewat "Reset Data"), data Service Laptop tetap aman, tapi transaksi pemasukan yang tertaut ke tiap service ikut terhapus &mdash; jadi pendapatan service jadi TIDAK muncul lagi di Dashboard/Laporan Keuangan walau data service-nya masih ada di Riwayat. Alat ini otomatis mendeteksi service yang "tautannya putus" dan membuatkan ulang transaksi pemasukannya, memakai data biaya &amp; status lunas yang sudah tercatat di service tersebut.</div>
+        <div id="bk-svc-link-preview">
+          ${previewSvcLink.jumlah > 0 ? `
+          <div class="bk-stok-note" style="margin-bottom:14px;">Ditemukan <strong>${previewSvcLink.jumlah.toLocaleString('id-ID')} service</strong> yang tautan transaksinya putus, dengan total pendapatan yang hilang senilai <strong>${rupiah(previewSvcLink.totalNilai)}</strong>.</div>
+          <button class="bk-btn accent" id="bk-svc-link-fix-btn">Perbaiki Sekarang</button>
+          ` : `<div class="bk-empty" style="padding:10px 0;">Tidak ada tautan service yang putus. Semua aman.</div>`}
+        </div>
+        <div id="bk-svc-link-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
       <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
         <div class="ai-head"><div class="ai-title">Bersihkan Transaksi untuk Barang yang Sudah Dihapus</div></div>
@@ -5975,6 +5987,8 @@ window.storage = {
   function wireBackupRestoreEvents() {
     document.getElementById('bk-backup-download').addEventListener('click', downloadFullBackup);
     document.getElementById('bk-backup-upload-input').addEventListener('change', handleBackupRestoreUpload);
+    const svcLinkFixBtn = document.getElementById('bk-svc-link-fix-btn');
+    if (svcLinkFixBtn) svcLinkFixBtn.addEventListener('click', perbaikiTautanServicePutus);
     const cleanupBtn = document.getElementById('bk-cleanup-deleted-btn');
     if (cleanupBtn) cleanupBtn.addEventListener('click', bersihkanTransaksiBarangTerhapus);
     const confirmInput = document.getElementById('bk-reset-confirm-text');
@@ -5997,6 +6011,63 @@ window.storage = {
 
   // Hitung pratinjau berapa item/transaksi yang terkait barang yang sudah dihapus dari Stok
   // (deletedStokNames), supaya pemilik tahu dulu skala dampaknya sebelum membersihkan.
+  // Deteksi service yang "tautannya putus" - punya linkedTxnId tapi transaksinya sudah tidak ada
+  // (biasanya akibat reset/hapus transaksi massal), sehingga pendapatannya hilang dari laporan keuangan.
+  function hitungPreviewServiceLinkPutus() {
+    let jumlah = 0, totalNilai = 0;
+    services.forEach(s => {
+      if (s.linkedTxnId && !txns.find(t => t.id === s.linkedTxnId)) {
+        jumlah++;
+        totalNilai += Number(s.biayaFinal || s.estimasiBiaya || 0);
+      }
+    });
+    return { jumlah, totalNilai };
+  }
+
+  async function perbaikiTautanServicePutus() {
+    if (!requireOwnerForDelete()) return;
+    const orphans = services.filter(s => s.linkedTxnId && !txns.find(t => t.id === s.linkedTxnId));
+    if (!orphans.length) { showToast('Tidak ada tautan yang putus.'); return; }
+    const totalNilai = orphans.reduce((s2,s) => s2 + Number(s.biayaFinal || s.estimasiBiaya || 0), 0);
+    showConfirm(`Buatkan ulang transaksi pemasukan untuk ${orphans.length.toLocaleString('id-ID')} service yang tautannya putus (total ${rupiah(totalNilai)})? Data akan diambil dari catatan service yang sudah ada (biaya, nama pelanggan, status lunas).`, async () => {
+      const statusEl = document.getElementById('bk-svc-link-status');
+      statusEl.style.color = 'var(--ink-soft)';
+      statusEl.textContent = `Memperbaiki ${orphans.length} tautan...`;
+      try {
+        const jobFns = orphans.map(s => async () => {
+          const biaya = Number(s.biayaFinal || s.estimasiBiaya || 0);
+          const historyDiambil = (s.history || []).find(h => h.status === 'diambil' || h.status === 'selesai');
+          const txn = {
+            id: uid(),
+            type: 'penjualan',
+            kodeTransaksi: generateTxnCode('penjualan'),
+            items: [{ name: `Jasa Service Laptop - ${s.device || ''}`, qty: 1, unit: 'jasa', price: biaya }],
+            total: biaya,
+            customerName: s.customerName || '',
+            customerPhone: s.customerPhone || '',
+            paid: s.paid !== false,
+            rekening: s.rekening || BANK_ACCOUNTS[0].id,
+            createdAt: (historyDiambil && historyDiambil.at) || s.updatedAt || s.createdAt || Date.now(),
+            createdBy: currentUser ? currentUser.email : null,
+          };
+          await saveTxn(txn);
+          s.linkedTxnId = txn.id;
+          await saveService(s);
+        });
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Memproses... (${done}/${total})`; });
+        await loadTxns();
+        await loadServices();
+        invalidateStockCaches();
+        renderLaporan();
+        showToast(`${orphans.length} tautan service berhasil diperbaiki. Pendapatan sekarang muncul lagi di laporan keuangan.`);
+      } catch (err) {
+        console.error(err);
+        statusEl.style.color = 'var(--money-out)';
+        statusEl.textContent = 'Gagal memperbaiki, coba lagi.';
+      }
+    });
+  }
+
   function hitungPreviewBersihkanTerhapus() {
     let jumlahTransaksiTerpengaruh = 0, totalNilaiDihapus = 0, jumlahItemDihapus = 0;
     txns.forEach(t => {
