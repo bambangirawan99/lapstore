@@ -2167,6 +2167,41 @@ window.storage = {
     setTimeout(() => t.remove(), 2500);
   }
 
+  // ---------- LOADING MODAL (proses panjang seperti upload migrasi) ----------
+  function showLoadingModal(message) {
+    modalSlot.innerHTML = `
+      <div class="bk-overlay" id="bk-loading-overlay" style="pointer-events:none;">
+        <div style="background:var(--paper); border-radius:12px; padding:28px 24px; max-width:300px; width:100%; text-align:center; pointer-events:auto;">
+          <div style="width:34px; height:34px; margin:0 auto 16px; border:3px solid var(--line); border-top-color: var(--accent); border-radius:50%; animation: bk-spin .8s linear infinite;"></div>
+          <div id="bk-loading-text" style="font-size:13.5px; color:var(--ink); line-height:1.5;">${escapeAttr(message)}</div>
+        </div>
+      </div>
+    `;
+  }
+  function updateLoadingModal(message) {
+    const el = document.getElementById('bk-loading-text');
+    if (el) el.textContent = message;
+  }
+  function closeLoadingModal() {
+    if (document.getElementById('bk-loading-overlay')) modalSlot.innerHTML = '';
+  }
+
+  // ---------- RESULT MODAL (ringkasan hasil proses, dengan tombol OK jelas) ----------
+  function showResultModal(title, message, onOk) {
+    modalSlot.innerHTML = `
+      <div class="bk-overlay" id="bk-result-overlay">
+        <div style="background:var(--paper); border-radius:12px; padding:22px; max-width:340px; width:100%; max-height:85vh; overflow-y:auto; text-align:center;">
+          <div style="font-size:15px; font-weight:700; margin-bottom:8px; color:var(--ink);">${escapeAttr(title)}</div>
+          <div style="font-size:13.5px; margin-bottom:18px; color:var(--ink-soft); line-height:1.6; white-space:pre-line;">${escapeAttr(message)}</div>
+          <button class="bk-btn primary" id="bk-result-ok" style="width:100%;">OK</button>
+        </div>
+      </div>
+    `;
+    const close = () => { modalSlot.innerHTML = ''; if (onOk) onOk(); };
+    document.getElementById('bk-result-ok').addEventListener('click', close);
+    document.getElementById('bk-result-overlay').addEventListener('click', (e) => { if (e.target.id === 'bk-result-overlay') close(); });
+  }
+
   // ---------- RIWAYAT ----------
   function renderRiwayat() {
     const months = availableMonths();
@@ -3081,7 +3116,6 @@ window.storage = {
         const jobs = [];
         const errors = [];
         const migratedNames = [];
-        let successCount = 0;
         const nextLocalCode = makeLocalItemCodeCounter();
         dataRows.forEach((row, idx) => {
           const [tglRaw, kode, nama, jumlah, hargaBeli, hargaJual, pembeli, status] = row;
@@ -3133,23 +3167,48 @@ window.storage = {
         if (!jobs.length) {
           statusEl.textContent = 'Tidak ada baris valid ditemukan. Pastikan format file sesuai template (unduh template dulu kalau belum).';
           statusEl.style.color = 'var(--money-out)';
+          if (errors.length) console.error('Baris riwayat penjualan ditolak:', errors);
           return;
         }
-        statusEl.textContent = `Memproses ${jobs.length} baris...`;
-        const results = await runJobsInChunks(jobs, (done, total) => {
-          statusEl.textContent = `Memproses baris... (${done}/${total})`;
-        });
-        const failedCount = results.filter(r => r.status === 'rejected').length;
-        results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan baris migrasi:', r.reason); });
-        const actualSuccess = jobs.length - failedCount;
-        await autoReviveStokNames(migratedNames);
-        txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-        const errNote = errors.length ? ` ${errors.length} baris dilewati (format tidak valid).` : '';
-        const failNote = failedCount ? ` ${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
-        showToast(`${actualSuccess} riwayat penjualan lama berhasil dimigrasi.${errNote}${failNote} Stok saat ini tidak berubah.`);
-        activeTab = 'riwayat';
-        renderTabs();
-        renderBody();
+        statusEl.textContent = `${jobs.length} baris siap dimigrasi. Menunggu konfirmasi...`;
+        const errLines = errors.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (errors.length > 5 ? `<br/>...dan ${errors.length - 5} lainnya` : '');
+        const errPreview = errors.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">${errors.length} baris akan dilewati (format tidak valid):<br/>${errLines}</span>` : '';
+        showConfirm(
+          `Ditemukan <strong>${jobs.length}</strong> transaksi penjualan lama yang valid di file ini.${errPreview}<br/><br/>Setiap baris akan dicatat sebagai transaksi Pembelian &amp; Penjualan historis, langsung masuk ke Riwayat dan Laporan Keuangan. Stok saat ini <strong>tidak</strong> berubah.<br/><br/>Lanjutkan migrasi?`,
+          async () => {
+            showLoadingModal(`Memproses 0/${jobs.length} baris...`);
+            statusEl.textContent = `Memproses ${jobs.length} baris...`;
+            try {
+              const results = await runJobsInChunks(jobs, (done, total) => {
+                updateLoadingModal(`Memproses ${done}/${total} baris...`);
+                statusEl.textContent = `Memproses baris... (${done}/${total})`;
+              });
+              const failedCount = results.filter(r => r.status === 'rejected').length;
+              results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan baris migrasi:', r.reason); });
+              const actualSuccess = jobs.length - failedCount;
+              updateLoadingModal('Menyelaraskan data stok...');
+              await autoReviveStokNames(migratedNames);
+              txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+              closeLoadingModal();
+              const errNote = errors.length ? `\n${errors.length} baris dilewati (format tidak valid).` : '';
+              const failNote = failedCount ? `\n${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
+              statusEl.textContent = `${actualSuccess} baris berhasil dimigrasi.${errNote}${failNote}`;
+              statusEl.style.color = failedCount ? 'var(--money-out)' : 'var(--money-in)';
+              showResultModal(
+                failedCount ? 'Migrasi selesai (sebagian gagal)' : 'Migrasi berhasil',
+                `${actualSuccess} riwayat penjualan lama berhasil dimigrasi.${errNote}${failNote}\nStok saat ini tidak berubah.`,
+                () => { activeTab = 'riwayat'; renderTabs(); renderBody(); }
+              );
+            } catch (err) {
+              closeLoadingModal();
+              console.error(err);
+              statusEl.textContent = 'Gagal memproses migrasi. Coba lagi.';
+              statusEl.style.color = 'var(--money-out)';
+              showResultModal('Migrasi gagal', 'Terjadi kesalahan saat menyimpan data. Coba upload ulang file yang sama - baris yang sudah berhasil tidak akan dobel.');
+            }
+          },
+          () => { statusEl.textContent = 'Migrasi dibatalkan.'; statusEl.style.color = 'var(--ink-soft)'; }
+        );
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
