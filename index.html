@@ -225,7 +225,7 @@ body {
 #bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
 #bk-root .bk-numbered-row-wrap { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
-#bk-root .bk-numbered-row-wrap > .bk-row-no { flex-shrink: 0; width: 26px; padding-top: 8px; text-align: right; font-size: 15px; font-weight: 700; color: var(--ink); font-family: 'IBM Plex Mono', monospace; }
+#bk-root .bk-row-no { flex-shrink: 0; width: 26px; padding-top: 8px; text-align: right; font-size: 15px; font-weight: 700; color: var(--ink); font-family: 'IBM Plex Mono', monospace; }
 #bk-root .bk-numbered-row-wrap > .bk-item-row,
 #bk-root .bk-numbered-row-wrap > .bk-svc-part-row { flex: 1; min-width: 0; margin-bottom: 0; }
 #bk-root .bk-item-head { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
@@ -391,7 +391,7 @@ body {
   #bk-root .bk-item-row .rm { position: absolute; top: 0; right: 0; }
   #bk-root .bk-item-head { display: none; }
   #bk-root .bk-item-head-wrap { display: none; }
-  #bk-root .bk-numbered-row-wrap > .bk-row-no { padding-top: 2px; }
+  #bk-root .bk-row-no { padding-top: 2px; }
   #bk-root .bk-prod-item-head { display: none; }
   #bk-root .bk-svc-part-head { display: none; }
   #bk-root .bk-prod-item-row {
@@ -1229,14 +1229,15 @@ window.storage = {
   }
   function riwayatRowHtml(t, hppData, idx) {
     const checked = selectedTxnIds.has(t.id) ? 'checked' : '';
-    const noBadge = idx != null ? `<span class="mono" style="font-size:14px; font-weight:700; color:var(--ink); margin-right:4px;">#${idx + 1}</span>` : '';
+    const noCol = idx != null ? `<div class="bk-row-no" style="width:28px; padding-top:10px; align-self:flex-start;">${idx + 1}</div>` : '';
     const kodeBadge = t.kodeTransaksi ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-left:6px;">${escapeAttr(t.kodeTransaksi)}</span>` : '';
     if (t.type === 'produksi') {
       return `<div class="bk-list-row-wrap" data-txn="${t.id}">
         <input type="checkbox" class="bk-row-check" ${checked} />
-        <div class="bk-list-row">
+        ${noCol}
+        <div class="bk-list-row" style="flex:1; min-width:0;">
           <div class="bk-list-left">
-            <div class="nm">${noBadge}Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span>${kodeBadge}</div>
+            <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span>${kodeBadge}</div>
             <div class="sub">${summarizeProduksi(t)}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
           </div>
           <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>
@@ -1263,10 +1264,11 @@ window.storage = {
     }
     return `<div class="bk-list-row-wrap" data-txn="${t.id}">
       <input type="checkbox" class="bk-row-check" ${checked} />
+      ${noCol}
       <div style="flex:1; min-width:0;">
         <div class="bk-list-row" style="padding:0; border-bottom:none;">
           <div class="bk-list-left">
-            <div class="nm">${noBadge}${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
+            <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
             <div class="sub">${names}${ongkirNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
           </div>
           <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
@@ -4594,7 +4596,7 @@ window.storage = {
     return `<div class="bk-svc-card" data-svc="${s.id}">
       <div class="bk-svc-top">
         <input type="checkbox" class="bk-row-check bk-svc-check" data-id="${s.id}" style="margin-top:3px; flex-shrink:0;" ${selectedSvcIds.has(s.id) ? 'checked' : ''} />
-        ${idx != null ? `<span class="mono" style="flex-shrink:0; font-size:14px; font-weight:700; color:var(--ink); padding-top:2px;">#${idx + 1}</span>` : ''}
+        ${idx != null ? `<div class="bk-row-no" style="padding-top:2px;">${idx + 1}</div>` : ''}
         <div style="flex:1; min-width:0;">
           ${topInfoHtml}
         </div>
