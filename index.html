@@ -1560,6 +1560,15 @@ window.storage = {
     if (match) {
       item.name = match.name;
       item.unit = match.unit;
+      if (type === 'penjualan') {
+        // Harga jual DEFAULT mengikuti Pricelist barang ini (kalau sudah pernah diatur di tab
+        // Pricelist), tapi tetap bisa diubah manual sesudahnya - ini cuma nilai awal, bukan kunci.
+        const itemKey = pricelistKeyFor(codeVal, match.name);
+        const entry = pricelistData[itemKey];
+        if (entry && entry.hargaJual != null) {
+          item.price = entry.hargaJual;
+        }
+      }
       renderForm(type);
       showToast(`Kode ditemukan: ${match.name}`);
     }
