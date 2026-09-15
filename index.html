@@ -1133,7 +1133,7 @@ window.storage = {
     const margin = hpp.totalRevenue > 0 ? (hpp.labaKotor / hpp.totalRevenue * 100) : 0;
     const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0)
       + manualTagihan.filter(m => m.paid === false).reduce((s,m) => s + (Number(m.nominal)||0), 0);
-    const recent = txns.slice(0, 6);
+    const recent = [...txns].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 6);
     if (!isOwner()) {
       bodyEl.innerHTML = `
         <div class="bk-stats">
@@ -2248,7 +2248,7 @@ window.storage = {
   // ---------- RIWAYAT ----------
   function renderRiwayat() {
     const months = availableMonths();
-    const byMonth = txns.filter(t => riwayatMonth === 'semua' ? true : monthKey(t.createdAt) === riwayatMonth);
+    const byMonth = txns.filter(t => riwayatMonth === 'semua' ? true : monthKey(t.createdAt) === riwayatMonth).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     // Transaksi yang tertaut ke data Service (penjualan jasa, DP, atau sparepart yang dipakai)
     // TIDAK ditampilkan di daftar Riwayat ini karena sudah bisa dilihat lengkap di tab
     // Service > Riwayat service. Total keuangan di atas (Pemasukan, HPP, Laba Kotor, PDF/Excel)
@@ -3710,7 +3710,7 @@ window.storage = {
 
   function renderProduksi() {
     const isEdit = !!editingTxnId;
-    const prodList = txns.filter(t => t.type === 'produksi');
+    const prodList = txns.filter(t => t.type === 'produksi').sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     const hppData = computeHPP();
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
@@ -3940,7 +3940,7 @@ window.storage = {
 
   function renderServiceAktifHtml() {
     const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
-    const pool = services.filter(s => s.status !== 'diambil');
+    const pool = services.filter(s => s.status !== 'diambil').sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     const filtered = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
     const svcKodeOptions = generateServiceCodeSequence(5);
     if (!serviceFormState.kodeService || !svcKodeOptions.includes(serviceFormState.kodeService)) {
@@ -6843,7 +6843,7 @@ window.storage = {
       </div>
 
       <div class="bk-section-title">Riwayat tutup buku</div>
-      <div id="bk-closing-list">${closings.length ? closings.map(closingRowHtml).join('') : '<div class="bk-empty">Belum ada snapshot tutup buku.</div>'}</div>
+      <div id="bk-closing-list">${closings.length ? [...closings].sort((a,b) => (b.savedAt||0) - (a.savedAt||0)).map(closingRowHtml).join('') : '<div class="bk-empty">Belum ada snapshot tutup buku.</div>'}</div>
     `;
   }
   function modalEntryRowHtml(m) {
@@ -6968,7 +6968,7 @@ window.storage = {
       <button class="bk-btn ghost" id="bk-utang-excel" style="margin-bottom:26px;">Unduh Excel</button>
 
       <div class="bk-section-title">Daftar utang</div>
-      <div id="bk-utang-list">${utangList.length ? utangList.map(utangRowHtml).join('') : '<div class="bk-empty">Belum ada catatan utang.</div>'}</div>
+      <div id="bk-utang-list">${utangList.length ? [...utangList].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).map(utangRowHtml).join('') : '<div class="bk-empty">Belum ada catatan utang.</div>'}</div>
     `;
   }
 
@@ -7058,7 +7058,7 @@ window.storage = {
   function renderBebanHtml() {
     const months = laporanAvailableMonths();
     const mKey = laporanBulan;
-    const filtered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey);
+    const filtered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     const total = filtered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
     return `
       <div class="bk-section-title">Catat beban operasional baru</div>
@@ -7242,7 +7242,7 @@ window.storage = {
       }).join('')}
 
       <div class="bk-section-title">Riwayat Pemindahan Dana</div>
-      <div id="bk-transfer-list">${transferRekening.length ? transferRekening.map(tr => transferRowHtml(tr)).join('') : '<div class="bk-empty">Belum ada pemindahan dana antar rekening.</div>'}</div>
+      <div id="bk-transfer-list">${transferRekening.length ? [...transferRekening].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).map(tr => transferRowHtml(tr)).join('') : '<div class="bk-empty">Belum ada pemindahan dana antar rekening.</div>'}</div>
     `;
   }
   function transferRowHtml(tr) {
