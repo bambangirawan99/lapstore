@@ -6277,6 +6277,12 @@ window.storage = {
         ` : `<div class="bk-empty" style="padding:10px 0;">Tidak ada transaksi yang terkait barang yang sudah dihapus. Tidak ada yang perlu dibersihkan.</div>`}
         <div id="bk-cleanup-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Samakan Pembelian Migrasi yang Pasangannya Sudah Terhapus</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Khusus transaksi dari <strong>Migrasi Riwayat Penjualan Lama</strong> yang dulu dihapus salah satu sisinya (Penjualan atau Pembelian) SEBELUM sistem bisa menghapus pasangannya otomatis &mdash; jadi sisi lainnya masih "menggantung" sendirian dan bikin Laba Rugi tidak balance. Alat ini mencari transaksi Pembelian migrasi yang tidak lagi punya pasangan Penjualan yang cocok (barang, jumlah, dan waktu sama persis), lalu menampilkannya dulu untuk kamu tinjau sebelum dihapus.</div>
+        <div id="bk-orphan-migrasi-preview">${renderOrphanMigrasiPreviewHtml()}</div>
+        <div id="bk-orphan-migrasi-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
       <div class="bk-ai-box" style="border-color:var(--money-out); border-width:2px;">
         <div class="ai-head"><div class="ai-title" style="color:var(--money-out);">Zona Bahaya: Reset Total Data Transaksi</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Untuk membersihkan data uji coba/tidak sesuai yang menumpuk (misal saat mencoba fitur upload), lalu memulai bersih dari nol sesuai stok fisik yang benar-benar ada sekarang. Ini akan <strong>MENGHAPUS PERMANEN semua transaksi Pembelian, Penjualan, dan Produksi</strong> (data Service, Beban, Utang, Modal TIDAK ikut terhapus). Tindakan ini <strong>TIDAK BISA DIBATALKAN</strong>.</div>
@@ -6308,6 +6314,8 @@ window.storage = {
     document.getElementById('bk-backup-upload-input').addEventListener('change', handleBackupRestoreUpload);
     const svcLinkFixBtn = document.getElementById('bk-svc-link-fix-btn');
     if (svcLinkFixBtn) svcLinkFixBtn.addEventListener('click', perbaikiTautanServicePutus);
+    const orphanMigrasiFixBtn = document.getElementById('bk-orphan-migrasi-fix-btn');
+    if (orphanMigrasiFixBtn) orphanMigrasiFixBtn.addEventListener('click', hapusPembelianMigrasiYatim);
     const cleanupBtn = document.getElementById('bk-cleanup-deleted-btn');
     if (cleanupBtn) cleanupBtn.addEventListener('click', bersihkanTransaksiBarangTerhapus);
     const confirmInput = document.getElementById('bk-reset-confirm-text');
@@ -6332,6 +6340,84 @@ window.storage = {
   // (deletedStokNames), supaya pemilik tahu dulu skala dampaknya sebelum membersihkan.
   // Deteksi service yang "tautannya putus" - punya linkedTxnId tapi transaksinya sudah tidak ada
   // (biasanya akibat reset/hapus transaksi massal), sehingga pendapatannya hilang dari laporan keuangan.
+  // ---------- SAMAKAN PEMBELIAN MIGRASI YANG YATIM (pasangan Penjualan sudah terhapus duluan) ----------
+  // Transaksi Pembelian dari fitur "Migrasi Riwayat Penjualan Lama" selalu dibuat berpasangan dengan
+  // Penjualan (supaya HPP/laba rugi lama akurat). Sebelum ada pairTxnId, kalau salah satu sisi dihapus
+  // manual, sisi lainnya jadi "yatim" - tetap tercatat sebagai pengeluaran padahal penjualannya sudah
+  // tidak ada. Fungsi ini mencari Pembelian migrasi (supplierName khas) yang TIDAK punya pairTxnId DAN
+  // tidak ada Penjualan yang cocok (barang + jumlah sama, dibuat persis ~1 detik sesudahnya).
+  function cariPembelianMigrasiYatim() {
+    const kandidat = txns.filter(t => t.type === 'pembelian' && t.supplierName === 'Migrasi data lama' && !t.pairTxnId);
+    return kandidat.filter(pt => {
+      const itemP = (pt.items || [])[0];
+      if (!itemP) return false;
+      const match = txns.find(st => {
+        if (st.type !== 'penjualan') return false;
+        const itemS = (st.items || [])[0];
+        if (!itemS) return false;
+        const namaCocok = itemS.name && itemP.name && itemS.name.trim().toLowerCase() === itemP.name.trim().toLowerCase();
+        const qtyCocok = Number(itemS.qty) === Number(itemP.qty);
+        const waktuCocok = Math.abs((st.createdAt || 0) - (pt.createdAt || 0) - 1000) < 3000; // toleransi 3 detik
+        return namaCocok && qtyCocok && waktuCocok;
+      });
+      return !match;
+    });
+  }
+
+  function renderOrphanMigrasiPreviewHtml() {
+    const orphans = cariPembelianMigrasiYatim();
+    if (!orphans.length) {
+      return `<div class="bk-empty" style="padding:10px 0;">Tidak ditemukan pembelian migrasi yang yatim. Semua pasangan aman/balance.</div>`;
+    }
+    const totalNilai = orphans.reduce((s,t) => s + (t.total || 0), 0);
+    const daftar = orphans.slice(0, 15).map(t => {
+      const it = (t.items||[])[0];
+      return `${escapeAttr(it ? it.name : '-')} &middot; ${it ? it.qty : ''} ${it ? (it.unit||'') : ''} &middot; ${rupiah(t.total)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}`;
+    }).join('<br/>');
+    const moreNote = orphans.length > 15 ? `<br/>...dan ${orphans.length - 15} lainnya` : '';
+    return `
+      <div class="bk-stok-note" style="margin-bottom:14px;">Ditemukan <strong>${orphans.length.toLocaleString('id-ID')} transaksi Pembelian migrasi</strong> yang pasangan Penjualannya sudah tidak ada, senilai total <strong>${rupiah(totalNilai)}</strong>:</div>
+      <div style="font-size:12px; color:var(--ink-soft); text-align:left; margin-bottom:14px; padding:10px 12px; background:var(--paper); border:1px dashed var(--line); border-radius:8px;">${daftar}${moreNote}</div>
+      <button class="bk-btn accent" id="bk-orphan-migrasi-fix-btn" style="border-color:var(--money-out); color:var(--money-out);">Hapus ${orphans.length.toLocaleString('id-ID')} Pembelian Yatim Ini</button>
+    `;
+  }
+
+  async function hapusPembelianMigrasiYatim() {
+    if (!requireOwnerForDelete()) return;
+    const orphans = cariPembelianMigrasiYatim();
+    if (!orphans.length) { showToast('Tidak ada pembelian migrasi yatim untuk dihapus.'); return; }
+    const totalNilai = orphans.reduce((s,t) => s + (t.total || 0), 0);
+    showConfirm(
+      `Hapus <strong>${orphans.length}</strong> transaksi Pembelian migrasi yang sudah tidak punya pasangan Penjualan, senilai total <strong>${rupiah(totalNilai)}</strong>? Riwayat &amp; Laporan Keuangan akan otomatis balance kembali setelah ini. Tindakan ini tidak bisa dibatalkan.`,
+      async () => {
+        const statusEl = document.getElementById('bk-orphan-migrasi-status');
+        statusEl.style.color = 'var(--ink-soft)';
+        statusEl.textContent = `Menghapus ${orphans.length} transaksi...`;
+        showLoadingModal(`Menghapus 0/${orphans.length} transaksi...`);
+        try {
+          let doneCount = 0;
+          for (const t of orphans) {
+            try { await deleteTxnFromStore(t.id); } catch (e) { /* mungkin sudah terhapus */ }
+            txns = txns.filter(x => x.id !== t.id);
+            doneCount++;
+            updateLoadingModal(`Menghapus ${doneCount}/${orphans.length} transaksi...`);
+          }
+          invalidateStockCaches();
+          closeLoadingModal();
+          statusEl.style.color = 'var(--money-in)';
+          statusEl.textContent = `${doneCount} pembelian migrasi yatim berhasil dihapus. Laporan sudah balance kembali.`;
+          renderLaporan();
+          showToast(`${doneCount} transaksi berhasil dihapus.`);
+        } catch (err) {
+          console.error(err);
+          closeLoadingModal();
+          statusEl.style.color = 'var(--money-out)';
+          statusEl.textContent = 'Gagal menghapus, coba lagi.';
+        }
+      }
+    );
+  }
+
   function hitungPreviewServiceLinkPutus() {
     let jumlah = 0, totalNilai = 0;
     services.forEach(s => {
