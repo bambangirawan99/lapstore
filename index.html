@@ -1561,8 +1561,8 @@ window.storage = {
       item.name = match.name;
       item.unit = match.unit;
       if (type === 'penjualan') {
-        // Harga jual DEFAULT mengikuti Pricelist barang ini (kalau sudah pernah diatur di tab
-        // Pricelist), tapi tetap bisa diubah manual sesudahnya - ini cuma nilai awal, bukan kunci.
+        // Harga jual DEFAULT mengikuti apa yang TAMPIL di tab Pricelist untuk barang ini, tapi
+        // tetap bisa diubah manual sesudahnya - ini cuma nilai awal, bukan kunci.
         // PENTING: gunakan metode resolusi kode YANG SAMA PERSIS dengan yang dipakai tab Pricelist
         // (codeReg.byName, bukan kode hasil pilihan dropdown) supaya key-nya pasti cocok persis.
         const pricelistCode = reg.byName[match.name.trim().toLowerCase()] || codeVal;
@@ -1573,6 +1573,15 @@ window.storage = {
         const entry = pricelistData[itemKey] || pricelistData[fallbackKey];
         if (entry && entry.hargaJual != null) {
           item.price = entry.hargaJual;
+        } else {
+          // Belum pernah disimpan eksplisit di Pricelist (baru sekadar angka default yang
+          // tampil di layar, belum ditekan/diubah user) - pakai rumus yang PERSIS SAMA dengan
+          // yang dihitung & ditampilkan di tab Pricelist: HPP saat ini + markup% (0% kalau belum diatur).
+          const hppNow = computeHPP();
+          const unitCost = hppNow.getCurrentUnitCost(match.name);
+          if (unitCost > 0) {
+            item.price = Math.round(unitCost / 100) * 100;
+          }
         }
       }
       renderForm(type);
