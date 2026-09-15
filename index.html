@@ -1889,18 +1889,29 @@ window.storage = {
     const t = txns.find(x => x.id === id);
     if (!t) return;
     const linkedSvc = findLinkedService(id);
-    const confirmMsg = linkedSvc
-      ? `Transaksi ini terhubung dengan data Service Laptop atas nama "${linkedSvc.customerName}" (${linkedSvc.device}). Menghapusnya akan mengembalikan status service tersebut secara otomatis. Lanjutkan hapus?`
-      : 'Hapus transaksi ini? Tindakan ini tidak bisa dibatalkan.';
+    const pairTxn = t.pairTxnId ? txns.find(x => x.id === t.pairTxnId) : null;
+    let confirmMsg;
+    if (linkedSvc) {
+      confirmMsg = `Transaksi ini terhubung dengan data Service Laptop atas nama "${linkedSvc.customerName}" (${linkedSvc.device}). Menghapusnya akan mengembalikan status service tersebut secara otomatis. Lanjutkan hapus?`;
+    } else if (pairTxn) {
+      const pairLabel = pairTxn.type === 'pembelian' ? 'Pembelian' : 'Penjualan';
+      confirmMsg = `Transaksi ini adalah pasangan hasil migrasi (Penjualan &harr; Pembelian dibuat bersamaan supaya laba rugi balance). Menghapusnya akan otomatis ikut menghapus transaksi ${pairLabel} pasangannya (${rupiah(pairTxn.total)}, ${new Date(pairTxn.createdAt).toLocaleDateString('id-ID')}). Lanjutkan hapus keduanya?`;
+    } else {
+      confirmMsg = 'Hapus transaksi ini? Tindakan ini tidak bisa dibatalkan.';
+    }
     showConfirm(confirmMsg, async () => {
-      showLoadingModal('Menghapus transaksi...');
+      showLoadingModal(pairTxn ? 'Menghapus transaksi & pasangannya...' : 'Menghapus transaksi...');
       try {
         await deleteTxnFromStore(id);
         txns = txns.filter(x => x.id !== id);
+        if (pairTxn) {
+          try { await deleteTxnFromStore(pairTxn.id); } catch (e) { /* mungkin sudah terhapus */ }
+          txns = txns.filter(x => x.id !== pairTxn.id);
+        }
         await syncServiceAfterLinkedTxnDeleted(id);
         closeLoadingModal();
         renderBody();
-        if (!linkedSvc) showToast('Transaksi berhasil dihapus.');
+        if (!linkedSvc) showToast(pairTxn ? 'Transaksi & pasangannya berhasil dihapus.' : 'Transaksi berhasil dihapus.');
       } catch (e) {
         console.error(e);
         closeLoadingModal();
@@ -2322,11 +2333,24 @@ window.storage = {
       if (!selectedTxnIds.size) return;
       const idsArr = Array.from(selectedTxnIds);
       const anyLinked = idsArr.some(id => findLinkedService(id));
+      // Kumpulkan juga pasangan migrasi (pairTxnId) dari transaksi terpilih, supaya ikut terhapus
+      // otomatis dan tetap balance - tanpa dobel kalau pasangannya kebetulan sudah ikut terpilih juga.
+      const idSet = new Set(idsArr);
+      const pairIdsToAdd = [];
+      idsArr.forEach(id => {
+        const t = txns.find(x => x.id === id);
+        if (t && t.pairTxnId && !idSet.has(t.pairTxnId) && txns.some(x => x.id === t.pairTxnId)) {
+          pairIdsToAdd.push(t.pairTxnId);
+          idSet.add(t.pairTxnId);
+        }
+      });
+      const allIds = [...idsArr, ...pairIdsToAdd];
+      const pairNote = pairIdsToAdd.length ? ` Termasuk ${pairIdsToAdd.length} transaksi pasangan migrasi yang ikut dihapus otomatis supaya tetap balance.` : '';
       const confirmMsg = anyLinked
-        ? `Hapus ${idsArr.length} transaksi terpilih? Beberapa di antaranya terhubung ke data Service Laptop dan statusnya akan otomatis dikembalikan. Tindakan ini tidak bisa dibatalkan.`
-        : `Hapus ${idsArr.length} transaksi terpilih? Tindakan ini tidak bisa dibatalkan.`;
+        ? `Hapus ${idsArr.length} transaksi terpilih? Beberapa di antaranya terhubung ke data Service Laptop dan statusnya akan otomatis dikembalikan.${pairNote} Tindakan ini tidak bisa dibatalkan.`
+        : `Hapus ${idsArr.length} transaksi terpilih?${pairNote} Tindakan ini tidak bisa dibatalkan.`;
       showConfirm(confirmMsg, async () => {
-        const ids = Array.from(selectedTxnIds);
+        const ids = allIds;
         showLoadingModal(`Menghapus 0/${ids.length} transaksi...`);
         try {
           let doneCount = 0;
@@ -3214,8 +3238,10 @@ window.storage = {
             code = nextLocalCode(prefix);
           }
           const isLunas = String(status || 'Lunas').trim().toLowerCase() !== 'belum';
+          const purchaseId = uid();
+          const saleId = uid();
           const purchaseTxn = {
-            id: uid(),
+            id: purchaseId,
             type: 'pembelian',
             kodeTransaksi: generateTxnCode('pembelian'),
             items: [{ code, name: String(nama).trim(), qty, unit: 'pcs', price: priceBeli }],
@@ -3223,9 +3249,11 @@ window.storage = {
             supplierName: 'Migrasi data lama',
             createdAt: saleTime - 1000, // 1 detik sebelum penjualan, supaya urutan kronologis benar untuk HPP
             createdBy: currentUser ? currentUser.email : null,
+            pairTxnId: saleId, // ditautkan ke transaksi penjualan pasangannya - kalau salah satu
+                                // dihapus, pasangannya ikut terhapus otomatis supaya tetap balance
           };
           const saleTxn = {
-            id: uid(),
+            id: saleId,
             type: 'penjualan',
             kodeTransaksi: generateTxnCode('penjualan'),
             items: [{ code, name: String(nama).trim(), qty, unit: 'pcs', price: priceJual }],
@@ -3236,6 +3264,7 @@ window.storage = {
             rekening: BANK_ACCOUNTS[0].id,
             createdAt: saleTime,
             createdBy: currentUser ? currentUser.email : null,
+            pairTxnId: purchaseId, // ditautkan balik ke transaksi pembelian pasangannya
           };
           jobs.push(async () => {
             await saveTxn(purchaseTxn);
