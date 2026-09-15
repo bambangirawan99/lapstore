@@ -1638,6 +1638,35 @@ window.storage = {
     }).join('');
   }
 
+  // Dropdown kode barang untuk form PENJUALAN - HANYA berisi kode yang benar-benar terdaftar
+  // di Stok (dari riwayat pembelian/produksi) dan masih ada sisanya, TIDAK BISA diketik manual.
+  // Ini memastikan data penjualan selalu match dengan barang yang benar-benar ada di Stok,
+  // mencegah salah ketik nama/kode yang bikin data penjualan & stok tidak sinkron.
+  function stockItemCodeDropdownOptionsHtml(selectedVal) {
+    const codeReg = getItemCodeRegistry();
+    const stockMap = computeStock();
+    let rows = Object.values(codeReg.byCode)
+      .map(rec => {
+        const stok = stockMap[rec.name.trim().toLowerCase()];
+        const qty = stok ? stok.qty : 0;
+        return { ...rec, qty };
+      })
+      .filter(r => !deletedStokNames.has(r.name.trim().toLowerCase()));
+    // Barang dengan sisa stok > 0 boleh dipilih untuk penjualan baru. Barang yang kebetulan
+    // sedang jadi kode terpilih saat ini (misal lagi edit transaksi lama, stoknya sudah habis
+    // sekarang) tetap ditampilkan supaya tidak hilang dari tampilan, ditandai "stok habis".
+    rows = rows.filter(r => r.qty > 0 || r.code === selectedVal);
+    if (!rows.length) return '<option value="">-- belum ada stok tersedia --</option>';
+    rows.sort((a,b) => a.code.localeCompare(b.code));
+    const laptopRows = rows.filter(r => /^LPSTK/i.test(r.code));
+    const onderdilRows = rows.filter(r => !/^LPSTK/i.test(r.code));
+    const optHtml = (list) => list.map(r => `<option value="${escapeAttr(r.code)}" ${selectedVal===r.code?'selected':''}>${escapeAttr(r.code)} - ${escapeAttr(r.name)} (${r.qty > 0 ? 'sisa '+r.qty.toLocaleString('id-ID') : 'stok habis'})</option>`).join('');
+    let html = `<option value="">-- pilih kode barang dari Stok --</option>`;
+    if (laptopRows.length) html += `<optgroup label="Stock Laptop">${optHtml(laptopRows)}</optgroup>`;
+    if (onderdilRows.length) html += `<optgroup label="Stock Onderdil">${optHtml(onderdilRows)}</optgroup>`;
+    return html;
+  }
+
   // Deteksi kategori dari kata kunci di nama barang (dipakai untuk auto-arahkan dropdown kode
   // saat scan barcode/ketik nama), tapi hasilnya tetap bisa diubah manual oleh pengguna.
   const LAPTOP_KEYWORDS = ['laptop', 'notebook', 'macbook', 'asus', 'lenovo', 'thinkpad', 'acer', 'hp ', 'hp-', 'dell', 'msi', 'axioo', 'toshiba', 'fujitsu', 'huawei', 'gigabyte', 'razer', 'chromebook', 'zenbook', 'ideapad', 'aspire', 'pavilion', 'vivobook'];
@@ -1676,19 +1705,27 @@ window.storage = {
   }
 
   function itemRowHtml(item, type, idx) {
+    const isJual = type === 'penjualan';
     const codeField = type === 'pembelian'
       ? `<select class="f-code" style="border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:12px; font-family:'IBM Plex Mono',monospace; background:#fff;">
           <option value="">-- manual --</option>
           ${itemCodeDropdownOptionsHtml(item.code)}
         </select>`
-      : `<input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />`;
+      : isJual
+        ? `<select class="f-code" style="border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:11.5px; font-family:'IBM Plex Mono',monospace; background:#fff;">
+            ${stockItemCodeDropdownOptionsHtml(item.code)}
+          </select>`
+        : `<input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />`;
+    const nameField = isJual
+      ? `<input class="f-name" value="${escapeAttr(item.name)}" placeholder="Pilih kode dulu" readonly style="background:var(--bg-page); color:var(--ink-soft); cursor:not-allowed;" />`
+      : `<input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama item" list="bk-item-names" />`;
     return `<div class="bk-numbered-row-wrap">
       <div class="bk-row-no">${idx + 1}.</div>
       <div class="bk-item-row" data-id="${item.id}">
       ${codeField}
-      <input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama item" list="bk-item-names" />
+      ${nameField}
       <input class="f-qty" type="number" min="0" value="${escapeAttr(item.qty)}" placeholder="0" />
-      <input class="f-unit" value="${escapeAttr(item.unit||'')}" placeholder="pcs/kg" />
+      <input class="f-unit" value="${escapeAttr(item.unit||'')}" placeholder="pcs/kg" ${isJual ? 'readonly style="background:var(--bg-page); color:var(--ink-soft); cursor:not-allowed;"' : ''} />
       <input class="f-price" type="number" min="0" value="${escapeAttr(item.price)}" placeholder="0" />
       <div class="rm" title="Hapus item">&times;</div>
       </div>
@@ -1723,6 +1760,32 @@ window.storage = {
       const parsed = JSON.parse(clean);
       if (Array.isArray(parsed) && parsed.length) {
         formState[type].items = parsed.map(p => ({ id: uid(), name: p.name || '', qty: p.qty ?? '', unit: p.unit || '', price: p.price ?? '' }));
+        if (type === 'penjualan') {
+          // Coba cocokkan otomatis nama hasil AI ke kode barang yang benar-benar ada di Stok,
+          // supaya dropdown Kode langsung terisi kalau namanya cukup mirip/sama dengan barang
+          // yang tercatat. Kalau tidak ketemu, dibiarkan kosong - user pilih manual dari dropdown.
+          const codeReg = getItemCodeRegistry();
+          const stockMap = computeStock();
+          formState[type].items.forEach(item => {
+            const nameKey = (item.name || '').trim().toLowerCase();
+            const directMatch = codeReg.byName[nameKey];
+            let matchedCode = directMatch || '';
+            if (!matchedCode && nameKey) {
+              // fallback: cari nama stok yang mengandung/dikandung nama hasil AI
+              const found = Object.keys(codeReg.byName).find(k => k.includes(nameKey) || nameKey.includes(k));
+              if (found) matchedCode = codeReg.byName[found];
+            }
+            if (matchedCode) {
+              const rec = codeReg.byCode[matchedCode.toLowerCase()];
+              const stok = rec ? stockMap[rec.name.trim().toLowerCase()] : null;
+              if (rec && stok && stok.qty > 0) {
+                item.code = matchedCode;
+                item.name = rec.name;
+                item.unit = rec.unit;
+              }
+            }
+          });
+        }
         input.value = '';
       }
       renderForm(type);
