@@ -6473,6 +6473,24 @@ window.storage = {
         <div id="bk-svc-link-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
       <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Pindahkan Tanggal Riwayat Service ke Bulan Lain</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Kalau tanggal penyelesaian service (dari migrasi data lama atau salah input) ternyata masuk ke bulan yang salah, alat ini memindahkan tanggal service "Sudah diambil" beserta transaksi pemasukannya ke bulan yang kamu pilih. Urutan waktu antar riwayat (diterima &rarr; diagnosa &rarr; selesai &rarr; diambil) tetap dipertahankan, cuma bulan/tanggalnya yang berubah.</div>
+        <div class="bk-two-col" style="margin-bottom:12px; max-width:460px;">
+          <div class="bk-field" style="margin-bottom:0;">
+            <label>Dari bulan</label>
+            <select id="bk-svc-move-from" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;">
+              ${svcAvailableMonths().map(m => `<option value="${m}">${monthLabel(m)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="bk-field" style="margin-bottom:0;">
+            <label>Ke bulan</label>
+            <input id="bk-svc-move-to" type="month" value="${monthKey(Date.now())}" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff;" />
+          </div>
+        </div>
+        <button class="bk-btn accent" id="bk-svc-move-preview-btn">Cek &amp; Pindahkan</button>
+        <div id="bk-svc-move-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
         <div class="ai-head"><div class="ai-title">Bersihkan Transaksi untuk Barang yang Sudah Dihapus</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Untuk barang yang sudah kamu hapus dari tab Stok, tapi transaksi pembelian/penjualan aslinya masih ikut terhitung di Dashboard/Pengeluaran/Pemasukan. Alat ini <strong>hanya membuang bagian item yang sudah dihapus itu</strong> dari transaksi terkait &mdash; transaksi yang masih ada item lain yang valid TIDAK dihapus seluruhnya, cuma dikurangi bagian yang sudah tidak relevan. Transaksi lain yang tidak terkait barang terhapus sama sekali TIDAK disentuh.</div>
         ${previewBersih.jumlahTransaksiTerpengaruh > 0 ? `
@@ -6520,6 +6538,8 @@ window.storage = {
     if (svcLinkFixBtn) svcLinkFixBtn.addEventListener('click', perbaikiTautanServicePutus);
     const orphanMigrasiFixBtn = document.getElementById('bk-orphan-migrasi-fix-btn');
     if (orphanMigrasiFixBtn) orphanMigrasiFixBtn.addEventListener('click', hapusPembelianMigrasiYatim);
+    const svcMovePreviewBtn = document.getElementById('bk-svc-move-preview-btn');
+    if (svcMovePreviewBtn) svcMovePreviewBtn.addEventListener('click', pindahkanTanggalServiceKeBulan);
     const cleanupBtn = document.getElementById('bk-cleanup-deleted-btn');
     if (cleanupBtn) cleanupBtn.addEventListener('click', bersihkanTransaksiBarangTerhapus);
     const confirmInput = document.getElementById('bk-reset-confirm-text');
@@ -6678,6 +6698,75 @@ window.storage = {
         statusEl.textContent = 'Gagal memperbaiki, coba lagi.';
       }
     });
+  }
+
+  // ---------- PINDAHKAN TANGGAL RIWAYAT SERVICE KE BULAN LAIN ----------
+  // Untuk kasus tanggal salah (migrasi data lama, salah input, dll) - service "Sudah diambil"
+  // beserta transaksi pemasukannya dipindahkan ke bulan target, TAPI urutan waktu antar riwayat
+  // status (diterima -> diagnosa -> selesai -> diambil) tetap dipertahankan (cuma di-shift bareng).
+  async function pindahkanTanggalServiceKeBulan() {
+    if (!requireOwnerForDelete()) return;
+    const fromSel = document.getElementById('bk-svc-move-from');
+    const toInput = document.getElementById('bk-svc-move-to');
+    const statusEl = document.getElementById('bk-svc-move-status');
+    const fromMonth = fromSel.value;
+    const toMonthStr = toInput.value; // format "YYYY-MM" dari <input type="month">
+    if (!fromMonth) { statusEl.style.color = 'var(--money-out)'; statusEl.textContent = 'Belum ada bulan asal untuk dipilih.'; return; }
+    if (!toMonthStr) { statusEl.style.color = 'var(--money-out)'; statusEl.textContent = 'Pilih dulu bulan tujuan.'; return; }
+    if (fromMonth === toMonthStr) { statusEl.style.color = 'var(--money-out)'; statusEl.textContent = 'Bulan asal dan tujuan sama, tidak ada yang perlu dipindah.'; return; }
+    const targets = services.filter(s => s.status === 'diambil' && svcMonthKey(svcCompletedAt(s)) === fromMonth);
+    if (!targets.length) { statusEl.style.color = 'var(--money-out)'; statusEl.textContent = `Tidak ada riwayat service di ${monthLabel(fromMonth)}.`; return; }
+    const totalNilai = targets.reduce((s,x) => s + Number(x.biayaFinal || x.estimasiBiaya || 0), 0);
+    const [toY, toM] = toMonthStr.split('-').map(Number);
+    showConfirm(
+      `Pindahkan <strong>${targets.length}</strong> riwayat service dari <strong>${monthLabel(fromMonth)}</strong> ke <strong>${monthLabel(toMonthStr)}</strong>? Total nilai yang dipindah: <strong>${rupiah(totalNilai)}</strong>. Transaksi pemasukan yang tertaut juga ikut dipindah tanggalnya. Urutan waktu antar riwayat status tetap sama, cuma bulannya berubah.`,
+      async () => {
+        statusEl.style.color = 'var(--ink-soft)';
+        statusEl.textContent = `Memindahkan ${targets.length} riwayat...`;
+        showLoadingModal(`Memindahkan 0/${targets.length} riwayat...`);
+        try {
+          let doneCount = 0;
+          for (const s of targets) {
+            const oldCompleted = svcCompletedAt(s);
+            const oldDate = new Date(oldCompleted);
+            // Tanggal baru: bulan/tahun target, tanggal & jam ASLI dipertahankan supaya urutan
+            // relatif antar service (yang di bulan lama urut per tanggal) tetap masuk akal.
+            // Kalau tanggal aslinya lebih besar dari jumlah hari di bulan target, dibulatkan ke akhir bulan.
+            const daysInTargetMonth = new Date(toY, toM, 0).getDate();
+            const newDay = Math.min(oldDate.getDate(), daysInTargetMonth);
+            const newCompleted = new Date(toY, toM - 1, newDay, oldDate.getHours(), oldDate.getMinutes(), oldDate.getSeconds()).getTime();
+            const deltaMs = newCompleted - oldCompleted;
+            // Shift SEMUA riwayat status dengan delta yang sama, supaya urutan diterima->diagnosa->selesai->diambil tetap valid
+            s.history = (s.history || []).map(h => ({ ...h, at: h.at + deltaMs }));
+            s.createdAt = (s.createdAt || 0) + deltaMs;
+            s.updatedAt = newCompleted;
+            await saveService(s);
+            if (s.linkedTxnId) {
+              const t = txns.find(x => x.id === s.linkedTxnId);
+              if (t) {
+                t.createdAt = newCompleted;
+                await saveTxn(t);
+              }
+            }
+            doneCount++;
+            updateLoadingModal(`Memindahkan ${doneCount}/${targets.length} riwayat...`);
+          }
+          await loadServices();
+          await loadTxns();
+          invalidateStockCaches();
+          closeLoadingModal();
+          renderLaporan();
+          statusEl.style.color = 'var(--money-in)';
+          statusEl.textContent = `${doneCount} riwayat service berhasil dipindah ke ${monthLabel(toMonthStr)}.`;
+          showToast(`${doneCount} riwayat service dipindah ke ${monthLabel(toMonthStr)}.`);
+        } catch (err) {
+          console.error(err);
+          closeLoadingModal();
+          statusEl.style.color = 'var(--money-out)';
+          statusEl.textContent = 'Gagal memindahkan, coba lagi.';
+        }
+      }
+    );
   }
 
   function hitungPreviewBersihkanTerhapus() {
