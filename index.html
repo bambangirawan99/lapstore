@@ -5401,7 +5401,7 @@ window.storage = {
     return XLSX.utils.aoa_to_sheet(aoa);
   }
 
-  function downloadLabaRugiExcel(scopeMonth, scopedTxns, masuk, keluar, hppTotal, labaKotor, bebanFiltered, totalBeban, labaBersih) {
+  function downloadLabaRugiExcel(scopeMonth, scopedTxns, masuk, keluar, hppTotal, labaKotor, bebanFiltered, totalBeban, labaBersih, stokInfo) {
     if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
     const storeName = document.getElementById('bk-storename').value || 'Toko Saya';
     const periodLabel = monthLabel(scopeMonth);
@@ -5437,6 +5437,13 @@ window.storage = {
         ['Rincian beban operasional'],
         ['Kategori', 'Total'],
         ...bebanRows,
+        [],
+      ] : []),
+      ...(stokInfo ? [
+        ['Modal yang masih tertahan di stok (belum terjual) - posisi hari ini'],
+        ['Stok Laptop (belum terjual)', stokInfo.nilaiStokLaptop],
+        ['Stok Onderdil (belum terjual)', stokInfo.nilaiStokOnderdil],
+        ['Total Modal di Stok', stokInfo.nilaiStokTotal],
         [],
       ] : []),
       ['Rincian penjualan per produk'],
@@ -5931,7 +5938,7 @@ window.storage = {
     doc.save(`nota-${(t.kodeTransaksi || t.id.slice(0,8)).replace(/\s+/g,'_')}.pdf`);
   }
 
-  function downloadLabaRugi(scopeMonth, scopedTxns, masuk, keluar, hppTotal, labaKotor, bebanFiltered, totalBeban, labaBersih) {
+  function downloadLabaRugi(scopeMonth, scopedTxns, masuk, keluar, hppTotal, labaKotor, bebanFiltered, totalBeban, labaBersih, stokInfo) {
     if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
@@ -6036,6 +6043,21 @@ window.storage = {
         y += 6.5;
       });
       y += 8;
+    }
+
+    if (stokInfo) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+      doc.text('Modal yang masih tertahan di stok (belum terjual)', 20, y); y += 8;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5);
+      doc.text('Stok Laptop (belum terjual)', 20, y); doc.text(rupiah(stokInfo.nilaiStokLaptop), 190, y, { align: 'right' }); y += 7;
+      doc.text('Stok Onderdil (belum terjual)', 20, y); doc.text(rupiah(stokInfo.nilaiStokOnderdil), 190, y, { align: 'right' }); y += 4;
+      doc.line(140, y, 190, y); y += 6;
+      doc.setFont('helvetica', 'bold');
+      doc.text('Total Modal di Stok', 20, y); doc.text(rupiah(stokInfo.nilaiStokTotal), 190, y, { align: 'right' }); y += 6;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(120);
+      doc.text('Posisi stok HARI INI (bukan per periode) - modal ini belum masuk hitungan Laba Rugi karena barangnya belum terjual.', 20, y); y += 4;
+      doc.setTextColor(30); y += 8;
     }
 
     itemBreakdown('Rincian penjualan per produk', 'penjualan');
@@ -7115,6 +7137,24 @@ window.storage = {
   }
 
   // ---------- LAPORAN LABA RUGI (ringkasan lengkap: Pendapatan, HPP, Laba Kotor, Beban, Laba Bersih) ----------
+  // Nilai stok yang BELUM terjual (modal yang masih "tertahan" di barang) - snapshot HARI INI,
+  // bukan per-bulan, karena ini posisi stok saat ini, bukan transaksi pada suatu periode.
+  function computeNilaiStokBelumTerjual() {
+    const stockMap = computeStock();
+    const hppNow = computeHPP();
+    const codeRegNow = getItemCodeRegistry();
+    let nilaiStokLaptop = 0, nilaiStokOnderdil = 0;
+    Object.values(stockMap).forEach(r => {
+      if (r.qty <= 0 || deletedStokNames.has(r.name.trim().toLowerCase())) return;
+      if (/^Jasa Service Laptop/i.test(r.name)) return;
+      const unitCost = hppNow.getCurrentUnitCost(r.name);
+      const nilai = r.qty * unitCost;
+      const code = codeRegNow.byName[r.name.trim().toLowerCase()] || '';
+      if (/^LPSRV/i.test(code)) nilaiStokOnderdil += nilai; else nilaiStokLaptop += nilai;
+    });
+    return { nilaiStokLaptop, nilaiStokOnderdil, nilaiStokTotal: nilaiStokLaptop + nilaiStokOnderdil };
+  }
+
   function renderLabaRugiHtml() {
     const months = laporanAvailableMonths();
     const mKey = laporanBulan;
@@ -7129,7 +7169,11 @@ window.storage = {
     const bebanRows = Object.entries(bebanMap).sort((a,b) => b[1] - a[1]);
     const penjualanTxns = lr.byMonth.filter(t => t.type === 'penjualan' && !findLinkedService(t.id));
     const pembelianTxns = lr.byMonth.filter(t => t.type === 'pembelian' && !findLinkedService(t.id));
-    const svcIncome = lr.byMonth.filter(t => t.type === 'penjualan' && findLinkedService(t.id)).reduce((s,t) => s + t.total, 0);
+    const svcTxns = lr.byMonth.filter(t => t.type === 'penjualan' && findLinkedService(t.id));
+    const svcIncome = svcTxns.reduce((s,t) => s + t.total, 0);
+    const produkIncome = lr.masuk - svcIncome;
+    const stokInfo = computeNilaiStokBelumTerjual();
+
     return `
       <div class="bk-section-title">Laporan Laba Rugi</div>
       <div class="bk-field" style="max-width:260px;">
@@ -7139,7 +7183,7 @@ window.storage = {
           ${months.map(m => `<option value="${m}" ${mKey===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
       </div>
-      <div class="bk-stats" style="margin-bottom:18px;">
+      <div class="bk-stats" style="margin-bottom:10px;">
         <div class="bk-stat in"><div class="lbl">Pendapatan (Penjualan)</div><div class="val">${rupiah(lr.masuk)}</div></div>
         <div class="bk-stat out"><div class="lbl">HPP</div><div class="val">${rupiah(lr.hppBulan)}</div></div>
         <div class="bk-stat in"><div class="lbl">Laba Kotor</div><div class="val" style="color:${lr.labaKotorBulan>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(lr.labaKotorBulan)}</div></div>
@@ -7147,7 +7191,17 @@ window.storage = {
         <div class="bk-stat in" style="border-width:2px; border-color:${lr.labaBersih>=0?'var(--money-in)':'var(--money-out)'};"><div class="lbl">Laba Bersih</div><div class="val" style="color:${lr.labaBersih>=0?'var(--money-in)':'var(--money-out)'}; font-size:20px;">${rupiah(lr.labaBersih)}</div></div>
         <div class="bk-stat"><div class="lbl">Margin Kotor / Bersih</div><div class="val" style="font-size:15px;">${marginKotor.toFixed(1)}% / ${marginBersih.toFixed(1)}%</div></div>
       </div>
-      ${svcIncome > 0 ? `<div class="bk-stok-note" style="margin-bottom:16px;">Termasuk pendapatan dari Service Laptop (jasa/sparepart) sebesar <strong>${rupiah(svcIncome)}</strong> pada periode ini &mdash; lihat rincian lengkap di tab Service &rarr; Riwayat service.</div>` : ''}
+      <div class="bk-stok-note" style="margin-bottom:18px;">Pendapatan sudah termasuk penjualan produk <strong>dan</strong> pendapatan Service Laptop &mdash; rinciannya: Penjualan produk <strong>${rupiah(produkIncome)}</strong> + Pendapatan Service <strong>${rupiah(svcIncome)}</strong> = ${rupiah(lr.masuk)}. Detail Service lengkap ada di tab Service &rarr; Riwayat service.</div>
+
+      <div class="bk-ai-box" style="border-color:var(--accent); margin-bottom:22px;">
+        <div class="ai-head"><div class="ai-title">Modal yang Masih Tertahan di Stok (Belum Terjual)</div></div>
+        <div class="ai-body" style="margin-bottom:10px;">Ini uang/modal yang sudah dibelanjakan untuk beli barang, tapi barangnya <strong>belum terjual</strong> &mdash; jadi belum masuk hitungan Laba Rugi di atas. Dihitung dari sisa stok saat ini &times; HPP per unit (bukan per-bulan, posisi hari ini).</div>
+        <div class="bk-stats" style="grid-template-columns: repeat(3, 1fr); margin-bottom:0;">
+          <div class="bk-stat out"><div class="lbl">Stok Laptop (belum terjual)</div><div class="val">${rupiah(stokInfo.nilaiStokLaptop)}</div></div>
+          <div class="bk-stat out"><div class="lbl">Stok Onderdil (belum terjual)</div><div class="val">${rupiah(stokInfo.nilaiStokOnderdil)}</div></div>
+          <div class="bk-stat out" style="border-width:2px;"><div class="lbl">Total Modal di Stok</div><div class="val" style="font-size:18px;">${rupiah(stokInfo.nilaiStokTotal)}</div></div>
+        </div>
+      </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:22px;">
         <button class="bk-btn primary" id="bk-lr-pdf-btn">Unduh PDF</button>
         <button class="bk-btn ghost" id="bk-lr-excel-btn">Unduh Excel</button>
@@ -7196,12 +7250,14 @@ window.storage = {
     const pdfBtn = document.getElementById('bk-lr-pdf-btn');
     if (pdfBtn) pdfBtn.addEventListener('click', () => {
       const lr = computeLabaRugiForMonth(laporanBulan);
-      downloadLabaRugi(laporanBulan, lr.byMonth, lr.masuk, lr.keluar, lr.hppBulan, lr.labaKotorBulan, lr.bebanFiltered, lr.totalBeban, lr.labaBersih);
+      const stokInfo = computeNilaiStokBelumTerjual();
+      downloadLabaRugi(laporanBulan, lr.byMonth, lr.masuk, lr.keluar, lr.hppBulan, lr.labaKotorBulan, lr.bebanFiltered, lr.totalBeban, lr.labaBersih, stokInfo);
     });
     const excelBtn = document.getElementById('bk-lr-excel-btn');
     if (excelBtn) excelBtn.addEventListener('click', () => {
       const lr = computeLabaRugiForMonth(laporanBulan);
-      downloadLabaRugiExcel(laporanBulan, lr.byMonth, lr.masuk, lr.keluar, lr.hppBulan, lr.labaKotorBulan, lr.bebanFiltered, lr.totalBeban, lr.labaBersih);
+      const stokInfo = computeNilaiStokBelumTerjual();
+      downloadLabaRugiExcel(laporanBulan, lr.byMonth, lr.masuk, lr.keluar, lr.hppBulan, lr.labaKotorBulan, lr.bebanFiltered, lr.totalBeban, lr.labaBersih, stokInfo);
     });
   }
 
