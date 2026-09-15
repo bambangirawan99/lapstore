@@ -218,7 +218,7 @@ body {
 #bk-root .bk-btn:active { transform: translateY(1px); filter: brightness(.97); }
 #bk-root .bk-btn:disabled { opacity: .5; cursor: default; transform: none; filter: none; }
 
-#bk-root .bk-item-row { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
+#bk-root .bk-item-row { display: grid; grid-template-columns: 260px 1fr 65px 85px 105px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-item-row input {
   border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; font-size: 13px; font-family: 'Inter', sans-serif;
 }
@@ -228,7 +228,7 @@ body {
 #bk-root .bk-row-no { flex-shrink: 0; width: 26px; padding-top: 8px; text-align: right; font-size: 15px; font-weight: 700; color: var(--ink); font-family: 'IBM Plex Mono', monospace; }
 #bk-root .bk-numbered-row-wrap > .bk-item-row,
 #bk-root .bk-numbered-row-wrap > .bk-svc-part-row { flex: 1; min-width: 0; margin-bottom: 0; }
-#bk-root .bk-item-head { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
+#bk-root .bk-item-head { display: grid; grid-template-columns: 260px 1fr 65px 85px 105px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-prod-item-row { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
 #bk-root .bk-svc-part-row { display: grid; grid-template-columns: 80px 1fr 80px 80px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
@@ -1707,12 +1707,12 @@ window.storage = {
   function itemRowHtml(item, type, idx) {
     const isJual = type === 'penjualan';
     const codeField = type === 'pembelian'
-      ? `<select class="f-code" style="border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:12px; font-family:'IBM Plex Mono',monospace; background:#fff;">
+      ? `<select class="f-code" style="width:100%; max-width:100%; box-sizing:border-box; border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:12px; font-family:'IBM Plex Mono',monospace; background:#fff;">
           <option value="">-- manual --</option>
           ${itemCodeDropdownOptionsHtml(item.code)}
         </select>`
       : isJual
-        ? `<select class="f-code" style="border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:11.5px; font-family:'IBM Plex Mono',monospace; background:#fff;">
+        ? `<select class="f-code" style="width:100%; max-width:100%; box-sizing:border-box; border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:11.5px; font-family:'IBM Plex Mono',monospace; background:#fff;">
             ${stockItemCodeDropdownOptionsHtml(item.code)}
           </select>`
         : `<input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />`;
