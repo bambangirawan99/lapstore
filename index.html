@@ -3585,6 +3585,15 @@ window.storage = {
   function pricelistCategoryOf(code) {
     return /^LPSRV/i.test(code || '') ? 'onderdil' : 'barang'; // LPSTK & LPPRD & tanpa kode masuk "barang"
   }
+  function updatePricelistUntungCell(tr, hargaJual, unitCost) {
+    const cell = tr.querySelector('.pricelist-untung-cell');
+    if (!cell) return;
+    const untung = hargaJual - unitCost;
+    const persen = unitCost > 0 ? ((untung / unitCost) * 100).toFixed(1) : '0';
+    cell.style.color = untung >= 0 ? 'var(--money-in)' : 'var(--money-out)';
+    cell.innerHTML = `${rupiah(untung)}<div style="font-size:10px; font-weight:500; color:var(--ink-soft);">${persen}%</div>`;
+  }
+
   function renderPricelist() {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
@@ -3650,6 +3659,7 @@ window.storage = {
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">HPP/unit</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Markup (%)</th>
               <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Harga Jual (dari Stok / bisa ketik manual)</th>
+              <th style="text-align:right; padding:8px 0 8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Untung/unit</th>
             </tr>
           </thead>
           <tbody id="bk-pricelist-tbody">
@@ -3678,6 +3688,10 @@ window.storage = {
                 <td style="padding:6px 0 6px 10px; border-bottom:1px solid var(--line); text-align:right;">
                   <input class="pricelist-hargajual-input" type="number" min="0" step="any" value="${hargaJual}" style="width:100px; text-align:right; border:1.5px solid var(--accent); border-radius:8px; padding:6px 8px; font-size:12.5px; font-family:'IBM Plex Mono',monospace; font-weight:700; color:var(--accent-ink);" />
                 </td>
+                <td class="pricelist-untung-cell" style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700; color:${(hargaJual-unitCost)>=0?'var(--money-in)':'var(--money-out)'};">
+                  ${rupiah(hargaJual - unitCost)}
+                  <div style="font-size:10px; font-weight:500; color:var(--ink-soft);">${unitCost > 0 ? (((hargaJual-unitCost)/unitCost)*100).toFixed(1) : '0'}%</div>
+                </td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -3696,6 +3710,7 @@ window.storage = {
         const markup = Number(e.target.value) || 0;
         const hargaJual = Math.round(unitCost * (1 + markup / 100) / 100) * 100;
         tr.querySelector('.pricelist-hargajual-input').value = hargaJual;
+        updatePricelistUntungCell(tr, hargaJual, unitCost);
         await savePricelistEntry(itemKey, hargaJual, markup);
       });
     });
@@ -3709,6 +3724,7 @@ window.storage = {
         const markup = unitCost > 0 ? ((hargaJual / unitCost) - 1) * 100 : 0;
         const markupRounded = Math.round(markup * 100) / 100;
         tr.querySelector('.pricelist-markup-input').value = markupRounded;
+        updatePricelistUntungCell(tr, hargaJual, unitCost);
         // hargaJual disimpan PERSIS seperti yang diketik, tidak dibulatkan/dihitung ulang
         await savePricelistEntry(itemKey, hargaJual, markupRounded);
       });
@@ -3727,6 +3743,7 @@ window.storage = {
         markupInput.value = defVal;
         const hargaJual = Math.round(unitCost * (1 + defVal / 100) / 100) * 100;
         tr.querySelector('.pricelist-hargajual-input').value = hargaJual;
+        updatePricelistUntungCell(tr, hargaJual, unitCost);
         await savePricelistEntry(tr.dataset.key, hargaJual, defVal);
       }
       showToast(`Markup ${defVal}% diterapkan ke ${trsToUpdate.length} barang.`);
