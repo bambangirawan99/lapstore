@@ -1563,8 +1563,14 @@ window.storage = {
       if (type === 'penjualan') {
         // Harga jual DEFAULT mengikuti Pricelist barang ini (kalau sudah pernah diatur di tab
         // Pricelist), tapi tetap bisa diubah manual sesudahnya - ini cuma nilai awal, bukan kunci.
-        const itemKey = pricelistKeyFor(codeVal, match.name);
-        const entry = pricelistData[itemKey];
+        // PENTING: gunakan metode resolusi kode YANG SAMA PERSIS dengan yang dipakai tab Pricelist
+        // (codeReg.byName, bukan kode hasil pilihan dropdown) supaya key-nya pasti cocok persis.
+        const pricelistCode = reg.byName[match.name.trim().toLowerCase()] || codeVal;
+        const itemKey = pricelistKeyFor(pricelistCode, match.name);
+        // Jalur cadangan: kalau barang ini pernah diberi harga di Pricelist SEBELUM dia punya kode
+        // (key lama berbasis nama), coba juga key berbasis nama saja supaya harga lama tetap ketemu.
+        const fallbackKey = pricelistKeyFor('', match.name);
+        const entry = pricelistData[itemKey] || pricelistData[fallbackKey];
         if (entry && entry.hargaJual != null) {
           item.price = entry.hargaJual;
         }
