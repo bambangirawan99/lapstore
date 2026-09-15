@@ -2222,7 +2222,11 @@ window.storage = {
   function renderRiwayat() {
     const months = availableMonths();
     const byMonth = txns.filter(t => riwayatMonth === 'semua' ? true : monthKey(t.createdAt) === riwayatMonth);
-    const filtered = byMonth.filter(t => riwayatFilter === 'semua' ? true : t.type === riwayatFilter);
+    // Transaksi yang tertaut ke data Service (penjualan jasa, DP, atau sparepart yang dipakai)
+    // TIDAK ditampilkan di daftar Riwayat ini karena sudah bisa dilihat lengkap di tab
+    // Service > Riwayat service. Total keuangan di atas (Pemasukan, HPP, Laba Kotor, PDF/Excel)
+    // TETAP menghitung transaksi ini seperti biasa - yang disaring cuma daftar barisnya saja.
+    const filtered = byMonth.filter(t => (riwayatFilter === 'semua' ? true : t.type === riwayatFilter) && !findLinkedService(t.id));
     const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total, 0);
     const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
     const hppAll = computeHPP();
@@ -2258,6 +2262,7 @@ window.storage = {
         <div class="bk-chip ${riwayatFilter==='pembelian'?'active':''}" data-f="pembelian">Pembelian</div>
         <div class="bk-chip ${riwayatFilter==='produksi'?'active':''}" data-f="produksi">Produksi</div>
       </div>
+      <div class="bk-stok-note" style="margin-top:-6px;">Transaksi dari Service Laptop (jasa, DP, sparepart) tidak ditampilkan di sini karena sudah lengkap di tab <strong>Service &rarr; Riwayat service</strong>. Nilainya tetap terhitung di ringkasan &amp; laporan di atas.</div>
       ${filtered.length && isOwner() ? `<div class="bk-select-bar">
         <label class="bk-select-all">
           <input type="checkbox" id="bk-select-all" ${filtered.length && filtered.every(t=>selectedTxnIds.has(t.id)) ? 'checked' : ''} />
