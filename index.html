@@ -1227,15 +1227,16 @@ window.storage = {
   function auditNoteHtml(record) {
     return record.createdBy ? ` &middot; oleh ${record.createdBy}` : '';
   }
-  function riwayatRowHtml(t, hppData) {
+  function riwayatRowHtml(t, hppData, idx) {
     const checked = selectedTxnIds.has(t.id) ? 'checked' : '';
+    const noBadge = idx != null ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--ink-soft); margin-right:2px;">#${idx + 1}</span>` : '';
     const kodeBadge = t.kodeTransaksi ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-left:6px;">${escapeAttr(t.kodeTransaksi)}</span>` : '';
     if (t.type === 'produksi') {
       return `<div class="bk-list-row-wrap" data-txn="${t.id}">
         <input type="checkbox" class="bk-row-check" ${checked} />
         <div class="bk-list-row">
           <div class="bk-list-left">
-            <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span>${kodeBadge}</div>
+            <div class="nm">${noBadge}Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span>${kodeBadge}</div>
             <div class="sub">${summarizeProduksi(t)}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
           </div>
           <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>
@@ -1265,7 +1266,7 @@ window.storage = {
       <div style="flex:1; min-width:0;">
         <div class="bk-list-row" style="padding:0; border-bottom:none;">
           <div class="bk-list-left">
-            <div class="nm">${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
+            <div class="nm">${noBadge}${isIn ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian bahan baku')} ${badge}${kodeBadge}</div>
             <div class="sub">${names}${ongkirNote}${serviceLinkNoteHtml(t)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')}${auditNoteHtml(t)}</div>
           </div>
           <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(t.total)}</div>
@@ -2283,7 +2284,8 @@ window.storage = {
         </label>
         <button class="bk-btn bk-bulk-del ${selectedTxnIds.size ? 'show' : ''}" id="bk-bulk-del-btn">Hapus terpilih (${selectedTxnIds.size})</button>
       </div>` : ''}
-      <div id="bk-riwayat-list">${filtered.length ? filtered.map(t => riwayatRowHtml(t, hppAll)).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
+      <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${filtered.length.toLocaleString('id-ID')} transaksi ditampilkan${riwayatFilter!=='semua' ? ` (kategori ${riwayatFilter})` : ''}.</div>
+      <div id="bk-riwayat-list">${filtered.length ? filtered.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
     `;
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
     const dlLrBtn = document.getElementById('bk-download-lr');
@@ -4033,7 +4035,7 @@ window.storage = {
         </label>
         <button class="bk-btn bk-bulk-del ${selectedSvcIds.size ? 'show' : ''}" id="bk-svc-bulk-del-btn">Hapus terpilih (${selectedSvcIds.size})</button>
       </div>` : ''}</div>
-      <div id="bk-svc-list">${filtered.length ? filtered.map(serviceCardHtml).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>'}</div>
+      <div id="bk-svc-list">${filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx)).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>'}</div>
     `;
   }
 
@@ -4043,7 +4045,7 @@ window.storage = {
     const q = svcSearchQuery.trim().toLowerCase();
     const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
     const listEl = document.getElementById('bk-svc-list');
-    if (listEl) listEl.innerHTML = filtered.length ? filtered.map(serviceCardHtml).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>';
+    if (listEl) listEl.innerHTML = filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx)).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>';
     const barEl = document.getElementById('bk-svc-select-bar-wrap');
     if (barEl) barEl.innerHTML = filtered.length ? `<div class="bk-select-bar">
         <label class="bk-select-all">
@@ -4505,7 +4507,7 @@ window.storage = {
     }
   }
 
-  function serviceCardHtml(s) {
+  function serviceCardHtml(s, idx) {
     const badge = `<span class="bk-svc-badge ${s.status}">${serviceStatusLabel(s.status)}</span>`;
     let actionHtml = '';
     if (s.status === 'diterima') {
@@ -4592,6 +4594,7 @@ window.storage = {
     return `<div class="bk-svc-card" data-svc="${s.id}">
       <div class="bk-svc-top">
         <input type="checkbox" class="bk-row-check bk-svc-check" data-id="${s.id}" style="margin-top:3px; flex-shrink:0;" ${selectedSvcIds.has(s.id) ? 'checked' : ''} />
+        ${idx != null ? `<span class="mono" style="flex-shrink:0; font-size:10px; font-weight:700; color:var(--ink-soft); padding-top:4px;">#${idx + 1}</span>` : ''}
         <div style="flex:1; min-width:0;">
           ${topInfoHtml}
         </div>
