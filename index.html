@@ -6642,6 +6642,7 @@ window.storage = {
       const statusEl = document.getElementById('bk-svc-link-status');
       statusEl.style.color = 'var(--ink-soft)';
       statusEl.textContent = `Memperbaiki ${orphans.length} tautan...`;
+      showLoadingModal(`Memperbaiki 0/${orphans.length} tautan...`);
       try {
         const jobFns = orphans.map(s => async () => {
           const biaya = Number(s.biayaFinal || s.estimasiBiaya || 0);
@@ -6663,14 +6664,16 @@ window.storage = {
           s.linkedTxnId = txn.id;
           await saveService(s);
         });
-        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Memproses... (${done}/${total})`; });
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Memproses... (${done}/${total})`; updateLoadingModal(`Memperbaiki ${done}/${total} tautan...`); });
         await loadTxns();
         await loadServices();
         invalidateStockCaches();
+        closeLoadingModal();
         renderLaporan();
         showToast(`${orphans.length} tautan service berhasil diperbaiki. Pendapatan sekarang muncul lagi di laporan keuangan.`);
       } catch (err) {
         console.error(err);
+        closeLoadingModal();
         statusEl.style.color = 'var(--money-out)';
         statusEl.textContent = 'Gagal memperbaiki, coba lagi.';
       }
