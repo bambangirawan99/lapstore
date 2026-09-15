@@ -512,8 +512,21 @@ window.storage = {
     return { key, value: data.value, shared: true };
   },
   async set(key, value) {
-    const { error } = await sbClient.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() });
+    // PENTING: sama seperti delete() di bawah - Supabase bisa mengembalikan "tidak ada error"
+    // walau baris SEBENARNYA tidak tersimpan (misal diam-diam diblokir kebijakan akses/RLS,
+    // atau sesi login sempat kedaluwarsa saat itu). Kalau kita cuma percaya absennya error,
+    // data yang "berhasil disimpan" bisa hilang begitu dimuat ulang dari server - ini
+    // penyebab kasus migrasi/transaksi yang terlihat sukses tapi tidak masuk ke laporan.
+    // Sekarang kita minta baris yang benar-benar tersimpan dikembalikan (.select()), lalu
+    // verifikasi ulang kalau kosong.
+    const { data, error } = await sbClient.from('kv_store').upsert({ key, value, updated_at: new Date().toISOString() }).select('key');
     if (error) throw error;
+    if (!data || data.length === 0) {
+      const check = await sbClient.from('kv_store').select('key').eq('key', key).maybeSingle();
+      if (!check.data) {
+        throw new Error('Simpan DITOLAK server (data tidak tersimpan, kemungkinan kebijakan akses/RLS memblokir INSERT/UPDATE, atau sesi login kedaluwarsa). key: ' + key);
+      }
+    }
     return { key, value, shared: true };
   },
   async delete(key) {
