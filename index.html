@@ -1864,14 +1864,17 @@ window.storage = {
       ? `Transaksi ini terhubung dengan data Service Laptop atas nama "${linkedSvc.customerName}" (${linkedSvc.device}). Menghapusnya akan mengembalikan status service tersebut secara otomatis. Lanjutkan hapus?`
       : 'Hapus transaksi ini? Tindakan ini tidak bisa dibatalkan.';
     showConfirm(confirmMsg, async () => {
+      showLoadingModal('Menghapus transaksi...');
       try {
         await deleteTxnFromStore(id);
         txns = txns.filter(x => x.id !== id);
         await syncServiceAfterLinkedTxnDeleted(id);
+        closeLoadingModal();
         renderBody();
         if (!linkedSvc) showToast('Transaksi berhasil dihapus.');
       } catch (e) {
         console.error(e);
+        closeLoadingModal();
         showToast('Gagal menghapus transaksi, coba lagi.');
       }
     });
@@ -2289,17 +2292,23 @@ window.storage = {
         : `Hapus ${idsArr.length} transaksi terpilih? Tindakan ini tidak bisa dibatalkan.`;
       showConfirm(confirmMsg, async () => {
         const ids = Array.from(selectedTxnIds);
+        showLoadingModal(`Menghapus 0/${ids.length} transaksi...`);
         try {
+          let doneCount = 0;
           for (const id of ids) {
             await deleteTxnFromStore(id);
             txns = txns.filter(x => x.id !== id);
             await syncServiceAfterLinkedTxnDeleted(id);
+            doneCount++;
+            updateLoadingModal(`Menghapus ${doneCount}/${ids.length} transaksi...`);
           }
           selectedTxnIds.clear();
+          closeLoadingModal();
           renderRiwayat();
           showToast(`${ids.length} transaksi berhasil dihapus.`);
         } catch (e) {
           console.error(e);
+          closeLoadingModal();
           showToast('Sebagian transaksi gagal dihapus, coba lagi.');
           await loadTxns();
           renderRiwayat();
@@ -2821,6 +2830,7 @@ window.storage = {
   async function hapusStokItem(name, qty, unit) {
     if (!requireOwnerForDelete()) return;
     showConfirm(`Hapus "${name}" sepenuhnya (nama, kode, dan sisa stok ${qty.toLocaleString('id-ID')} ${unit||''})? Item ini tidak akan muncul lagi di Stok, Pricelist, atau dropdown mana pun. Riwayat transaksi lama TIDAK dihapus (untuk jejak audit), tapi item ini bersih dari sistem ke depannya.`, async () => {
+      showLoadingModal(`Menghapus "${name}"...`);
       try {
         const codeReg = getItemCodeRegistry();
         const code = codeReg.byName[name.trim().toLowerCase()] || '';
@@ -2843,10 +2853,12 @@ window.storage = {
         }
         await markStokNamesDeleted([name]);
         _itemCodeRegistryCache = null; // paksa hitung ulang registry supaya item ini langsung hilang
+        closeLoadingModal();
         renderStok();
         showToast(`"${name}" berhasil dihapus sepenuhnya dari sistem.`);
       } catch (e) {
         console.error(e);
+        closeLoadingModal();
         showToast('Gagal menghapus stok, coba lagi.');
       }
     });
@@ -2860,6 +2872,7 @@ window.storage = {
     const withStock = targets.filter(r => r.qty > 0);
     const daftar = targets.map(r => `${r.name} (${r.qty.toLocaleString('id-ID')} ${r.unit||''})`).join(', ');
     showConfirm(`Hapus ${targets.length} item terpilih sepenuhnya (nama, kode, dan sisa stok): ${daftar}? Item-item ini tidak akan muncul lagi di Stok, Pricelist, atau dropdown mana pun. Riwayat transaksi lama TIDAK dihapus (untuk jejak audit).`, async () => {
+      showLoadingModal(`Menghapus ${targets.length} item...`);
       try {
         const codeReg = getItemCodeRegistry();
         if (withStock.length) {
@@ -2886,10 +2899,12 @@ window.storage = {
         await markStokNamesDeleted(targets.map(r => r.name));
         _itemCodeRegistryCache = null; // paksa hitung ulang registry supaya item-item ini langsung hilang
         selectedStokNames.clear();
+        closeLoadingModal();
         renderStok();
         showToast(`${targets.length} item berhasil dihapus sepenuhnya dari sistem.`);
       } catch (e) {
         console.error(e);
+        closeLoadingModal();
         showToast('Gagal menghapus stok terpilih, coba lagi.');
       }
     });
@@ -2969,37 +2984,63 @@ window.storage = {
         const laptopItems = validItems.filter(i => i._isLaptop).map(stripFlag);
         const sparepartItems = validItems.filter(i => !i._isLaptop).map(stripFlag);
 
-        const createdTxns = [];
-        if (laptopItems.length) {
-          const totalLaptop = laptopItems.reduce((s,i) => s + i.qty * i.price, 0);
-          createdTxns.push({
-            id: uid(), type: 'pembelian', kodeTransaksi: generateTxnCode('pembelian'),
-            items: laptopItems, total: totalLaptop, supplierName: 'Import Excel - Stock Laptop',
-            createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null,
-          });
-        }
-        if (sparepartItems.length) {
-          const totalSparepart = sparepartItems.reduce((s,i) => s + i.qty * i.price, 0);
-          createdTxns.push({
-            id: uid(), type: 'pembelian', kodeTransaksi: generateTxnCode('pembelian'),
-            items: sparepartItems, total: totalSparepart, supplierName: 'Import Excel - Stock Sparepart/Logistik',
-            createdAt: Date.now() + 1, createdBy: currentUser ? currentUser.email : null,
-          });
-        }
-        await Promise.all(createdTxns.map(t => saveTxn(t)));
-        createdTxns.forEach(t => txns.unshift(t));
-        await autoReviveStokNames(validItems.map(i => i.name));
-        if (pricelistJobs.length) {
-          const priceResults = await runJobsInChunks(pricelistJobs.map(j => () => savePricelistEntry(j.itemKey, j.hargaJual, j.markup)));
-          priceResults.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan harga jual:', r.reason); });
-        }
-        renderStok();
-        const errNote = errors.length ? ` (${errors.length} baris dilewati karena data tidak valid: ${errors.slice(0,3).join('; ')}${errors.length>3?', dst':''})` : '';
-        const parts = [];
-        if (laptopItems.length) parts.push(`${laptopItems.length} barang Laptop`);
-        if (sparepartItems.length) parts.push(`${sparepartItems.length} barang Sparepart/Logistik`);
-        const priceNote = pricelistJobs.length ? ` Harga jual untuk ${pricelistJobs.length} barang otomatis masuk ke Pricelist.` : '';
-        showToast(`Berhasil diimpor ke Stok: ${parts.join(' & ')}${errNote}.${priceNote}`);
+        statusEl.textContent = `${validItems.length} baris siap diupload. Menunggu konfirmasi...`;
+        const errLines = errors.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (errors.length > 5 ? `<br/>...dan ${errors.length - 5} lainnya` : '');
+        const errPreview = errors.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">${errors.length} baris akan dilewati (format tidak valid):<br/>${errLines}</span>` : '';
+        const partsPreview = [];
+        if (laptopItems.length) partsPreview.push(`${laptopItems.length} barang Laptop`);
+        if (sparepartItems.length) partsPreview.push(`${sparepartItems.length} barang Sparepart/Logistik`);
+        showConfirm(
+          `Ditemukan <strong>${validItems.length}</strong> barang valid (${partsPreview.join(' &amp; ')}).${errPreview}<br/><br/>Semua akan langsung masuk ke Stok sebagai transaksi pembelian.<br/><br/>Lanjutkan upload?`,
+          async () => {
+            showLoadingModal(`Menyimpan ${validItems.length} barang ke Stok...`);
+            try {
+              const createdTxns = [];
+              if (laptopItems.length) {
+                const totalLaptop = laptopItems.reduce((s,i) => s + i.qty * i.price, 0);
+                createdTxns.push({
+                  id: uid(), type: 'pembelian', kodeTransaksi: generateTxnCode('pembelian'),
+                  items: laptopItems, total: totalLaptop, supplierName: 'Import Excel - Stock Laptop',
+                  createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null,
+                });
+              }
+              if (sparepartItems.length) {
+                const totalSparepart = sparepartItems.reduce((s,i) => s + i.qty * i.price, 0);
+                createdTxns.push({
+                  id: uid(), type: 'pembelian', kodeTransaksi: generateTxnCode('pembelian'),
+                  items: sparepartItems, total: totalSparepart, supplierName: 'Import Excel - Stock Sparepart/Logistik',
+                  createdAt: Date.now() + 1, createdBy: currentUser ? currentUser.email : null,
+                });
+              }
+              await Promise.all(createdTxns.map(t => saveTxn(t)));
+              createdTxns.forEach(t => txns.unshift(t));
+              updateLoadingModal('Menyelaraskan data stok...');
+              await autoReviveStokNames(validItems.map(i => i.name));
+              if (pricelistJobs.length) {
+                updateLoadingModal(`Menyimpan harga jual (${pricelistJobs.length} item)...`);
+                const priceResults = await runJobsInChunks(pricelistJobs.map(j => () => savePricelistEntry(j.itemKey, j.hargaJual, j.markup)), (done, total) => {
+                  updateLoadingModal(`Menyimpan harga jual... (${done}/${total})`);
+                });
+                priceResults.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan harga jual:', r.reason); });
+              }
+              closeLoadingModal();
+              renderStok();
+              const errNote = errors.length ? `\n${errors.length} baris dilewati karena data tidak valid.` : '';
+              const priceNote = pricelistJobs.length ? `\nHarga jual untuk ${pricelistJobs.length} barang otomatis masuk ke Pricelist.` : '';
+              const resultMsg = `Berhasil diimpor ke Stok: ${partsPreview.join(' & ')}.${errNote}${priceNote}`;
+              statusEl.textContent = resultMsg.replace(/\n/g, ' ');
+              statusEl.style.color = 'var(--money-in)';
+              showResultModal('Upload stok berhasil', resultMsg);
+            } catch (err) {
+              closeLoadingModal();
+              console.error(err);
+              statusEl.textContent = 'Gagal menyimpan ke Stok. Coba lagi.';
+              statusEl.style.color = 'var(--money-out)';
+              showResultModal('Upload gagal', 'Terjadi kesalahan saat menyimpan data. Coba upload ulang file yang sama.');
+            }
+          },
+          () => { statusEl.textContent = 'Upload dibatalkan.'; statusEl.style.color = 'var(--ink-soft)'; }
+        );
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
@@ -3327,22 +3368,44 @@ window.storage = {
           statusEl.style.color = 'var(--money-out)';
           return;
         }
-        statusEl.textContent = `Memproses ${jobs.length} baris...`;
-        const results = await runJobsInChunks(jobs, (done, total) => {
-          statusEl.textContent = `Memproses baris... (${done}/${total})`;
-        });
-        const failedCount = results.filter(r => r.status === 'rejected').length;
-        results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan baris service:', r.reason); });
-        const actualSuccess = jobs.length - failedCount;
-        txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-        services.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-        const errNote = errors.length ? ` ${errors.length} baris dilewati (format tidak valid).` : '';
-        const failNote = failedCount ? ` ${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
-        showToast(`${actualSuccess} riwayat service lama berhasil dimigrasi.${errNote}${failNote} Langsung masuk ke laporan keuangan.`);
-        svcView = 'riwayat';
-        activeTab = 'service';
-        renderTabs();
-        renderBody();
+        statusEl.textContent = `${jobs.length} baris siap dimigrasi. Menunggu konfirmasi...`;
+        const errLines = errors.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (errors.length > 5 ? `<br/>...dan ${errors.length - 5} lainnya` : '');
+        const errPreview = errors.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">${errors.length} baris akan dilewati (format tidak valid):<br/>${errLines}</span>` : '';
+        showConfirm(
+          `Ditemukan <strong>${jobs.length}</strong> riwayat service lama yang valid di file ini.${errPreview}<br/><br/>Setiap baris akan dicatat sebagai data Service "Sudah diambil" sekaligus transaksi pemasukan, langsung masuk ke laporan keuangan.<br/><br/>Lanjutkan migrasi?`,
+          async () => {
+            showLoadingModal(`Memproses 0/${jobs.length} baris...`);
+            statusEl.textContent = `Memproses ${jobs.length} baris...`;
+            try {
+              const results = await runJobsInChunks(jobs, (done, total) => {
+                updateLoadingModal(`Memproses ${done}/${total} baris...`);
+                statusEl.textContent = `Memproses baris... (${done}/${total})`;
+              });
+              const failedCount = results.filter(r => r.status === 'rejected').length;
+              results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan baris service:', r.reason); });
+              const actualSuccess = jobs.length - failedCount;
+              txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+              services.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+              closeLoadingModal();
+              const errNote = errors.length ? `\n${errors.length} baris dilewati (format tidak valid).` : '';
+              const failNote = failedCount ? `\n${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
+              statusEl.textContent = `${actualSuccess} baris berhasil dimigrasi.${errNote}${failNote}`;
+              statusEl.style.color = failedCount ? 'var(--money-out)' : 'var(--money-in)';
+              showResultModal(
+                failedCount ? 'Migrasi selesai (sebagian gagal)' : 'Migrasi berhasil',
+                `${actualSuccess} riwayat service lama berhasil dimigrasi.${errNote}${failNote}\nLangsung masuk ke laporan keuangan.`,
+                () => { svcView = 'riwayat'; activeTab = 'service'; renderTabs(); renderBody(); }
+              );
+            } catch (err) {
+              closeLoadingModal();
+              console.error(err);
+              statusEl.textContent = 'Gagal memproses migrasi. Coba lagi.';
+              statusEl.style.color = 'var(--money-out)';
+              showResultModal('Migrasi gagal', 'Terjadi kesalahan saat menyimpan data. Coba upload ulang file yang sama - baris yang sudah berhasil tidak akan dobel.');
+            }
+          },
+          () => { statusEl.textContent = 'Migrasi dibatalkan.'; statusEl.style.color = 'var(--ink-soft)'; }
+        );
       } catch (err) {
         console.error(err);
         statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
@@ -4124,12 +4187,14 @@ window.storage = {
       if (!requireOwnerForDelete()) return;
       const id = b.dataset.id;
       showConfirm('Hapus tagihan manual ini?', async () => {
+        showLoadingModal('Menghapus tagihan...');
         try {
           await deleteManualTagihanFromStore(id);
           manualTagihan = manualTagihan.filter(x => x.id !== id);
+          closeLoadingModal();
           refreshFn();
           showToast('Tagihan manual dihapus.');
-        } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+        } catch (e) { console.error(e); closeLoadingModal(); showToast('Gagal menghapus, coba lagi.'); }
       });
     }));
   }
@@ -4579,6 +4644,7 @@ window.storage = {
       const s = services.find(x => x.id === id);
       if (!s) return;
       showConfirm(`Batalkan DP sebesar ${rupiah(s.dpAmount)}? Transaksi pemasukan DP ini akan ikut dihapus.`, async () => {
+        showLoadingModal('Membatalkan DP...');
         try {
           if (s.dpTxnId) {
             try { await deleteTxnFromStore(s.dpTxnId); } catch (e) { /* mungkin sudah terhapus */ }
@@ -4590,10 +4656,12 @@ window.storage = {
           s.history = s.history || [];
           s.history.push({ status: 'DP dibatalkan', at: Date.now() });
           await saveService(s);
+          closeLoadingModal();
           renderService();
           showToast('DP dibatalkan.');
         } catch (e) {
           console.error(e);
+          closeLoadingModal();
           showToast('Gagal membatalkan DP, coba lagi.');
         }
       });
@@ -4853,6 +4921,7 @@ window.storage = {
     const s = services.find(x => x.id === id);
     if (!s) return;
     showConfirm('Hapus data service ini? Kalau ada transaksi pemasukan terkait, transaksi itu juga akan ikut terhapus.', async () => {
+      showLoadingModal('Menghapus data service...');
       try {
         if (s.linkedTxnId) {
           try { await deleteTxnFromStore(s.linkedTxnId); } catch (e) { /* mungkin sudah terhapus */ }
@@ -4868,10 +4937,12 @@ window.storage = {
         }
         await deleteServiceFromStore(id);
         services = services.filter(x => x.id !== id);
+        closeLoadingModal();
         renderService();
         showToast('Data service dihapus.');
       } catch (e) {
         console.error(e);
+        closeLoadingModal();
         showToast('Gagal menghapus data service, coba lagi.');
       }
     });
@@ -6153,6 +6224,7 @@ window.storage = {
       const statusEl = document.getElementById('bk-cleanup-status');
       statusEl.style.color = 'var(--ink-soft)';
       statusEl.textContent = 'Membersihkan...';
+      showLoadingModal('Membersihkan data...');
       try {
         const toDelete = [];
         const toUpdate = [];
@@ -6172,13 +6244,15 @@ window.storage = {
           ...toDelete.map(id => () => deleteTxnFromStore(id)),
           ...toUpdate.map(t => () => saveTxn(t)),
         ];
-        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Memproses... (${done}/${total})`; });
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Memproses... (${done}/${total})`; updateLoadingModal(`Memproses ${done}/${total}...`); });
         await loadTxns();
         invalidateStockCaches();
+        closeLoadingModal();
         renderLaporan();
         showToast(`Berhasil dibersihkan: ${preview.jumlahItemDihapus.toLocaleString('id-ID')} item (${rupiah(preview.totalNilaiDihapus)}) dari ${preview.jumlahTransaksiTerpengaruh.toLocaleString('id-ID')} transaksi.`);
       } catch (err) {
         console.error(err);
+        closeLoadingModal();
         statusEl.style.color = 'var(--money-out)';
         statusEl.textContent = 'Gagal membersihkan, coba lagi.';
       }
@@ -6192,15 +6266,18 @@ window.storage = {
       const statusEl = document.getElementById('bk-reset-status');
       statusEl.style.color = 'var(--ink-soft)';
       statusEl.textContent = `Menghapus ${targets.length} transaksi...`;
+      showLoadingModal(`Menghapus 0/${targets.length} transaksi...`);
       try {
         const jobFns = targets.map(t => async () => { await deleteTxnFromStore(t.id); });
-        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Menghapus... (${done}/${total})`; });
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Menghapus... (${done}/${total})`; updateLoadingModal(`Menghapus ${done}/${total} transaksi...`); });
         await loadTxns();
         invalidateStockCaches();
+        closeLoadingModal();
         renderLaporan();
         showToast(`${targets.length} transaksi berhasil dihapus. Silakan upload stok yang benar lewat tab Migrasi Data.`);
       } catch (err) {
         console.error(err);
+        closeLoadingModal();
         statusEl.style.color = 'var(--money-out)';
         statusEl.textContent = 'Terjadi kesalahan saat menghapus. Coba lagi.';
       }
@@ -6222,6 +6299,7 @@ window.storage = {
       const statusEl = document.getElementById('bk-reset-all-status');
       statusEl.style.color = 'var(--ink-soft)';
       statusEl.textContent = `Menghapus ${totalSemua} catatan...`;
+      showLoadingModal(`Menghapus 0/${totalSemua} catatan...`);
       try {
         const jobFns = [
           ...targetTxns.map(t => () => deleteTxnFromStore(t.id)),
@@ -6233,11 +6311,12 @@ window.storage = {
           ...targetTagihan.map(m => () => deleteManualTagihanFromStore(m.id)),
           ...pricelistKeys.map(k => () => window.storage.delete('pricelist:' + k, true)),
         ];
-        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Menghapus... (${done}/${total})`; });
+        await runJobsInChunks(jobFns, (done, total) => { statusEl.textContent = `Menghapus... (${done}/${total})`; updateLoadingModal(`Menghapus ${done}/${total} catatan...`); });
         // Kosongkan juga daftar barang yang sudah dihapus (tidak relevan lagi setelah reset total)
         deletedStokNames = new Set();
         await saveDeletedStokNames();
         // Muat ulang semua koleksi dari server supaya state lokal benar-benar bersih
+        updateLoadingModal('Memuat ulang data...');
         await loadTxns();
         await loadBeban();
         await loadClosings();
@@ -6247,10 +6326,12 @@ window.storage = {
         await loadManualTagihan();
         await loadPricelistData();
         invalidateStockCaches();
+        closeLoadingModal();
         renderLaporan();
         showToast(`${totalSemua} catatan berhasil dihapus. Data Service Laptop tetap aman. Silakan upload stok yang benar lewat tab Migrasi Data.`);
       } catch (err) {
         console.error(err);
+        closeLoadingModal();
         statusEl.style.color = 'var(--money-out)';
         statusEl.textContent = 'Terjadi kesalahan saat menghapus. Coba lagi.';
       }
@@ -6294,16 +6375,21 @@ window.storage = {
       showConfirm(`File backup dari ${backup.exportedAt ? new Date(backup.exportedAt).toLocaleString('id-ID') : 'tanggal tidak diketahui'} berisi ${counts.txns} transaksi, ${counts.services} service, ${counts.beban} beban, ${counts.utang} utang (dan data lain). Data ini akan dipulihkan ke database sekarang. Lanjutkan?`, async () => {
         statusEl.style.color = 'var(--ink-soft)';
         statusEl.textContent = 'Memulihkan data, mohon tunggu...';
+        showLoadingModal('Memulihkan data dari backup...');
         try {
           await restoreFullBackup(backup);
+          updateLoadingModal('Memuat ulang data...');
           statusEl.style.color = 'var(--money-in)';
           statusEl.textContent = 'Backup berhasil dipulihkan!';
-          showToast('Data berhasil dipulihkan dari backup.');
           await refreshDataForced();
+          closeLoadingModal();
+          showResultModal('Restore berhasil', `Data berhasil dipulihkan dari backup:\n${counts.txns} transaksi, ${counts.services} service, ${counts.beban} beban, ${counts.utang} utang (dan data lain).`);
         } catch (err) {
           console.error(err);
+          closeLoadingModal();
           statusEl.style.color = 'var(--money-out)';
           statusEl.textContent = 'Terjadi kesalahan saat memulihkan data. Coba lagi.';
+          showResultModal('Restore gagal', 'Terjadi kesalahan saat memulihkan data dari backup. Coba lagi.');
         } finally {
           e.target.value = '';
         }
@@ -6543,12 +6629,14 @@ window.storage = {
       const delBtn = w.querySelector('.modal-entry-del-btn');
       if (delBtn) delBtn.addEventListener('click', () => {
         showConfirm('Hapus setoran modal ini? Ini akan mempengaruhi perhitungan Kas dan Neraca.', async () => {
+          showLoadingModal('Menghapus setoran modal...');
           try {
             await deleteModalEntryFromStore(id);
             modalEntries = modalEntries.filter(m => m.id !== id);
+            closeLoadingModal();
             renderLaporan();
             showToast('Setoran modal dihapus.');
-          } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+          } catch (e) { console.error(e); closeLoadingModal(); showToast('Gagal menghapus, coba lagi.'); }
         });
       });
     });
@@ -6569,12 +6657,14 @@ window.storage = {
       const id = w.dataset.closing;
       w.querySelector('.closing-del-btn').addEventListener('click', () => {
         showConfirm('Hapus snapshot tutup buku ini?', async () => {
+          showLoadingModal('Menghapus snapshot...');
           try {
             await deleteClosingFromStore(id);
             closings = closings.filter(c => c.id !== id);
+            closeLoadingModal();
             renderLaporan();
             showToast('Snapshot dihapus.');
-          } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+          } catch (e) { console.error(e); closeLoadingModal(); showToast('Gagal menghapus, coba lagi.'); }
         });
       });
     });
@@ -6657,15 +6747,17 @@ window.storage = {
       const delBtn = card.querySelector('.utang-del-btn');
       if (delBtn) delBtn.addEventListener('click', () => {
         showConfirm('Hapus catatan utang ini beserta seluruh riwayat pembayarannya? Ini akan mempengaruhi perhitungan Kas.', async () => {
+          showLoadingModal('Menghapus catatan utang...');
           try {
             await deleteUtangFromStore(id);
             utangList = utangList.filter(u => u.id !== id);
             const related = utangPayments.filter(p => p.utangId === id);
             for (const p of related) { await deleteUtangPaymentFromStore(p.id); }
             utangPayments = utangPayments.filter(p => p.utangId !== id);
+            closeLoadingModal();
             renderLaporan();
             showToast('Utang dihapus.');
-          } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+          } catch (e) { console.error(e); closeLoadingModal(); showToast('Gagal menghapus, coba lagi.'); }
         });
       });
       const bayarBtn = card.querySelector('.utang-bayar-btn');
@@ -6776,12 +6868,14 @@ window.storage = {
       });
       w.querySelector('.beban-del-btn').addEventListener('click', () => {
         showConfirm('Hapus catatan beban ini?', async () => {
+          showLoadingModal('Menghapus catatan beban...');
           try {
             await deleteBebanFromStore(id);
             bebanList = bebanList.filter(b => b.id !== id);
+            closeLoadingModal();
             renderLaporan();
             showToast('Beban dihapus.');
-          } catch (e) { console.error(e); showToast('Gagal menghapus, coba lagi.'); }
+          } catch (e) { console.error(e); closeLoadingModal(); showToast('Gagal menghapus, coba lagi.'); }
         });
       });
     });
@@ -6928,13 +7022,16 @@ window.storage = {
       const wrap = btn.closest('[data-id]');
       const id = wrap.dataset.id;
       showConfirm('Hapus catatan pemindahan dana ini? Saldo per rekening akan dihitung ulang tanpa pemindahan ini.', async () => {
+        showLoadingModal('Menghapus catatan...');
         try {
           await deleteTransferFromStore(id);
           transferRekening = transferRekening.filter(x => x.id !== id);
+          closeLoadingModal();
           renderLaporan();
           showToast('Catatan pemindahan dana dihapus.');
         } catch (e) {
           console.error(e);
+          closeLoadingModal();
           showToast('Gagal menghapus, coba lagi.');
         }
       });
