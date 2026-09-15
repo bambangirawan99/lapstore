@@ -225,7 +225,7 @@ body {
 #bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
 #bk-root .bk-numbered-row-wrap { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
-#bk-root .bk-numbered-row-wrap > .bk-row-no { flex-shrink: 0; width: 20px; padding-top: 9px; text-align: right; font-size: 11px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; }
+#bk-root .bk-numbered-row-wrap > .bk-row-no { flex-shrink: 0; width: 26px; padding-top: 8px; text-align: right; font-size: 15px; font-weight: 700; color: var(--ink); font-family: 'IBM Plex Mono', monospace; }
 #bk-root .bk-numbered-row-wrap > .bk-item-row,
 #bk-root .bk-numbered-row-wrap > .bk-svc-part-row { flex: 1; min-width: 0; margin-bottom: 0; }
 #bk-root .bk-item-head { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
@@ -1229,7 +1229,7 @@ window.storage = {
   }
   function riwayatRowHtml(t, hppData, idx) {
     const checked = selectedTxnIds.has(t.id) ? 'checked' : '';
-    const noBadge = idx != null ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--ink-soft); margin-right:2px;">#${idx + 1}</span>` : '';
+    const noBadge = idx != null ? `<span class="mono" style="font-size:14px; font-weight:700; color:var(--ink); margin-right:4px;">#${idx + 1}</span>` : '';
     const kodeBadge = t.kodeTransaksi ? `<span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px; margin-left:6px;">${escapeAttr(t.kodeTransaksi)}</span>` : '';
     if (t.type === 'produksi') {
       return `<div class="bk-list-row-wrap" data-txn="${t.id}">
@@ -2673,7 +2673,7 @@ window.storage = {
               const displayQty = pending ? pending.newQty : r.qty;
               return `<tr>
                 ${isOwner() ? `<td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line);"><input type="checkbox" class="bk-row-check stok-row-check" data-name="${escapeAttr(r.name)}" ${checked} /></td>` : ''}
-                <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;">${idx + 1}</td>
+                <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:700;">${idx + 1}</td>
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}
                   ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; white-space:normal;">${escapeAttr(spec)}</div>` : ''}
@@ -3537,7 +3537,7 @@ window.storage = {
               const markup = entry ? (Number(entry.markup) || 0) : 0;
               const hargaJual = (entry && entry.hargaJual != null) ? Number(entry.hargaJual) : Math.round(unitCost * (1 + markup / 100) / 100) * 100;
               return `<tr data-key="${itemKey}" data-cost="${unitCost}">
-                <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;">${idx + 1}</td>
+                <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:700;">${idx + 1}</td>
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${escapeAttr(r.name)}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}
                   ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${escapeAttr(spec)}</div>` : ''}
@@ -4594,7 +4594,7 @@ window.storage = {
     return `<div class="bk-svc-card" data-svc="${s.id}">
       <div class="bk-svc-top">
         <input type="checkbox" class="bk-row-check bk-svc-check" data-id="${s.id}" style="margin-top:3px; flex-shrink:0;" ${selectedSvcIds.has(s.id) ? 'checked' : ''} />
-        ${idx != null ? `<span class="mono" style="flex-shrink:0; font-size:10px; font-weight:700; color:var(--ink-soft); padding-top:4px;">#${idx + 1}</span>` : ''}
+        ${idx != null ? `<span class="mono" style="flex-shrink:0; font-size:14px; font-weight:700; color:var(--ink); padding-top:2px;">#${idx + 1}</span>` : ''}
         <div style="flex:1; min-width:0;">
           ${topInfoHtml}
         </div>
