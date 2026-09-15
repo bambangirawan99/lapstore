@@ -224,6 +224,10 @@ body {
 }
 #bk-root .bk-item-row input:focus { outline: none; border-color: var(--accent2); box-shadow: 0 0 0 3px var(--accent2-bg); }
 #bk-root .bk-item-row .rm { cursor: pointer; color: var(--money-out); text-align: center; font-size: 16px; user-select: none; }
+#bk-root .bk-numbered-row-wrap { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+#bk-root .bk-numbered-row-wrap > .bk-row-no { flex-shrink: 0; width: 20px; padding-top: 9px; text-align: right; font-size: 11px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; }
+#bk-root .bk-numbered-row-wrap > .bk-item-row,
+#bk-root .bk-numbered-row-wrap > .bk-svc-part-row { flex: 1; min-width: 0; margin-bottom: 0; }
 #bk-root .bk-item-head { display: grid; grid-template-columns: 84px 1fr 70px 100px 110px 30px; gap: 8px; font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 6px; font-weight: 700; }
 
 #bk-root .bk-prod-item-row { display: grid; grid-template-columns: 1fr 90px 90px 30px; gap: 8px; margin-bottom: 8px; align-items: center; }
@@ -386,6 +390,8 @@ body {
   #bk-root .bk-item-row .f-price { grid-area: price; }
   #bk-root .bk-item-row .rm { position: absolute; top: 0; right: 0; }
   #bk-root .bk-item-head { display: none; }
+  #bk-root .bk-item-head-wrap { display: none; }
+  #bk-root .bk-numbered-row-wrap > .bk-row-no { padding-top: 2px; }
   #bk-root .bk-prod-item-head { display: none; }
   #bk-root .bk-svc-part-head { display: none; }
   #bk-root .bk-prod-item-row {
@@ -1363,8 +1369,12 @@ window.storage = {
         </select>
       </div>` : ''}
       <div class="bk-stok-note" style="margin-top:-6px;">${isJual ? 'Ketik/scan Kode barang untuk otomatis mengisi nama sesuai stok yang sudah tercatat &mdash; hindari salah nama/beda kode.' : 'Isi Kode barang sekali saat pertama beli. Kode ini akan dipakai otomatis saat item ini dijual nanti (cocok untuk barcode scanner).'}</div>
-      <div class="bk-item-head"><div>Kode</div><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
-      <div id="bk-items">${st.items.map(item => itemRowHtml(item, type)).join('')}</div>
+      <div class="bk-numbered-row-wrap bk-item-head-wrap" style="margin-bottom:6px;">
+        <div class="bk-row-no" style="padding-top:0;"></div>
+        <div class="bk-item-head" style="margin-bottom:0;"><div>Kode</div><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
+      </div>
+      <div id="bk-items">${st.items.map((item, idx) => itemRowHtml(item, type, idx)).join('')}</div>
+      <div class="bk-stok-note" style="margin:4px 0 10px; font-weight:600; color:var(--ink);">Total: ${st.items.length.toLocaleString('id-ID')} item.</div>
       <button class="bk-btn ghost" id="bk-add-item" style="margin-bottom:8px;">+ Tambah item</button>
       ${!isJual ? `<div class="bk-field">
         <label>Ongkos kirim (opsional)</label>
@@ -1662,20 +1672,23 @@ window.storage = {
     return `<datalist id="bk-item-names">${getKnownItemNames().map(n => `<option value="${escapeAttr(n)}"></option>`).join('')}</datalist>`;
   }
 
-  function itemRowHtml(item, type) {
+  function itemRowHtml(item, type, idx) {
     const codeField = type === 'pembelian'
       ? `<select class="f-code" style="border:1.5px solid var(--line); border-radius:8px; padding:8px 9px; font-size:12px; font-family:'IBM Plex Mono',monospace; background:#fff;">
           <option value="">-- manual --</option>
           ${itemCodeDropdownOptionsHtml(item.code)}
         </select>`
       : `<input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />`;
-    return `<div class="bk-item-row" data-id="${item.id}">
+    return `<div class="bk-numbered-row-wrap">
+      <div class="bk-row-no">${idx + 1}.</div>
+      <div class="bk-item-row" data-id="${item.id}">
       ${codeField}
       <input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama item" list="bk-item-names" />
       <input class="f-qty" type="number" min="0" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit||'')}" placeholder="pcs/kg" />
       <input class="f-price" type="number" min="0" value="${escapeAttr(item.price)}" placeholder="0" />
       <div class="rm" title="Hapus item">&times;</div>
+      </div>
     </div>`;
   }
 
@@ -2630,11 +2643,13 @@ window.storage = {
         `}
       </div>` : ''}
       ${rows.length ? `
+      <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${rows.length.toLocaleString('id-ID')} jenis barang di kategori ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'}.</div>
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
         <table style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
           <thead>
             <tr>
               ${isOwner() ? `<th style="padding:8px 6px 8px 0; width:26px;"></th>` : ''}
+              <th style="text-align:right; padding:8px 6px 8px 0; width:26px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">No</th>
               <th style="text-align:left; padding:8px 10px 8px 0; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Nama item</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Satuan</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Sisa stok</th>
@@ -2644,7 +2659,7 @@ window.storage = {
             </tr>
           </thead>
           <tbody>
-            ${rows.map(r => {
+            ${rows.map((r, idx) => {
               const code = codeReg.byName[r.name.trim().toLowerCase()];
               const specRec = codeReg.byNameFull[r.name.trim().toLowerCase()];
               const spec = specRec ? specRec.spec : '';
@@ -2656,6 +2671,7 @@ window.storage = {
               const displayQty = pending ? pending.newQty : r.qty;
               return `<tr>
                 ${isOwner() ? `<td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line);"><input type="checkbox" class="bk-row-check stok-row-check" data-name="${escapeAttr(r.name)}" ${checked} /></td>` : ''}
+                <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;">${idx + 1}</td>
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : '')}
                   ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; white-space:normal;">${escapeAttr(spec)}</div>` : ''}
@@ -3493,10 +3509,12 @@ window.storage = {
       </div>
       <button class="bk-btn primary" id="bk-pricelist-download" style="margin-bottom:18px;">Unduh Pricelist ${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'} (Excel)</button>
       ${rows.length ? `
+      <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${rows.length.toLocaleString('id-ID')} jenis barang di kategori ${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'}.</div>
       <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
         <table style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
           <thead>
             <tr>
+              <th style="text-align:right; padding:8px 6px 8px 0; width:26px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">No</th>
               <th style="text-align:left; padding:8px 10px 8px 0; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Nama item</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Satuan</th>
               <th style="text-align:right; padding:8px 10px; font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em; font-weight:700; border-bottom:1px solid var(--line);">Stok</th>
@@ -3506,7 +3524,7 @@ window.storage = {
             </tr>
           </thead>
           <tbody id="bk-pricelist-tbody">
-            ${rows.map(({ r, code }) => {
+            ${rows.map(({ r, code }, idx) => {
               const itemKey = pricelistKeyFor(code, r.name);
               const specRec = codeReg.byNameFull[r.name.trim().toLowerCase()];
               const spec = specRec ? specRec.spec : '';
@@ -3517,6 +3535,7 @@ window.storage = {
               const markup = entry ? (Number(entry.markup) || 0) : 0;
               const hargaJual = (entry && entry.hargaJual != null) ? Number(entry.hargaJual) : Math.round(unitCost * (1 + markup / 100) / 100) * 100;
               return `<tr data-key="${itemKey}" data-cost="${unitCost}">
+                <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace;">${idx + 1}</td>
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
                   ${escapeAttr(r.name)}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}
                   ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${escapeAttr(spec)}</div>` : ''}
@@ -3667,14 +3686,22 @@ window.storage = {
       ${isEdit ? `<div class="bk-cancel-edit" id="bk-cancel-prod-edit">&larr; Batal ubah produksi</div>` : ''}
 
       <div class="bk-section-title">Bahan baku dipakai</div>
-      <div class="bk-svc-part-head"><div>Kode</div><div>Nama bahan baku</div><div>Jumlah</div><div>Satuan</div><div></div></div>
-      <div id="bk-prod-bahan">${produksiFormState.bahan.map(i => prodItemRowHtml(i, 'bahan')).join('')}</div>
+      <div class="bk-numbered-row-wrap bk-item-head-wrap" style="margin-bottom:6px;">
+        <div class="bk-row-no" style="padding-top:0;"></div>
+        <div class="bk-svc-part-head" style="margin-bottom:0;"><div>Kode</div><div>Nama bahan baku</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+      </div>
+      <div id="bk-prod-bahan">${produksiFormState.bahan.map((i, idx) => prodItemRowHtml(i, 'bahan', idx)).join('')}</div>
+      <div class="bk-stok-note" style="margin:4px 0 10px; font-weight:600; color:var(--ink);">Total: ${produksiFormState.bahan.length.toLocaleString('id-ID')} bahan baku.</div>
       <button class="bk-btn ghost" id="bk-prod-add-bahan" style="margin-bottom:18px;">+ Tambah bahan baku</button>
 
       <div class="bk-section-title">Hasil produksi (produk jadi)</div>
       <div class="bk-stok-note" style="margin-top:-8px;">Kode hasil produksi (LPPRD-XXXXX) terisi otomatis untuk produk baru. Kalau ini hasil produksi produk yang sama seperti sebelumnya, ganti dengan kode lama supaya stoknya menyatu.</div>
-      <div class="bk-svc-part-head"><div>Kode</div><div>Nama produk jadi</div><div>Jumlah</div><div>Satuan</div><div></div></div>
-      <div id="bk-prod-hasil">${produksiFormState.hasil.map(i => prodItemRowHtml(i, 'hasil')).join('')}</div>
+      <div class="bk-numbered-row-wrap bk-item-head-wrap" style="margin-bottom:6px;">
+        <div class="bk-row-no" style="padding-top:0;"></div>
+        <div class="bk-svc-part-head" style="margin-bottom:0;"><div>Kode</div><div>Nama produk jadi</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+      </div>
+      <div id="bk-prod-hasil">${produksiFormState.hasil.map((i, idx) => prodItemRowHtml(i, 'hasil', idx)).join('')}</div>
+      <div class="bk-stok-note" style="margin:4px 0 10px; font-weight:600; color:var(--ink);">Total: ${produksiFormState.hasil.length.toLocaleString('id-ID')} produk jadi.</div>
       <button class="bk-btn ghost" id="bk-prod-add-hasil" style="margin-bottom:18px;">+ Tambah hasil produksi</button>
 
       <div class="bk-ai-box" style="margin-bottom:18px;">
@@ -3779,14 +3806,17 @@ window.storage = {
     });
   }
 
-  function prodItemRowHtml(item, key) {
+  function prodItemRowHtml(item, key, idx) {
     if (key === 'hasil' && !item.code) item.code = generateItemCodeSequence('LPPRD', 1)[0];
-    return `<div class="bk-svc-part-row" data-id="${item.id}">
+    return `<div class="bk-numbered-row-wrap">
+      <div class="bk-row-no">${idx + 1}.</div>
+      <div class="bk-svc-part-row" data-id="${item.id}">
       <input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />
       <input class="f-name" value="${escapeAttr(item.name)}" placeholder="${key === 'bahan' ? 'Nama bahan baku' : 'Nama produk jadi'}" list="bk-item-names" />
       <input class="f-qty" type="number" min="0" step="any" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit)}" placeholder="kg/pcs" />
       <div class="rm" title="Hapus baris">&times;</div>
+      </div>
     </div>`;
   }
 
@@ -4502,8 +4532,12 @@ window.storage = {
       actionHtml = `
         <div class="bk-field"><label>Biaya final service</label><input class="svc-biaya-final" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.biayaFinal || s.estimasiBiaya)}" placeholder="0" /></div>
         <div style="font-size:12px; color:var(--ink-soft); margin:12px 0 6px;">Sparepart dipakai (opsional &mdash; otomatis kurangi Stok &amp; dihitung sebagai biaya)</div>
-        <div class="bk-svc-part-head"><div>Kode</div><div>Nama sparepart</div><div>Jumlah</div><div>Satuan</div><div></div></div>
-        <div class="svc-parts-list" data-svc="${s.id}">${s.parts.map(p => svcPartRowHtml(s.id, p)).join('')}</div>
+        <div class="bk-numbered-row-wrap bk-item-head-wrap" style="margin-bottom:6px;">
+          <div class="bk-row-no" style="padding-top:0;"></div>
+          <div class="bk-svc-part-head" style="margin-bottom:0;"><div>Kode</div><div>Nama sparepart</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+        </div>
+        <div class="svc-parts-list" data-svc="${s.id}">${s.parts.map((p, idx) => svcPartRowHtml(s.id, p, idx)).join('')}</div>
+        <div class="bk-stok-note" style="margin:4px 0 10px; font-weight:600; color:var(--ink);">Total: ${s.parts.filter(p=>p.name).length.toLocaleString('id-ID')} sparepart.</div>
         <button class="bk-btn ghost svc-add-part" data-id="${s.id}" style="margin-bottom:10px;">+ Tambah sparepart</button>
         <div class="bk-svc-actions">
           <button class="bk-btn primary act-selesai" data-id="${s.id}">Tandai selesai dikerjakan</button>
@@ -4594,15 +4628,18 @@ window.storage = {
     </div>`;
   }
 
-  function svcPartRowHtml(serviceId, item) {
+  function svcPartRowHtml(serviceId, item, idx) {
     const stockMap = computeStock();
     const stok = item.name ? (stockMap[item.name.trim().toLowerCase()] ? stockMap[item.name.trim().toLowerCase()].qty : 0) : null;
-    return `<div class="bk-svc-part-row svc-part-row" data-svc="${serviceId}" data-id="${item.id}">
+    return `<div class="bk-numbered-row-wrap">
+      <div class="bk-row-no">${idx + 1}.</div>
+      <div class="bk-svc-part-row svc-part-row" data-svc="${serviceId}" data-id="${item.id}">
       <input class="f-code" value="${escapeAttr(item.code||'')}" placeholder="Kode" list="bk-item-codes" />
       <input class="f-name" value="${escapeAttr(item.name)}" placeholder="Nama sparepart (dari stok)" list="bk-item-names" />
       <input class="f-qty" type="number" min="0" step="any" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit)}" placeholder="pcs/unit" title="${stok !== null ? 'Sisa stok: ' + stok : ''}" />
       <div class="rm" title="Hapus baris">&times;</div>
+      </div>
     </div>`;
   }
 
