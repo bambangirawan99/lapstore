@@ -511,8 +511,20 @@ window.storage = {
     return { key, value, shared: true };
   },
   async delete(key) {
-    const { error } = await sbClient.from('kv_store').delete().eq('key', key);
+    // PENTING: Supabase bisa mengembalikan "tidak ada error" walau baris SEBENARNYA tidak
+    // terhapus (misal diam-diam diblokir kebijakan akses/RLS). Kalau kita cuma percaya
+    // absennya error, transaksi yang "sudah dihapus" bisa muncul lagi begitu data dimuat
+    // ulang dari server - itu sebabnya sebelumnya Laporan/Riwayat kadang terlihat tidak
+    // berubah walau sudah "berhasil" dihapus. Sekarang kita minta baris yang benar-benar
+    // terhapus dikembalikan (.select()), lalu verifikasi ulang kalau kosong.
+    const { data, error } = await sbClient.from('kv_store').delete().eq('key', key).select('key');
     if (error) throw error;
+    if (!data || data.length === 0) {
+      const check = await sbClient.from('kv_store').select('key').eq('key', key).maybeSingle();
+      if (check.data) {
+        throw new Error('Hapus DITOLAK server (data masih ada, kemungkinan kebijakan akses/RLS memblokir DELETE). key: ' + key);
+      }
+    }
     return { key, deleted: true, shared: true };
   },
   async list(prefix) {
