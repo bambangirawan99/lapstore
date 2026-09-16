@@ -576,7 +576,10 @@ window.storage = {
 
   const OWNER_EMAILS = ['bambangirawan99@gmail.com', 'ogiiskandar123@gmail.com'];
   function isOwner() {
-    return !!(currentUser && currentUser.email && OWNER_EMAILS.map(e => e.toLowerCase()).includes(currentUser.email.toLowerCase()));
+    // Otoritas Admin disamakan dengan Pemilik: siapa pun yang berhasil login dianggap Pemilik,
+    // jadi semua fitur yang tadinya khusus Owner (hapus data, Laba Rugi, Jurnal Umum, Neraca,
+    // Utang, Stok Bulanan, Per Rekening, Backup & Restore, dll) sekarang terbuka untuk semua akun.
+    return !!(currentUser && currentUser.email);
   }
   // Hanya akun Pemilik (OWNER_EMAILS) yang boleh menghapus data yang sudah dibuat.
   // Admin/Kasir tetap bisa input & edit seperti biasa, tapi tidak bisa menghapus.
