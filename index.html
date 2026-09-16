@@ -1703,7 +1703,7 @@ window.storage = {
     // sekarang) tetap ditampilkan supaya tidak hilang dari tampilan, ditandai "stok habis".
     rows = rows.filter(r => r.qty > 0 || r.code === selectedVal);
     if (!rows.length) return '<option value="">-- belum ada stok tersedia --</option>';
-    rows.sort((a,b) => a.code.localeCompare(b.code));
+    rows.sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
     const laptopRows = rows.filter(r => /^LPSTK/i.test(r.code));
     const onderdilRows = rows.filter(r => !/^LPSTK/i.test(r.code));
     const optHtml = (list) => list.map(r => `<option value="${escapeAttr(r.code)}" ${selectedVal===r.code?'selected':''}>${escapeAttr(r.code)} - ${escapeAttr(r.name)} (${r.qty > 0 ? 'sisa '+r.qty.toLocaleString('id-ID') : 'stok habis'})</option>`).join('');
@@ -2704,7 +2704,7 @@ window.storage = {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
-    const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name) && !deletedStokNames.has(r.name.trim().toLowerCase())).sort((a,b) => a.qty - b.qty);
+    const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name) && !deletedStokNames.has(r.name.trim().toLowerCase())).sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
     const rowsWithKategori = allRows.map(r => {
       const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
       return { r, code, kategori: pricelistCategoryOf(code) === 'barang' ? 'laptop' : 'onderdil' };
