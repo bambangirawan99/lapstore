@@ -627,7 +627,7 @@ window.storage = {
   }
 
   // ---------- BEBAN OPERASIONAL & KEUANGAN ----------
-  const BEBAN_KATEGORI = ['Gaji', 'Garansi Service', 'Sewa Tempat', 'Listrik/Air/Internet', 'Lainnya'];
+  const BEBAN_KATEGORI = ['Gaji', 'Garansi Service', 'Jasa Vendor Service', 'Sewa Tempat', 'Listrik/Air/Internet', 'Lainnya'];
   let bebanList = [];
   let modalAwal = 0;
   let closings = [];
@@ -796,6 +796,7 @@ window.storage = {
   let svcSearchQuery = '';
   let selectedSvcIds = new Set();
   let editingServiceDetailId = null;
+  let editingServiceTxnId = null;
   function blankServiceForm() {
     return { customerName: '', customerPhone: '', device: '', complaint: '', accessories: '', estimasiBiaya: '', rekening: BANK_ACCOUNTS[0].id, kodeService: '' };
   }
@@ -4071,6 +4072,7 @@ window.storage = {
     const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
     const pool = services.filter(s => s.status !== 'diambil').sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     const filtered = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
+    const hppData = computeHPP();
     const svcKodeOptions = generateServiceCodeSequence(5);
     if (!serviceFormState.kodeService || !svcKodeOptions.includes(serviceFormState.kodeService)) {
       serviceFormState.kodeService = svcKodeOptions[0];
@@ -4123,7 +4125,7 @@ window.storage = {
         </label>
         <button class="bk-btn bk-bulk-del ${selectedSvcIds.size ? 'show' : ''}" id="bk-svc-bulk-del-btn">Hapus terpilih (${selectedSvcIds.size})</button>
       </div>` : ''}
-      <div id="bk-svc-list">${filtered.length ? filtered.map(serviceCardHtml).join('') : '<div class="bk-empty">Tidak ada service yang sedang berjalan pada status ini.</div>'}</div>
+      <div id="bk-svc-list">${filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx, hppData)).join('') : '<div class="bk-empty">Tidak ada service yang sedang berjalan pada status ini.</div>'}</div>
     `;
   }
 
@@ -4168,7 +4170,10 @@ window.storage = {
     const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
     const q = svcSearchQuery.trim().toLowerCase();
     const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
+    const hppData = computeHPP();
     const totalPendapatan = byMonth.reduce((sum,s) => sum + (Number(s.biayaFinal)||0), 0);
+    const totalHppSvc = byMonth.reduce((sum,s) => sum + svcTotalHpp(s, hppData), 0);
+    const totalUntungSvc = totalPendapatan - totalHppSvc;
 
     return `
       <div class="bk-two-col" style="margin-bottom:16px;">
@@ -4186,7 +4191,9 @@ window.storage = {
       </div>
       <div class="bk-stats" style="margin-bottom:16px;">
         <div class="bk-stat"><div class="lbl">Service selesai ${svcRiwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(svcRiwayatMonth))}</div><div class="val" id="bk-svc-riwayat-count">${byMonth.length}</div></div>
-        <div class="bk-stat in"><div class="lbl">Total pendapatan jasa</div><div class="val" id="bk-svc-riwayat-total">${rupiah(totalPendapatan)}</div></div>
+        <div class="bk-stat in"><div class="lbl">Total Jasa Service ke Konsumen</div><div class="val" id="bk-svc-riwayat-total">${rupiah(totalPendapatan)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Total HPP (Sparepart + Vendor)</div><div class="val">${rupiah(totalHppSvc)}</div></div>
+        <div class="bk-stat in" style="border-width:2px; border-color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};"><div class="lbl">Total Keuntungan Service</div><div class="val" style="color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};">${rupiah(totalUntungSvc)}</div></div>
       </div>
       <div id="bk-svc-select-bar-wrap">${filtered.length ? `<div class="bk-select-bar">
         <label class="bk-select-all">
@@ -4195,7 +4202,7 @@ window.storage = {
         </label>
         <button class="bk-btn bk-bulk-del ${selectedSvcIds.size ? 'show' : ''}" id="bk-svc-bulk-del-btn">Hapus terpilih (${selectedSvcIds.size})</button>
       </div>` : ''}</div>
-      <div id="bk-svc-list">${filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx)).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>'}</div>
+      <div id="bk-svc-list">${filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx, hppData)).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>'}</div>
     `;
   }
 
@@ -4204,8 +4211,9 @@ window.storage = {
     const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
     const q = svcSearchQuery.trim().toLowerCase();
     const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
+    const hppData = computeHPP();
     const listEl = document.getElementById('bk-svc-list');
-    if (listEl) listEl.innerHTML = filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx)).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>';
+    if (listEl) listEl.innerHTML = filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx, hppData)).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>';
     const barEl = document.getElementById('bk-svc-select-bar-wrap');
     if (barEl) barEl.innerHTML = filtered.length ? `<div class="bk-select-bar">
         <label class="bk-select-all">
@@ -4667,7 +4675,57 @@ window.storage = {
     }
   }
 
-  function serviceCardHtml(s, idx) {
+  // Total HPP untuk satu order service = biaya sparepart yang dipakai (dari produksi txn, dihitung
+  // otomatis via HPP rata-rata bergerak) + biaya jasa vendor/pihak ke-3 (kalau ada).
+  function svcTotalHpp(s, hppData) {
+    const sparepartCost = (s.prodTxnId && hppData.prodCostByTxn[s.prodTxnId]) ? hppData.prodCostByTxn[s.prodTxnId].batchCost : 0;
+    const vendorCost = Number(s.vendorBiaya) || 0;
+    return sparepartCost + vendorCost;
+  }
+
+  // Kotak ringkasan untung per order service: Jasa ke konsumen, HPP (sparepart+vendor), Keuntungan.
+  // Hanya ditampilkan untuk service yang sudah ada biaya final-nya (status selesai/diambil).
+  function svcProfitBreakdownHtml(s, hppData) {
+    if (!hppData || !(Number(s.biayaFinal) > 0)) return '';
+    const sparepartCost = (s.prodTxnId && hppData.prodCostByTxn[s.prodTxnId]) ? hppData.prodCostByTxn[s.prodTxnId].batchCost : 0;
+    const vendorCost = Number(s.vendorBiaya) || 0;
+    const hppTotalSvc = sparepartCost + vendorCost;
+    const untung = (Number(s.biayaFinal) || 0) - hppTotalSvc;
+    return `<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin:10px 0; padding:8px 10px; background:var(--paper); border:1px solid var(--line); border-radius:8px;">
+      <div><div style="font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">Jasa ke Konsumen</div><div style="font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12.5px;">${rupiah(s.biayaFinal)}</div></div>
+      <div><div style="font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">HPP (Sparepart+Vendor)</div><div style="font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12.5px; color:var(--ink-soft);">${rupiah(hppTotalSvc)}</div></div>
+      <div><div style="font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;">Keuntungan</div><div style="font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:12.5px; color:${untung>=0?'var(--money-in)':'var(--money-out)'};">${rupiah(untung)}</div></div>
+    </div>`;
+  }
+
+  // Form edit transaksi service (biaya final, sparepart, vendor) untuk service yang sudah
+  // "selesai" atau "diambil" - dipicu tombol "Edit transaksi".
+  function svcEditTxnFormHtml(s) {
+    if (!s.parts || !s.parts.length) s.parts = [blankSvcPart()];
+    return `<div style="border:1.5px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; background:var(--accent-bg);">
+      <div style="font-size:12px; font-weight:700; color:var(--accent-ink); margin-bottom:10px;">Edit Transaksi Service</div>
+      <div class="bk-field" style="margin-bottom:10px;"><label>Biaya final service</label><input class="svc-edittxn-biaya" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.biayaFinal||0)}" placeholder="0" /></div>
+      <div style="font-size:12px; color:var(--ink-soft); margin-bottom:6px;">Sparepart dipakai</div>
+      <div class="bk-numbered-row-wrap bk-item-head-wrap" style="margin-bottom:6px;">
+        <div class="bk-row-no" style="padding-top:0;"></div>
+        <div class="bk-svc-part-head" style="margin-bottom:0;"><div>Kode</div><div>Nama sparepart</div><div>Jumlah</div><div>Satuan</div><div></div></div>
+      </div>
+      <div class="svc-parts-list" data-svc="${s.id}">${s.parts.map((p, idx) => svcPartRowHtml(s.id, p, idx)).join('')}</div>
+      <button class="bk-btn ghost svc-add-part" data-id="${s.id}" style="margin:6px 0 12px;">+ Tambah sparepart</button>
+      <div class="bk-two-col" style="margin-bottom:10px;">
+        <div class="bk-field" style="margin-bottom:0;"><label>Nama vendor/pihak ke-3</label><input class="svc-edittxn-vendor-nama" data-id="${s.id}" value="${escapeAttr(s.vendorNama||'')}" placeholder="Contoh: Servis Chip ABC" /></div>
+        <div class="bk-field" style="margin-bottom:0;"><label>Biaya jasa vendor (Rp)</label><input class="svc-edittxn-vendor-biaya" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.vendorBiaya||'')}" placeholder="0" /></div>
+      </div>
+      <div class="bk-field" style="margin-bottom:0;"><label>DP yang sudah diterima (opsional)</label><input class="svc-edittxn-dp" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.dpAmount||0)}" placeholder="0" /></div>
+      <div id="bk-svc-edittxn-err-${s.id}" class="bk-err" style="display:none;"></div>
+      <div class="bk-svc-actions" style="margin-top:10px;">
+        <button class="bk-btn primary svc-edittxn-save" data-id="${s.id}">Simpan perubahan</button>
+        <button class="bk-btn ghost svc-edittxn-cancel" data-id="${s.id}">Batal</button>
+      </div>
+    </div>`;
+  }
+
+  function serviceCardHtml(s, idx, hppData) {
     const badge = `<span class="bk-svc-badge ${s.status}">${serviceStatusLabel(s.status)}</span>`;
     let actionHtml = '';
     if (s.status === 'diterima') {
@@ -4701,24 +4759,37 @@ window.storage = {
         <div class="svc-parts-list" data-svc="${s.id}">${s.parts.map((p, idx) => svcPartRowHtml(s.id, p, idx)).join('')}</div>
         <div class="bk-stok-note" style="margin:4px 0 10px; font-weight:600; color:var(--ink);">Total: ${s.parts.filter(p=>p.name).length.toLocaleString('id-ID')} sparepart.</div>
         <button class="bk-btn ghost svc-add-part" data-id="${s.id}" style="margin-bottom:10px;">+ Tambah sparepart</button>
+        <div style="font-size:12px; color:var(--ink-soft); margin:12px 0 6px;">Jasa pihak ke-3 / vendor service (opsional &mdash; biaya tambahan selain sparepart, misal titip service ke tempat lain/vendor khusus)</div>
+        <div class="bk-two-col" style="margin-bottom:12px;">
+          <div class="bk-field" style="margin-bottom:0;"><label>Nama vendor/pihak ke-3</label><input class="svc-vendor-nama" data-id="${s.id}" value="${escapeAttr(s.vendorNama||'')}" placeholder="Contoh: Servis Chip ABC" /></div>
+          <div class="bk-field" style="margin-bottom:0;"><label>Biaya jasa vendor (Rp)</label><input class="svc-vendor-biaya" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.vendorBiaya||'')}" placeholder="0" /></div>
+        </div>
         <div class="bk-svc-actions">
           <button class="bk-btn primary act-selesai" data-id="${s.id}">Tandai selesai dikerjakan</button>
         </div>`;
     } else if (s.status === 'selesai') {
       const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
       const isLunas = s.paid !== false;
+      const isEditingTxn = editingServiceTxnId === s.id;
       actionHtml = `
-        <div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''}${s.parts && s.parts.some(p=>p.name) ? ` &middot; <span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''} <span class="bk-badge ${isLunas?'lunas':'belum'}">${isLunas?'Lunas':'Tercatat di Tagihan'}</span></div>
+        <div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''}${s.parts && s.parts.some(p=>p.name) ? ` &middot; <span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}${s.vendorBiaya ? ` &middot; <span class="lbl">Vendor:</span> ${rupiah(s.vendorBiaya)}${s.vendorNama?' ('+s.vendorNama+')':''}` : ''} <span class="bk-badge ${isLunas?'lunas':'belum'}">${isLunas?'Lunas':'Tercatat di Tagihan'}</span></div>
         ${!isLunas ? `<div class="bk-stok-note" style="margin:0 0 10px;">Sisa ${rupiah(sisa)} sudah otomatis tercatat di tab Tagihan begitu status ini aktif &mdash; tidak perlu catat manual lagi.</div>` : ''}
+        ${svcProfitBreakdownHtml(s, hppData)}
+        ${isEditingTxn ? svcEditTxnFormHtml(s) : ''}
         <div class="bk-svc-actions">
           ${!isLunas ? `<button class="bk-btn ghost svc-mark-lunas" data-id="${s.id}" data-txn="${s.linkedTxnId||''}">Tandai lunas</button>` : ''}
+          ${!isEditingTxn ? `<button class="bk-btn ghost svc-edit-txn-btn" data-id="${s.id}">Edit transaksi</button>` : ''}
           <button class="bk-btn primary act-diambil" data-id="${s.id}">Sudah diambil pelanggan</button>
         </div>`;
     } else if (s.status === 'diambil') {
       const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
-      actionHtml = `<div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''} &middot; <span class="bk-badge ${s.paid===false?'belum':'lunas'}">${s.paid===false?(s.dpAmount?'Sisa belum lunas':'Belum lunas'):'Lunas'}</span>${s.parts && s.parts.some(p=>p.name) ? `<br/><span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}</div>
+      const isEditingTxn = editingServiceTxnId === s.id;
+      actionHtml = `<div class="bk-svc-detail"><span class="lbl">Biaya final:</span> ${rupiah(s.biayaFinal)}${s.dpAmount ? ` &middot; <span class="lbl">DP:</span> ${rupiah(s.dpAmount)} &middot; <span class="lbl">Sisa:</span> ${rupiah(sisa)}` : ''} &middot; <span class="bk-badge ${s.paid===false?'belum':'lunas'}">${s.paid===false?(s.dpAmount?'Sisa belum lunas':'Belum lunas'):'Lunas'}</span>${s.parts && s.parts.some(p=>p.name) ? `<br/><span class="lbl">Sparepart:</span> ${s.parts.filter(p=>p.name).map(p=>`${p.name} ${p.qty}${p.unit?(' '+p.unit):''}`).join(', ')}` : ''}${s.vendorBiaya ? `<br/><span class="lbl">Vendor:</span> ${rupiah(s.vendorBiaya)}${s.vendorNama?' ('+s.vendorNama+')':''}` : ''}</div>
+        ${svcProfitBreakdownHtml(s, hppData)}
+        ${isEditingTxn ? svcEditTxnFormHtml(s) : ''}
         <div class="bk-svc-actions">
           <button class="bk-btn ghost act-print-nota" data-id="${s.id}">Cetak nota</button>
+          ${!isEditingTxn ? `<button class="bk-btn ghost svc-edit-txn-btn" data-id="${s.id}">Edit transaksi</button>` : ''}
         </div>`;
     }
 
@@ -4978,6 +5049,10 @@ window.storage = {
       if (!s) return;
       const biayaEl = list.querySelector(`.svc-biaya-final[data-id="${id}"]`);
       const biaya = Number(biayaEl.value) || 0;
+      const vendorNamaEl = list.querySelector(`.svc-vendor-nama[data-id="${id}"]`);
+      const vendorBiayaEl = list.querySelector(`.svc-vendor-biaya[data-id="${id}"]`);
+      const vendorNama = vendorNamaEl ? vendorNamaEl.value.trim() : '';
+      const vendorBiaya = vendorBiayaEl ? (Number(vendorBiayaEl.value) || 0) : 0;
       const validParts = (s.parts || []).filter(p => p.name && Number(p.qty) > 0)
         .map(p => ({ name: p.name.trim(), qty: Number(p.qty), unit: (p.unit||'').trim() }));
 
@@ -4997,7 +5072,9 @@ window.storage = {
       }
 
       const partsInfo = validParts.length ? ` Sparepart yang dipakai (${validParts.map(p=>p.name).join(', ')}) akan otomatis mengurangi Stok.` : '';
-      showConfirm(`Tandai service "${s.customerName}" (${s.device}) selesai dikerjakan dengan biaya final ${rupiah(biaya)}?${partsInfo}`, async () => {
+      const vendorInfo = vendorBiaya > 0 ? ` Biaya jasa vendor ${rupiah(vendorBiaya)}${vendorNama ? ' ('+vendorNama+')' : ''} akan tercatat sebagai Beban Operasional.` : '';
+      showConfirm(`Tandai service "${s.customerName}" (${s.device}) selesai dikerjakan dengan biaya final ${rupiah(biaya)}?${partsInfo}${vendorInfo}`, async () => {
+      showLoadingModal('Menyelesaikan service...');
       let serviceItemName = s.serviceItemName;
       if (validParts.length) {
         serviceItemName = `Jasa Service Laptop - ${s.device} (${id.slice(0,6)})`;
@@ -5015,14 +5092,40 @@ window.storage = {
           s.prodTxnId = prodTxn.id;
         } catch (e) {
           console.error(e);
+          closeLoadingModal();
           showToast('Gagal mencatat pemakaian sparepart, coba lagi.');
           return;
         }
       }
 
-      await updateService(id, { biayaFinal: biaya, parts: s.parts, serviceItemName });
+      let vendorBebanId = s.vendorBebanId || null;
+      if (vendorBiaya > 0) {
+        const bebanVendor = {
+          id: uid(),
+          kategori: 'Jasa Vendor Service',
+          kategoriCustom: vendorNama || '',
+          nominal: vendorBiaya,
+          keterangan: `Vendor service untuk ${s.customerName || 'pelanggan'} (${s.device || ''})${vendorNama ? ' - '+vendorNama : ''}`,
+          linkedServiceId: id,
+          createdAt: Date.now(),
+          createdBy: currentUser ? currentUser.email : null,
+        };
+        try {
+          await saveBebanItem(bebanVendor);
+          bebanList.unshift(bebanVendor);
+          vendorBebanId = bebanVendor.id;
+        } catch (e) {
+          console.error(e);
+          closeLoadingModal();
+          showToast('Gagal mencatat biaya vendor, coba lagi.');
+          return;
+        }
+      }
+
+      await updateService(id, { biayaFinal: biaya, parts: s.parts, serviceItemName, vendorNama, vendorBiaya, vendorBebanId });
       await advanceServiceStatus(id, 'selesai', false);
       await recordServiceTagihanAtSelesai(id);
+      closeLoadingModal();
       renderService();
       sendServiceWhatsapp(id, 'selesai');
       });
@@ -5039,6 +5142,116 @@ window.storage = {
     }));
 
     list.querySelectorAll('.svc-del-btn').forEach(b => b.addEventListener('click', () => removeService(b.dataset.id)));
+
+    // ---- Edit Transaksi Service (biaya final, sparepart, vendor, DP) untuk status selesai/diambil ----
+    list.querySelectorAll('.svc-edit-txn-btn').forEach(b => b.addEventListener('click', () => {
+      editingServiceTxnId = b.dataset.id;
+      renderService();
+    }));
+    list.querySelectorAll('.svc-edittxn-cancel').forEach(b => b.addEventListener('click', () => {
+      editingServiceTxnId = null;
+      renderService();
+    }));
+    list.querySelectorAll('.svc-edittxn-save').forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.id;
+      const s = services.find(x => x.id === id);
+      if (!s) return;
+      const errEl = document.getElementById(`bk-svc-edittxn-err-${id}`);
+      const newBiaya = Number((list.querySelector(`.svc-edittxn-biaya[data-id="${id}"]`)||{}).value) || 0;
+      const newVendorNama = (list.querySelector(`.svc-edittxn-vendor-nama[data-id="${id}"]`)||{}).value || '';
+      const newVendorBiaya = Number((list.querySelector(`.svc-edittxn-vendor-biaya[data-id="${id}"]`)||{}).value) || 0;
+      const newDp = Number((list.querySelector(`.svc-edittxn-dp[data-id="${id}"]`)||{}).value) || 0;
+      const newParts = (s.parts || []).filter(p => p.name && Number(p.qty) > 0)
+        .map(p => ({ name: p.name.trim(), qty: Number(p.qty), unit: (p.unit||'').trim() }));
+
+      if (newDp > newBiaya) {
+        if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'DP tidak boleh lebih besar dari biaya final.'; }
+        return;
+      }
+      errEl && (errEl.style.display = 'none');
+
+      showLoadingModal('Menyimpan perubahan transaksi...');
+      try {
+        // 1) Sparepart berubah? Hapus produksi txn lama (stok kembali), buat baru kalau ada sparepart.
+        const oldPartsKey = JSON.stringify((s.parts||[]).filter(p=>p.name&&Number(p.qty)>0).map(p=>({n:p.name.trim().toLowerCase(),q:Number(p.qty)})).sort((a,b)=>a.n.localeCompare(b.n)));
+        const newPartsKey = JSON.stringify(newParts.map(p=>({n:p.name.toLowerCase(),q:p.qty})).sort((a,b)=>a.n.localeCompare(b.n)));
+        if (oldPartsKey !== newPartsKey) {
+          if (s.prodTxnId) {
+            try { await deleteTxnFromStore(s.prodTxnId); } catch (e) { /* mungkin sudah terhapus */ }
+            txns = txns.filter(x => x.id !== s.prodTxnId);
+            s.prodTxnId = null;
+          }
+          if (newParts.length) {
+            const stockMapNow = computeStock();
+            const kurang = [];
+            newParts.forEach(p => {
+              const avail = getAvailableQty(stockMapNow, p.name);
+              if (p.qty > avail) kurang.push(`${p.name} (stok tersisa ${avail}${p.unit?' '+p.unit:''}, diminta ${p.qty})`);
+            });
+            if (kurang.length) {
+              closeLoadingModal();
+              if (errEl) { errEl.style.display = 'block'; errEl.textContent = `Stok sparepart tidak cukup untuk: ${kurang.join('; ')}.`; }
+              return;
+            }
+            const prodTxn = {
+              id: uid(), type: 'produksi', bahan: newParts,
+              hasil: [{ name: s.serviceItemName || `Jasa Service Laptop - ${s.device} (${id.slice(0,6)})`, qty: 1, unit: 'jasa' }],
+              total: 0, createdAt: Date.now(),
+            };
+            await saveTxn(prodTxn);
+            txns.unshift(prodTxn);
+            s.prodTxnId = prodTxn.id;
+          }
+        }
+
+        // 2) Vendor cost berubah? Update / buat / hapus Beban terkait.
+        if (newVendorBiaya > 0) {
+          if (s.vendorBebanId && bebanList.find(x => x.id === s.vendorBebanId)) {
+            const beban = bebanList.find(x => x.id === s.vendorBebanId);
+            beban.nominal = newVendorBiaya;
+            beban.kategoriCustom = newVendorNama || '';
+            beban.keterangan = `Vendor service untuk ${s.customerName || 'pelanggan'} (${s.device || ''})${newVendorNama ? ' - '+newVendorNama : ''}`;
+            await saveBebanItem(beban);
+          } else {
+            const bebanVendor = {
+              id: uid(), kategori: 'Jasa Vendor Service', kategoriCustom: newVendorNama || '', nominal: newVendorBiaya,
+              keterangan: `Vendor service untuk ${s.customerName || 'pelanggan'} (${s.device || ''})${newVendorNama ? ' - '+newVendorNama : ''}`,
+              linkedServiceId: id, createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null,
+            };
+            await saveBebanItem(bebanVendor);
+            bebanList.unshift(bebanVendor);
+            s.vendorBebanId = bebanVendor.id;
+          }
+        } else if (s.vendorBebanId) {
+          try { await window.storage.delete('beban:' + s.vendorBebanId, true); } catch (e) { /* mungkin sudah terhapus */ }
+          bebanList = bebanList.filter(x => x.id !== s.vendorBebanId);
+          s.vendorBebanId = null;
+        }
+
+        // 3) Update transaksi pemasukan (linkedTxnId) supaya nilainya ikut biaya final baru.
+        if (s.linkedTxnId) {
+          const t = txns.find(x => x.id === s.linkedTxnId);
+          if (t) {
+            t.total = newBiaya;
+            if (t.items && t.items[0]) t.items[0].price = newBiaya;
+            await saveTxn(t);
+          }
+        }
+
+        // 4) Simpan field service.
+        await updateService(id, { biayaFinal: newBiaya, parts: s.parts, vendorNama: newVendorNama, vendorBiaya: newVendorBiaya, dpAmount: newDp });
+
+        editingServiceTxnId = null;
+        invalidateStockCaches();
+        closeLoadingModal();
+        renderService();
+        showToast('Transaksi service berhasil diperbarui.');
+      } catch (e) {
+        console.error(e);
+        closeLoadingModal();
+        if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Gagal menyimpan perubahan, coba lagi.'; }
+      }
+    }));
   }
 
   async function updateService(id, patch) {
@@ -5179,6 +5392,10 @@ window.storage = {
           try { await deleteTxnFromStore(s.dpTxnId); } catch (e) { /* mungkin sudah terhapus */ }
           txns = txns.filter(x => x.id !== s.dpTxnId);
         }
+        if (s.vendorBebanId) {
+          try { await window.storage.delete('beban:' + s.vendorBebanId, true); } catch (e) { /* mungkin sudah terhapus */ }
+          bebanList = bebanList.filter(x => x.id !== s.vendorBebanId);
+        }
         await deleteServiceFromStore(id);
         services = services.filter(x => x.id !== id);
         closeLoadingModal();
@@ -5220,6 +5437,10 @@ window.storage = {
             if (s.dpTxnId) {
               try { await deleteTxnFromStore(s.dpTxnId); } catch (e) { /* mungkin sudah terhapus */ }
               txns = txns.filter(x => x.id !== s.dpTxnId);
+            }
+            if (s.vendorBebanId) {
+              try { await window.storage.delete('beban:' + s.vendorBebanId, true); } catch (e) { /* mungkin sudah terhapus */ }
+              bebanList = bebanList.filter(x => x.id !== s.vendorBebanId);
             }
             await deleteServiceFromStore(s.id);
             services = services.filter(x => x.id !== s.id);
