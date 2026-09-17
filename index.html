@@ -8380,6 +8380,123 @@ window.storage = {
   }
 
   // ---------- MIGRASI DATA (kumpulan semua alat upload data lama, dalam satu tempat) ----------
+  function downloadBebanMigrasiTemplate() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      ['FORMAT UPLOAD BEBAN OPERASIONAL LAMA - LAPSTORE'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Tanggal format DD/MM/YYYY. Kolom Kategori isi persis salah satu: ' + BEBAN_KATEGORI.join(' / ') + '. Kalau Kategori = "Lainnya", isi juga Kategori Custom (nama beban bebas, misal "Iuran RT"); kalau kategori bukan Lainnya, kolom ini boleh dikosongkan. Setiap baris otomatis masuk ke Laporan > Beban Operasional dan mengurangi Laba Bersih pada bulan tanggal tersebut. Baris contoh boleh dihapus/ditimpa.'],
+      [],
+      [],
+      ['Tanggal', 'Kategori', 'Kategori Custom (kalau Lainnya)', 'Nominal', 'Keterangan'],
+      ['05/01/2026', 'Sewa Tempat', '', 3000000, 'Sewa toko bulan Januari'],
+      ['10/01/2026', 'Gaji', '', 2500000, 'Gaji karyawan bulan Januari'],
+      ['15/01/2026', 'Lainnya', 'Iuran RT', 100000, 'Iuran keamanan lingkungan'],
+    ];
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Template Beban Operasional');
+    XLSX.writeFile(wb, 'template-beban-operasional-lama.xlsx');
+  }
+
+  function handleBebanMigrasiUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('bk-beban-migrasi-status');
+    statusEl.style.color = 'var(--ink-soft)';
+    statusEl.textContent = 'Membaca file...';
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        if (!window.XLSX) { statusEl.textContent = 'Modul Excel belum siap, coba lagi sebentar.'; statusEl.style.color = 'var(--money-out)'; return; }
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        let headerIdx = raw.findIndex(row => row.some(c => String(c).trim().toLowerCase().includes('kategori')));
+        if (headerIdx === -1) headerIdx = 0;
+        const dataRows = raw.slice(headerIdx + 1);
+        const jobs = [];
+        const errors = [];
+        dataRows.forEach((row, idx) => {
+          const [tglRaw, kategoriRaw, kategoriCustomRaw, nominalRaw, keteranganRaw] = row;
+          if (!kategoriRaw && !nominalRaw) return; // baris kosong dilewati diam-diam
+          const rowNum = headerIdx + idx + 2;
+          const tglMs = parseTanggalDDMMYYYY(tglRaw);
+          if (!tglMs) { errors.push(`Baris ${rowNum}: tanggal tidak valid (pakai format DD/MM/YYYY)`); return; }
+          const kategori = String(kategoriRaw || '').trim();
+          if (!BEBAN_KATEGORI.includes(kategori)) { errors.push(`Baris ${rowNum}: kategori "${kategori}" tidak dikenali (harus persis: ${BEBAN_KATEGORI.join(', ')})`); return; }
+          const nominal = Number(nominalRaw);
+          if (!nominal || nominal <= 0) { errors.push(`Baris ${rowNum}: nominal tidak valid`); return; }
+          const kategoriCustom = kategori === 'Lainnya' ? String(kategoriCustomRaw || '').trim() : '';
+          if (kategori === 'Lainnya' && !kategoriCustom) { errors.push(`Baris ${rowNum}: kategori "Lainnya" wajib isi Kategori Custom`); return; }
+          const b = {
+            id: uid(),
+            kategori,
+            kategoriCustom,
+            nominal,
+            keterangan: String(keteranganRaw || '').trim(),
+            createdAt: tglMs,
+            createdBy: currentUser ? currentUser.email : null,
+          };
+          jobs.push(async () => {
+            await saveBebanItem(b);
+            bebanList.push(b);
+          });
+        });
+        if (!jobs.length) {
+          statusEl.textContent = 'Tidak ada baris valid ditemukan. Pastikan format file sesuai template (unduh template dulu kalau belum).';
+          statusEl.style.color = 'var(--money-out)';
+          if (errors.length) console.error('Baris beban ditolak:', errors);
+          return;
+        }
+        statusEl.textContent = `${jobs.length} baris siap dimigrasi. Menunggu konfirmasi...`;
+        const errLines = errors.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (errors.length > 5 ? `<br/>...dan ${errors.length - 5} lainnya` : '');
+        const errPreview = errors.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">${errors.length} baris akan dilewati (format tidak valid):<br/>${errLines}</span>` : '';
+        const totalNilai = dataRows.reduce((s, row) => { const n = Number(row[3]); return s + (n>0?n:0); }, 0);
+        showConfirm(
+          `Ditemukan <strong>${jobs.length}</strong> catatan beban operasional yang valid di file ini, total senilai <strong>${rupiah(totalNilai)}</strong>.${errPreview}<br/><br/>Setiap baris akan langsung masuk ke Laporan &gt; Beban Operasional dan mengurangi Laba Bersih pada bulan tanggal masing-masing.<br/><br/>Lanjutkan migrasi?`,
+          async () => {
+            showLoadingModal(`Memproses 0/${jobs.length} baris...`);
+            statusEl.textContent = `Memproses ${jobs.length} baris...`;
+            try {
+              const results = await runJobsInChunks(jobs, (done, total) => {
+                updateLoadingModal(`Memproses ${done}/${total} baris...`);
+                statusEl.textContent = `Memproses baris... (${done}/${total})`;
+              });
+              const failedCount = results.filter(r => r.status === 'rejected').length;
+              results.forEach(r => { if (r.status === 'rejected') console.error('Gagal menyimpan baris beban migrasi:', r.reason); });
+              const actualSuccess = jobs.length - failedCount;
+              bebanList.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+              closeLoadingModal();
+              const errNote = errors.length ? `\n${errors.length} baris dilewati (format tidak valid).` : '';
+              const failNote = failedCount ? `\n${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
+              statusEl.textContent = `${actualSuccess} baris berhasil dimigrasi.${errNote}${failNote}`;
+              statusEl.style.color = failedCount ? 'var(--money-out)' : 'var(--money-in)';
+              showResultModal(
+                failedCount ? 'Migrasi selesai (sebagian gagal)' : 'Migrasi berhasil',
+                `${actualSuccess} catatan beban operasional lama berhasil dimigrasi, total ${rupiah(totalNilai)}.${errNote}${failNote}`,
+                () => { activeTab = 'laporan'; laporanView = 'beban'; renderTabs(); renderBody(); }
+              );
+            } catch (err) {
+              closeLoadingModal();
+              console.error(err);
+              statusEl.textContent = 'Gagal memproses migrasi. Coba lagi.';
+              statusEl.style.color = 'var(--money-out)';
+              showResultModal('Migrasi gagal', 'Terjadi kesalahan saat menyimpan data. Coba upload ulang file yang sama - baris yang sudah berhasil tidak akan dobel.');
+            }
+          },
+          () => { statusEl.textContent = 'Migrasi dibatalkan.'; statusEl.style.color = 'var(--ink-soft)'; }
+        );
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Gagal membaca file. Pastikan file berformat .xlsx sesuai template.';
+        statusEl.style.color = 'var(--money-out)';
+      } finally {
+        e.target.value = '';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   function renderMigrasiData() {
     bodyEl.innerHTML = `
       <div class="bk-section-title">Migrasi Data Lama</div>
@@ -8421,8 +8538,20 @@ window.storage = {
         <div id="bk-svc-migrasi-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
 
+      <div class="bk-ai-box" style="margin-bottom:18px;">
+        <div class="ai-head"><div class="ai-title">4. Migrasi Beban Operasional Lama</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Untuk catatan beban operasional (gaji, sewa tempat, listrik/air/internet, dll) dari SEBELUM pakai sistem ini. Setiap baris otomatis masuk ke Laporan &rarr; Beban Operasional dan langsung mengurangi Laba Bersih pada bulan tanggal masing-masing.</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="bk-btn ghost" id="bk-beban-migrasi-template-btn">Unduh Template Excel</button>
+          <label class="bk-btn accent" style="cursor:pointer; margin:0;">Pilih &amp; Upload File Excel
+            <input type="file" id="bk-beban-migrasi-upload-input" accept=".xlsx,.xls" style="display:none;" />
+          </label>
+        </div>
+        <div id="bk-beban-migrasi-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+
       ${isOwner() ? `<div class="bk-ai-box" style="margin-bottom:18px;">
-        <div class="ai-head"><div class="ai-title">4. Backup &amp; Restore Database Lengkap</div></div>
+        <div class="ai-head"><div class="ai-title">5. Backup &amp; Restore Database Lengkap</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Simpan cadangan seluruh data sebelum migrasi besar, atau pulihkan data dari backup sebelumnya. Ada di Laporan &rarr; Backup &amp; Restore.</div>
         <button class="bk-btn ghost" id="bk-migrasi-goto-backup">Buka Backup &amp; Restore</button>
       </div>` : ''}
@@ -8433,6 +8562,8 @@ window.storage = {
     document.getElementById('bk-riwayat-upload-input').addEventListener('change', handleRiwayatExcelUpload);
     document.getElementById('bk-svc-migrasi-template-btn').addEventListener('click', downloadServiceMigrasiTemplate);
     document.getElementById('bk-svc-migrasi-upload-input').addEventListener('change', handleServiceMigrasiUpload);
+    document.getElementById('bk-beban-migrasi-template-btn').addEventListener('click', downloadBebanMigrasiTemplate);
+    document.getElementById('bk-beban-migrasi-upload-input').addEventListener('change', handleBebanMigrasiUpload);
     const gotoBackupBtn = document.getElementById('bk-migrasi-goto-backup');
     if (gotoBackupBtn) gotoBackupBtn.addEventListener('click', () => {
       activeTab = 'laporan';
