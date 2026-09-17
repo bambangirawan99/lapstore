@@ -441,14 +441,29 @@ body {
   #bk-root { max-width: 1500px; }
 }
 @media print {
-  body * { visibility: hidden; }
-  #bk-receipt-card, #bk-receipt-card * { visibility: visible; }
-  .bk-overlay { position: static !important; background: none !important; padding: 0 !important; }
-  .bk-receipt-wrap { position: static !important; }
+  /* PENTING: #bk-modal-slot (tempat nota/modal muncul) ternyata berada DI DALAM #bk-root,
+     jadi tidak bisa langsung sembunyikan seluruh #bk-root (notanya ikut hilang). Yang
+     disembunyikan hanya bagian UI aplikasi (header, tab, body) - #bk-modal-slot dibiarkan.
+     visibility:hidden TIDAK menghapus elemen dari alur halaman (tingginya tetap terhitung,
+     bikin kertas kontinu ikut sepanjang seluruh aplikasi -> nyetak jadi 2+ lembar, lembar
+     berikutnya kosong). display:none benar-benar menghapusnya dari layout, sehingga tinggi
+     halaman cetak menyusut pas dengan tinggi nota saja -> selalu 1 lembar. */
+  html, body { margin: 0 !important; padding: 0 !important; height: auto !important; }
+  #bk-root > .bk-header, #bk-root > .bk-shared-banner, #bk-root > .bk-tabs, #bk-root > .bk-body {
+    display: none !important;
+  }
+  #bk-root { height: auto !important; min-height: 0 !important; }
+  .bk-overlay {
+    position: static !important; display: block !important; background: none !important;
+    padding: 0 !important; min-height: 0 !important; height: auto !important;
+  }
+  .bk-receipt-wrap { position: static !important; height: auto !important; }
   #bk-receipt-card {
-    position: absolute; left: 0; top: 0; width: 300px; box-shadow: none !important; border: none !important;
+    position: static !important; width: 300px !important; margin: 0 auto !important;
+    box-shadow: none !important; border: none !important;
   }
   .bk-receipt-actions, .bk-close-x, .zigzag { display: none !important; }
+  @page { size: auto; margin: 4mm; }
 }
 </style>
 
