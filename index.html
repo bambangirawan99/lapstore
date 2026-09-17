@@ -6862,6 +6862,18 @@ window.storage = {
         <div id="bk-svc-link-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
       <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Sinkronkan No. HP Service ke Transaksi Terkait</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Kalau nota/resi service tidak menampilkan No. HP pelanggan walau sudah diisi di kartu Service-nya, kemungkinan transaksi pemasukannya dibuat/diubah sebelum nomornya tersimpan dengan benar. Alat ini menyamakan No. HP &amp; nama pelanggan di transaksi mengikuti data Service yang terkini.</div>
+        <div id="bk-svc-phone-sync-preview">${(() => {
+          const mismatched = cariServiceTeleponTidakSinkron();
+          return mismatched.length
+            ? `<div class="bk-stok-note" style="margin-bottom:14px;">Ditemukan <strong>${mismatched.length.toLocaleString('id-ID')} service</strong> yang No. HP transaksinya belum sesuai dengan data Service terkini.</div>
+               <button class="bk-btn accent" id="bk-svc-phone-sync-btn">Sinkronkan Sekarang</button>`
+            : `<div class="bk-empty" style="padding:10px 0;">Semua No. HP service sudah sinkron dengan transaksinya.</div>`;
+        })()}</div>
+        <div id="bk-svc-phone-sync-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
         <div class="ai-head"><div class="ai-title">Pindahkan Tanggal Riwayat Service ke Bulan Lain</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Kalau tanggal penyelesaian service (dari migrasi data lama atau salah input) ternyata masuk ke bulan yang salah, alat ini memindahkan tanggal service "Sudah diambil" beserta transaksi pemasukannya ke bulan yang kamu pilih. Urutan waktu antar riwayat (diterima &rarr; diagnosa &rarr; selesai &rarr; diambil) tetap dipertahankan, cuma bulan/tanggalnya yang berubah.</div>
         <div class="bk-two-col" style="margin-bottom:12px; max-width:460px;">
@@ -6925,6 +6937,8 @@ window.storage = {
     document.getElementById('bk-backup-upload-input').addEventListener('change', handleBackupRestoreUpload);
     const svcLinkFixBtn = document.getElementById('bk-svc-link-fix-btn');
     if (svcLinkFixBtn) svcLinkFixBtn.addEventListener('click', perbaikiTautanServicePutus);
+    const svcPhoneSyncBtn = document.getElementById('bk-svc-phone-sync-btn');
+    if (svcPhoneSyncBtn) svcPhoneSyncBtn.addEventListener('click', sinkronkanTeleponServiceKeTransaksi);
     const orphanMigrasiFixBtn = document.getElementById('bk-orphan-migrasi-fix-btn');
     if (orphanMigrasiFixBtn) orphanMigrasiFixBtn.addEventListener('click', hapusPembelianMigrasiYatim);
     const svcMovePreviewBtn = document.getElementById('bk-svc-move-preview-btn');
@@ -7094,6 +7108,49 @@ window.storage = {
         closeLoadingModal();
         statusEl.style.color = 'var(--money-out)';
         statusEl.textContent = 'Gagal memperbaiki, coba lagi.';
+      }
+    });
+  }
+
+  // ---------- SINKRONKAN NO. HP DARI SERVICE KE TRANSAKSI TERKAIT ----------
+  // Kalau transaksi pemasukan service dibuat/diubah sebelum No. HP sempat tersimpan dengan
+  // benar (atau data lama), nota jadi tidak menampilkan No. HP walau di kartu Service-nya
+  // sudah terisi. Alat ini mencari service yang No. HP-nya beda dari transaksi terkait, lalu
+  // menyamakan transaksi mengikuti data Service (yang dianggap paling terbaru/benar).
+  function cariServiceTeleponTidakSinkron() {
+    return services.filter(s => {
+      if (!s.linkedTxnId || !s.customerPhone) return false;
+      const t = txns.find(x => x.id === s.linkedTxnId);
+      return !!t && (t.customerPhone || '') !== s.customerPhone;
+    });
+  }
+  async function sinkronkanTeleponServiceKeTransaksi() {
+    if (!requireOwnerForDelete()) return;
+    const targets = cariServiceTeleponTidakSinkron();
+    if (!targets.length) { showToast('Semua No. HP service sudah sinkron dengan transaksinya.'); return; }
+    const statusEl = document.getElementById('bk-svc-phone-sync-status');
+    showConfirm(`Sinkronkan No. HP untuk <strong>${targets.length}</strong> service yang transaksinya belum sesuai dengan data Service terkini? Nomor di transaksi akan disamakan dengan yang tercatat di kartu Service masing-masing.`, async () => {
+      showLoadingModal(`Menyinkronkan 0/${targets.length}...`);
+      try {
+        let doneCount = 0;
+        for (const s of targets) {
+          const t = txns.find(x => x.id === s.linkedTxnId);
+          if (t) {
+            t.customerPhone = s.customerPhone;
+            t.customerName = s.customerName || t.customerName;
+            await saveTxn(t);
+          }
+          doneCount++;
+          updateLoadingModal(`Menyinkronkan ${doneCount}/${targets.length}...`);
+        }
+        closeLoadingModal();
+        if (statusEl) { statusEl.style.color = 'var(--money-in)'; statusEl.textContent = `${doneCount} transaksi berhasil disinkronkan.`; }
+        renderLaporan();
+        showToast(`${doneCount} No. HP transaksi service berhasil disinkronkan.`);
+      } catch (err) {
+        console.error(err);
+        closeLoadingModal();
+        if (statusEl) { statusEl.style.color = 'var(--money-out)'; statusEl.textContent = 'Gagal menyinkronkan, coba lagi.'; }
       }
     });
   }
