@@ -2015,6 +2015,9 @@ window.storage = {
     showConfirm(confirmMsg, async () => {
       showLoadingModal(pairTxn ? 'Menghapus transaksi & pasangannya...' : 'Menghapus transaksi...');
       try {
+        await logToTrash('txn', trashLabelForTxn(t), t);
+        if (pairTxn) await logToTrash('txn', trashLabelForTxn(pairTxn), pairTxn);
+        trashEntriesCache = null;
         await deleteTxnFromStore(id);
         txns = txns.filter(x => x.id !== id);
         if (pairTxn) {
@@ -2031,6 +2034,13 @@ window.storage = {
         showToast('Gagal menghapus transaksi, coba lagi.');
       }
     });
+  }
+  function trashLabelForTxn(t) {
+    const namePart = t.type === 'produksi' ? summarizeProduksi(t).replace(/&rarr;/, '->').replace(/<[^>]+>/g, '')
+      : (t.items && t.items[0] ? t.items[0].name : '');
+    const who = t.type === 'penjualan' ? (t.customerName || '') : t.type === 'pembelian' ? (t.supplierName || '') : '';
+    const typeLabel = t.type === 'penjualan' ? 'Penjualan' : t.type === 'pembelian' ? 'Pembelian' : 'Produksi';
+    return `${typeLabel}${who ? ' - '+who : ''}${namePart ? ' ('+namePart+')' : ''} - ${rupiah(t.total || 0)}`;
   }
 
   // ---------- RECEIPT ----------
@@ -2468,12 +2478,15 @@ window.storage = {
         try {
           let doneCount = 0;
           for (const id of ids) {
+            const t = txns.find(x => x.id === id);
+            if (t) await logToTrash('txn', trashLabelForTxn(t), t);
             await deleteTxnFromStore(id);
             txns = txns.filter(x => x.id !== id);
             await syncServiceAfterLinkedTxnDeleted(id);
             doneCount++;
             updateLoadingModal(`Menghapus ${doneCount}/${ids.length} transaksi...`);
           }
+          trashEntriesCache = null;
           selectedTxnIds.clear();
           closeLoadingModal();
           renderRiwayat();
@@ -3027,6 +3040,8 @@ window.storage = {
           txns.unshift(txn);
         }
         await markStokNamesDeleted([name]);
+        await logToTrash('stok', `${name} (${qty.toLocaleString('id-ID')} ${unit||''})`, { name, qty, unit });
+        trashEntriesCache = null;
         _itemCodeRegistryCache = null; // paksa hitung ulang registry supaya item ini langsung hilang
         closeLoadingModal();
         renderStok();
@@ -3072,6 +3087,10 @@ window.storage = {
           txns.unshift(txn);
         }
         await markStokNamesDeleted(targets.map(r => r.name));
+        for (const r of targets) {
+          await logToTrash('stok', `${r.name} (${r.qty.toLocaleString('id-ID')} ${r.unit||''})`, { name: r.name, qty: r.qty, unit: r.unit });
+        }
+        trashEntriesCache = null;
         _itemCodeRegistryCache = null; // paksa hitung ulang registry supaya item-item ini langsung hilang
         selectedStokNames.clear();
         closeLoadingModal();
@@ -4432,6 +4451,9 @@ window.storage = {
       showConfirm('Hapus tagihan manual ini?', async () => {
         showLoadingModal('Menghapus tagihan...');
         try {
+          const m = manualTagihan.find(x => x.id === id);
+          if (m) await logToTrash('tagihan', `${m.namaPelanggan || m.customerName || 'Tanpa nama'} - ${rupiah(m.nominal||0)}`, m);
+          trashEntriesCache = null;
           await deleteManualTagihanFromStore(id);
           manualTagihan = manualTagihan.filter(x => x.id !== id);
           closeLoadingModal();
@@ -5380,6 +5402,10 @@ window.storage = {
     showConfirm('Hapus data service ini? Kalau ada transaksi pemasukan terkait, transaksi itu juga akan ikut terhapus.', async () => {
       showLoadingModal('Menghapus data service...');
       try {
+        const linkedTxnsSnapshot = [s.linkedTxnId, s.prodTxnId, s.dpTxnId]
+          .filter(Boolean).map(tid => txns.find(x => x.id === tid)).filter(Boolean);
+        await logToTrash('service', `${s.customerName || 'Tanpa nama'} - ${s.device || ''}`, { service: s, linkedTxns: linkedTxnsSnapshot });
+        trashEntriesCache = null;
         if (s.linkedTxnId) {
           try { await deleteTxnFromStore(s.linkedTxnId); } catch (e) { /* mungkin sudah terhapus */ }
           txns = txns.filter(x => x.id !== s.linkedTxnId);
@@ -5426,6 +5452,9 @@ window.storage = {
         let failedCount = 0;
         for (const s of targets) {
           try {
+            const linkedTxnsSnapshot = [s.linkedTxnId, s.prodTxnId, s.dpTxnId]
+              .filter(Boolean).map(tid => txns.find(x => x.id === tid)).filter(Boolean);
+            await logToTrash('service', `${s.customerName || 'Tanpa nama'} - ${s.device || ''}`, { service: s, linkedTxns: linkedTxnsSnapshot });
             if (s.linkedTxnId) {
               try { await deleteTxnFromStore(s.linkedTxnId); } catch (e) { /* mungkin sudah terhapus */ }
               txns = txns.filter(x => x.id !== s.linkedTxnId);
@@ -5452,6 +5481,7 @@ window.storage = {
           updateLoadingModal(`Menghapus ${doneCount + failedCount}/${targets.length} service...`);
         }
         selectedSvcIds.clear();
+        trashEntriesCache = null;
         closeLoadingModal();
         refreshFn();
         showToast(failedCount
@@ -6726,6 +6756,10 @@ window.storage = {
   }
 
   // ---------- BACKUP & RESTORE DATABASE LENGKAP ----------
+  let autoBackupList = null; // null = belum dimuat dari server
+  let autoBackupLoading = false;
+  let trashEntriesCache = null; // null = belum dimuat dari server
+  let trashLoading = false;
   function renderBackupRestoreHtml() {
     const totalRecords = txns.length + services.length + bebanList.length + closings.length + utangList.length + utangPayments.length + modalEntries.length + manualTagihan.length;
     const totalPembelian = txns.filter(t => t.type === 'pembelian').length;
@@ -6735,7 +6769,35 @@ window.storage = {
     const nilaiPenjualan = txns.filter(t => t.type === 'penjualan').reduce((s,t) => s + (t.total||0), 0);
     const previewBersih = hitungPreviewBersihkanTerhapus();
     const previewSvcLink = hitungPreviewServiceLinkPutus();
+    if (autoBackupList === null && !autoBackupLoading) {
+      autoBackupLoading = true;
+      listAutoBackups().then(list => { autoBackupList = list; autoBackupLoading = false; renderLaporan(); });
+    }
+    if (trashEntriesCache === null && !trashLoading) {
+      trashLoading = true;
+      loadTrashEntries().then(list => { trashEntriesCache = list; trashLoading = false; renderLaporan(); });
+    }
     return `
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--money-in);">
+        <div class="ai-head"><div class="ai-title">Auto-Backup Harian</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Setiap kali aplikasi dibuka di hari yang berbeda, sistem otomatis menyimpan salinan penuh data ke server (tidak perlu diunduh manual). Tersimpan <strong>${AUTO_BACKUP_RETENTION_DAYS} hari terakhir</strong>, lebih lama dari itu otomatis dibersihkan. Kalau data rusak/salah hapus, pilih tanggal di bawah untuk memulihkan.</div>
+        <div id="bk-autobackup-list">${
+          autoBackupList === null ? '<div class="bk-empty" style="padding:10px 0;">Memuat daftar auto-backup...</div>' :
+          !autoBackupList.length ? '<div class="bk-empty" style="padding:10px 0;">Belum ada auto-backup (baru aktif mulai hari ini).</div>' :
+          autoBackupList.map(dateStr => `
+            <div class="bk-list-row">
+              <div class="bk-list-left"><div class="nm">${new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div></div>
+              <button class="bk-btn ghost bk-autobackup-restore-btn" data-date="${dateStr}">Pulihkan</button>
+            </div>
+          `).join('')
+        }</div>
+        <div id="bk-autobackup-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Riwayat Data yang Dihapus (${trashEntriesCache ? trashEntriesCache.length.toLocaleString('id-ID') : ''})</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Setiap kali data dihapus di aplikasi ini (transaksi, stok, service, utang, beban, modal, tagihan, pemindahan dana, snapshot tutup buku), salinannya disimpan di sini dulu selama <strong>${TRASH_RETENTION_DAYS} hari</strong> sebelum benar-benar hilang. Kalau salah hapus, cari di daftar per hari di bawah ini dan klik "Pulihkan".</div>
+        <div id="bk-trash-list">${renderTrashListHtml()}</div>
+      </div>
       <div class="bk-ai-box" style="margin-bottom:18px;">
         <div class="ai-head"><div class="ai-title">Unduh Backup Lengkap</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Simpan seluruh data (transaksi, service, beban, utang, modal, tagihan manual, pricelist) jadi satu file. Simpan file ini di tempat aman (Google Drive/email/flashdisk) sebagai cadangan &mdash; kalau suatu saat data di database rusak/terhapus/hilang, bisa dipulihkan lagi dari file ini.</div>
@@ -6829,6 +6891,15 @@ window.storage = {
     if (orphanMigrasiFixBtn) orphanMigrasiFixBtn.addEventListener('click', hapusPembelianMigrasiYatim);
     const svcMovePreviewBtn = document.getElementById('bk-svc-move-preview-btn');
     if (svcMovePreviewBtn) svcMovePreviewBtn.addEventListener('click', pindahkanTanggalServiceKeBulan);
+    document.querySelectorAll('.bk-autobackup-restore-btn').forEach(btn => {
+      btn.addEventListener('click', () => restoreDariAutoBackup(btn.dataset.date));
+    });
+    document.querySelectorAll('.bk-trash-restore-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entry = (trashEntriesCache || []).find(x => x.id === btn.dataset.id);
+        if (entry) restoreTrashEntry(btn.dataset.id, entry);
+      });
+    });
     const cleanupBtn = document.getElementById('bk-cleanup-deleted-btn');
     if (cleanupBtn) cleanupBtn.addEventListener('click', bersihkanTransaksiBarangTerhapus);
     const confirmInput = document.getElementById('bk-reset-confirm-text');
@@ -7198,13 +7269,17 @@ window.storage = {
     });
   }
 
-  function downloadFullBackup() {
-    const backup = {
+  function buildFullBackupObject() {
+    return {
       appName: 'LAPSTORE',
       exportedAt: new Date().toISOString(),
       storeName: document.getElementById('bk-storename').value || 'Toko Saya',
       txns, services, bebanList, closings, utangList, utangPayments, modalEntries, manualTagihan, pricelistData,
     };
+  }
+
+  function downloadFullBackup() {
+    const backup = buildFullBackupObject();
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -7215,6 +7290,158 @@ window.storage = {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     showToast('Backup berhasil diunduh.');
+  }
+
+  // ---------- AUTO-BACKUP HARIAN ----------
+  // Setiap kali aplikasi dibuka, cek apakah sudah ada backup otomatis untuk HARI INI. Kalau
+  // belum, buat snapshot penuh data dan simpan ke Supabase (key: autobackup:YYYY-MM-DD) - tanpa
+  // perlu diunduh manual. Backup lama (>30 hari) otomatis dihapus supaya tidak menumpuk terus.
+  const AUTO_BACKUP_RETENTION_DAYS = 30;
+  function todayDateKey() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  async function runAutoBackupHarianJikaPerlu() {
+    try {
+      const key = 'autobackup:' + todayDateKey();
+      let already = false;
+      try {
+        const r = await window.storage.get(key, true);
+        already = !!(r && r.value);
+      } catch (e) { already = false; } // key belum ada = belum backup hari ini
+      if (!already) {
+        const backup = buildFullBackupObject();
+        await window.storage.set(key, JSON.stringify(backup), true);
+      }
+      // Bersihkan backup otomatis yang lebih tua dari batas retensi
+      const listRes = await window.storage.list('autobackup:', true);
+      const keys = (listRes && listRes.keys) || [];
+      const cutoff = Date.now() - AUTO_BACKUP_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+      for (const k of keys) {
+        const dateStr = k.slice('autobackup:'.length);
+        const t = new Date(dateStr + 'T00:00:00').getTime();
+        if (!isNaN(t) && t < cutoff) {
+          try { await window.storage.delete(k, true); } catch (e) { /* biarkan, coba lagi besok */ }
+        }
+      }
+    } catch (err) {
+      console.error('Auto-backup harian gagal:', err);
+      // Diam-diam gagal tidak masalah - backup manual tetap tersedia, dan akan dicoba lagi besok/refresh berikutnya
+    }
+  }
+
+  async function listAutoBackups() {
+    try {
+      const listRes = await window.storage.list('autobackup:', true);
+      const keys = (listRes && listRes.keys) || [];
+      return keys.map(k => k.slice('autobackup:'.length)).sort().reverse();
+    } catch (e) { return []; }
+  }
+
+  // ---------- RIWAYAT DATA YANG DIHAPUS (TRASH / RECYCLE BIN) ----------
+  // Setiap kali sesuatu dihapus lewat aplikasi ini, salinan datanya disimpan dulu ke sini
+  // sebelum benar-benar dihapus dari tabel aslinya. Kalau salah hapus, bisa dipulihkan lagi
+  // dari sini - dikelompokkan per hari. Otomatis dibersihkan setelah TRASH_RETENTION_DAYS hari.
+  const TRASH_RETENTION_DAYS = 30;
+  const TRASH_TYPE_LABELS = {
+    txn: 'Transaksi', stok: 'Stok', service: 'Service Laptop', utang: 'Utang',
+    beban: 'Beban Operasional', modal: 'Setoran/Penarikan Modal', tagihan: 'Tagihan Manual',
+    transfer: 'Pemindahan Dana', closing: 'Snapshot Tutup Buku',
+  };
+  async function logToTrash(type, label, data) {
+    try {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      const entry = { type, label, data, deletedAt: Date.now(), deletedBy: currentUser ? currentUser.email : null };
+      await window.storage.set('trash:' + id, JSON.stringify(entry), true);
+    } catch (err) {
+      console.error('Gagal mencatat ke riwayat penghapusan (trash):', err);
+      // Diam-diam gagal tidak menghalangi proses hapus utama tetap berjalan
+    }
+  }
+  async function loadTrashEntries() {
+    try {
+      const listRes = await window.storage.list('trash:', true);
+      const keys = (listRes && listRes.keys) || [];
+      const entries = [];
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          if (r && r.value) entries.push({ id: k.slice('trash:'.length), ...JSON.parse(r.value) });
+        } catch (e) { /* lewati entri yang gagal dibaca */ }
+      }
+      entries.sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
+      return entries;
+    } catch (e) { return []; }
+  }
+  async function pruneOldTrash() {
+    try {
+      const listRes = await window.storage.list('trash:', true);
+      const keys = (listRes && listRes.keys) || [];
+      const cutoff = Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          const entry = r && r.value ? JSON.parse(r.value) : null;
+          if (entry && (entry.deletedAt||0) < cutoff) {
+            await window.storage.delete(k, true);
+          }
+        } catch (e) { /* lewati */ }
+      }
+    } catch (e) { /* diam-diam gagal, coba lagi nanti */ }
+  }
+  function trashDayKey(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  async function restoreTrashEntry(trashId, entry) {
+    if (!requireOwnerForDelete()) return;
+    showConfirm(`Pulihkan "${escapeAttr(entry.label)}" yang dihapus pada ${new Date(entry.deletedAt).toLocaleString('id-ID')}?`, async () => {
+      showLoadingModal('Memulihkan data...');
+      try {
+        const d = entry.data;
+        if (entry.type === 'txn') {
+          await saveTxn(d);
+          if (!txns.some(x => x.id === d.id)) txns.unshift(d);
+        } else if (entry.type === 'stok') {
+          await pulihkanStokNama(d.name);
+        } else if (entry.type === 'service') {
+          await saveService(d.service);
+          if (!services.some(x => x.id === d.service.id)) services.unshift(d.service);
+          for (const t of (d.linkedTxns || [])) {
+            await saveTxn(t);
+            if (!txns.some(x => x.id === t.id)) txns.unshift(t);
+          }
+        } else if (entry.type === 'utang') {
+          await saveUtangItem(d);
+          if (!utangList.some(x => x.id === d.id)) utangList.unshift(d);
+        } else if (entry.type === 'beban') {
+          await saveBebanItem(d);
+          if (!bebanList.some(x => x.id === d.id)) bebanList.unshift(d);
+        } else if (entry.type === 'modal') {
+          await saveModalEntry(d);
+          if (!modalEntries.some(x => x.id === d.id)) modalEntries.push(d);
+        } else if (entry.type === 'tagihan') {
+          await saveManualTagihanItem(d);
+          if (!manualTagihan.some(x => x.id === d.id)) manualTagihan.unshift(d);
+        } else if (entry.type === 'transfer') {
+          await saveTransferItem(d);
+          if (!transferRekening.some(x => x.id === d.id)) transferRekening.unshift(d);
+        } else if (entry.type === 'closing') {
+          await saveClosingSnapshot(d);
+          if (!closings.some(x => x.id === d.id)) closings.unshift(d);
+        }
+        await window.storage.delete('trash:' + trashId, true);
+        if (trashEntriesCache) trashEntriesCache = trashEntriesCache.filter(x => x.id !== trashId);
+        invalidateStockCaches();
+        closeLoadingModal();
+        renderLaporan();
+        showToast(`"${entry.label}" berhasil dipulihkan.`);
+      } catch (err) {
+        console.error(err);
+        closeLoadingModal();
+        showToast('Gagal memulihkan, coba lagi.');
+      }
+    });
   }
 
   function handleBackupRestoreUpload(e) {
@@ -7276,6 +7503,63 @@ window.storage = {
       });
     }
     await Promise.all(jobs);
+  }
+
+  function renderTrashListHtml() {
+    if (trashEntriesCache === null) return '<div class="bk-empty" style="padding:10px 0;">Memuat riwayat penghapusan...</div>';
+    if (!trashEntriesCache.length) return '<div class="bk-empty" style="padding:10px 0;">Belum ada data yang dihapus (aman semua).</div>';
+    const byDay = {};
+    trashEntriesCache.forEach(e => {
+      const dk = trashDayKey(e.deletedAt);
+      if (!byDay[dk]) byDay[dk] = [];
+      byDay[dk].push(e);
+    });
+    const days = Object.keys(byDay).sort().reverse();
+    return days.map(dk => `
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12.5px; font-weight:700; color:var(--ink); margin-bottom:6px;">${new Date(dk + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} (${byDay[dk].length})</div>
+        ${byDay[dk].map(e => `
+          <div class="bk-list-row">
+            <div class="bk-list-left">
+              <div class="nm">${escapeAttr(e.label)}</div>
+              <div class="sub">${TRASH_TYPE_LABELS[e.type] || e.type} &middot; dihapus ${new Date(e.deletedAt).toLocaleTimeString('id-ID')}${e.deletedBy ? ' oleh '+escapeAttr(e.deletedBy) : ''}</div>
+            </div>
+            <button class="bk-btn ghost bk-trash-restore-btn" data-id="${e.id}">Pulihkan</button>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+  }
+
+  async function restoreDariAutoBackup(dateStr) {
+    if (!requireOwnerForDelete()) return;
+    const statusEl = document.getElementById('bk-autobackup-status');
+    showConfirm(
+      `Pulihkan data dari auto-backup tanggal <strong>${new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>? Data akan ditambahkan/menimpa data yang ada sekarang berdasarkan ID masing-masing catatan (data yang tidak ada di backup ini tidak akan terhapus).`,
+      async () => {
+        statusEl.style.color = 'var(--ink-soft)';
+        statusEl.textContent = 'Memulihkan data, mohon tunggu...';
+        showLoadingModal('Memulihkan dari auto-backup...');
+        try {
+          const r = await window.storage.get('autobackup:' + dateStr, true);
+          if (!r || !r.value) throw new Error('Auto-backup tidak ditemukan.');
+          const backup = JSON.parse(r.value);
+          await restoreFullBackup(backup);
+          updateLoadingModal('Memuat ulang data...');
+          await refreshDataForced();
+          closeLoadingModal();
+          statusEl.style.color = 'var(--money-in)';
+          statusEl.textContent = 'Data berhasil dipulihkan dari auto-backup.';
+          showResultModal('Restore berhasil', `Data berhasil dipulihkan dari auto-backup tanggal ${dateStr}.`);
+        } catch (err) {
+          console.error(err);
+          closeLoadingModal();
+          statusEl.style.color = 'var(--money-out)';
+          statusEl.textContent = 'Gagal memulihkan, coba lagi.';
+          showResultModal('Restore gagal', 'Terjadi kesalahan saat memulihkan data dari auto-backup. Coba lagi.');
+        }
+      }
+    );
   }
 
   // Refresh paksa (dipakai setelah restore backup) - abaikan pengecekan "sedang mengisi form"
@@ -7491,6 +7775,9 @@ window.storage = {
         showConfirm('Hapus setoran modal ini? Ini akan mempengaruhi perhitungan Kas dan Neraca.', async () => {
           showLoadingModal('Menghapus setoran modal...');
           try {
+            const m = modalEntries.find(x => x.id === id);
+            if (m) await logToTrash('modal', `${m.jenis === 'penarikan' ? 'Penarikan' : 'Setoran'} modal - ${rupiah(m.nominal||0)}`, m);
+            trashEntriesCache = null;
             await deleteModalEntryFromStore(id);
             modalEntries = modalEntries.filter(m => m.id !== id);
             closeLoadingModal();
@@ -7519,6 +7806,9 @@ window.storage = {
         showConfirm('Hapus snapshot tutup buku ini?', async () => {
           showLoadingModal('Menghapus snapshot...');
           try {
+            const c = closings.find(x => x.id === id);
+            if (c) await logToTrash('closing', `Tutup buku ${monthLabel(c.month || 'semua')} - ${new Date(c.savedAt||0).toLocaleDateString('id-ID')}`, c);
+            trashEntriesCache = null;
             await deleteClosingFromStore(id);
             closings = closings.filter(c => c.id !== id);
             closeLoadingModal();
@@ -7753,6 +8043,9 @@ window.storage = {
         showConfirm('Hapus catatan utang ini beserta seluruh riwayat pembayarannya? Ini akan mempengaruhi perhitungan Kas.', async () => {
           showLoadingModal('Menghapus catatan utang...');
           try {
+            const u = utangList.find(x => x.id === id);
+            if (u) await logToTrash('utang', `${u.kreditur || 'Tanpa nama'} - ${rupiah(u.nominalAwal||0)}`, u);
+            trashEntriesCache = null;
             await deleteUtangFromStore(id);
             utangList = utangList.filter(u => u.id !== id);
             const related = utangPayments.filter(p => p.utangId === id);
@@ -7874,6 +8167,9 @@ window.storage = {
         showConfirm('Hapus catatan beban ini?', async () => {
           showLoadingModal('Menghapus catatan beban...');
           try {
+            const b = bebanList.find(x => x.id === id);
+            if (b) await logToTrash('beban', `${b.kategori === 'Lainnya' && b.kategoriCustom ? b.kategoriCustom : (b.kategori||'Beban')} - ${rupiah(b.nominal||0)}`, b);
+            trashEntriesCache = null;
             await deleteBebanFromStore(id);
             bebanList = bebanList.filter(b => b.id !== id);
             closeLoadingModal();
@@ -8028,6 +8324,9 @@ window.storage = {
       showConfirm('Hapus catatan pemindahan dana ini? Saldo per rekening akan dihitung ulang tanpa pemindahan ini.', async () => {
         showLoadingModal('Menghapus catatan...');
         try {
+          const tr = transferRekening.find(x => x.id === id);
+          if (tr) await logToTrash('transfer', `Pemindahan dana - ${rupiah(tr.nominal||0)}`, tr);
+          trashEntriesCache = null;
           await deleteTransferFromStore(id);
           transferRekening = transferRekening.filter(x => x.id !== id);
           closeLoadingModal();
@@ -8445,6 +8744,8 @@ window.storage = {
     renderTabs();
     renderBody();
     checkAndOfferDraftRestore();
+    runAutoBackupHarianJikaPerlu(); // jalan di background, tidak menunggu/blocking tampilan
+    pruneOldTrash(); // bersihkan riwayat penghapusan yang sudah lewat masa retensi
     if (bgRefreshIntervalId) clearInterval(bgRefreshIntervalId);
     bgRefreshIntervalId = setInterval(() => refreshData(false), 20000);
     if (draftSaveIntervalId) clearInterval(draftSaveIntervalId);
