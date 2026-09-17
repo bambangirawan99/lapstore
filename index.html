@@ -2099,7 +2099,7 @@ window.storage = {
             </div>`).join('')}
             <hr/>
             <div class="r-total"><span>Total</span><span>${rupiah(t.total)}</span></div>
-            <div class="r-note">${new Date(t.createdAt).toLocaleString('id-ID')}${t.customerName ? ' &middot; '+t.customerName : ''}</div>
+            <div class="r-note">${new Date(t.createdAt).toLocaleString('id-ID')}${t.customerName ? ' &middot; '+t.customerName : ''}${t.customerPhone ? ' &middot; '+t.customerPhone : ''}</div>
             <hr/>
             <div style="text-align:center; font-size:11px; line-height:1.6;">
               <div style="color:var(--ink-soft);">Pembayaran transfer ke:</div>
