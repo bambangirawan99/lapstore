@@ -1166,6 +1166,30 @@ window.storage = {
     const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0)
       + manualTagihan.filter(m => m.paid === false).reduce((s,m) => s + (Number(m.nominal)||0), 0);
     const recent = [...txns].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 6);
+    // ---- Ringkasan Hari Ini: penjualan produk vs pendapatan service, terpisah, khusus hari ini ----
+    const todayStr = new Date().toDateString();
+    const todayTxns = txns.filter(x => new Date(x.createdAt).toDateString() === todayStr);
+    const todaySalesTxns = todayTxns.filter(x => x.type === 'penjualan' && !findLinkedService(x.id));
+    const todayServiceTxns = todayTxns.filter(x => x.type === 'penjualan' && findLinkedService(x.id));
+    const todayPembelianTxns = todayTxns.filter(x => x.type === 'pembelian');
+    const todaySalesTotal = todaySalesTxns.reduce((s,x) => s + x.total, 0);
+    const todayServiceTotal = todayServiceTxns.reduce((s,x) => s + x.total, 0);
+    const todayPembelianTotal = todayPembelianTxns.reduce((s,x) => s + x.total, 0);
+    const todayHppAll = computeHPP();
+    const todayHpp = todaySalesTxns.reduce((s,x) => s + (todayHppAll.hppByTxn[x.id] || 0), 0);
+    const todayLabaKotor = todaySalesTotal - todayHpp;
+    const laporanHarianHtml = `
+      <div class="bk-section-title">Ringkasan Hari Ini (${new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })})</div>
+      <div class="bk-stats" style="margin-bottom:10px;">
+        <div class="bk-stat in"><div class="lbl">Penjualan Produk</div><div class="val">${rupiah(todaySalesTotal)}</div></div>
+        <div class="bk-stat in"><div class="lbl">Pendapatan Service</div><div class="val">${rupiah(todayServiceTotal)}</div></div>
+        <div class="bk-stat" style="border-width:2px;"><div class="lbl">Total Pemasukan Hari Ini</div><div class="val" style="font-size:17px;">${rupiah(todaySalesTotal + todayServiceTotal)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Pembelian Hari Ini</div><div class="val">${rupiah(todayPembelianTotal)}</div></div>
+        <div class="bk-stat in"><div class="lbl">Laba Kotor (Produk) Hari Ini</div><div class="val" style="color:${todayLabaKotor>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(todayLabaKotor)}</div></div>
+        <div class="bk-stat"><div class="lbl">Jumlah Transaksi Hari Ini</div><div class="val" style="font-size:17px;">${todaySalesTxns.length + todayServiceTxns.length}</div></div>
+      </div>
+      <div class="bk-stok-note" style="margin-bottom:18px;">Penjualan Produk dan Pendapatan Service dipisah supaya jelas sumbernya masing-masing. Lihat rincian lengkap per bulan di Laporan &rarr; Laba Rugi.</div>
+    `;
     if (!isOwner()) {
       bodyEl.innerHTML = `
         <div class="bk-stats">
@@ -1178,6 +1202,7 @@ window.storage = {
       return;
     }
     bodyEl.innerHTML = `
+      ${laporanHarianHtml}
       <div class="bk-stats">
         <div class="bk-stat in"><div class="lbl">Laba kotor</div><div class="val" style="color:${hpp.labaKotor>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(hpp.labaKotor)}</div></div>
         <div class="bk-stat out"><div class="lbl">HPP (estimasi)</div><div class="val">${rupiah(hpp.totalHPP)}</div></div>
