@@ -652,6 +652,7 @@ window.storage = {
   let laporanBulan = 'semua';
   function blankBebanForm() { return { kategori: BEBAN_KATEGORI[0], kategoriCustom: '', nominal: '', keterangan: '' }; }
   let bebanFormState = blankBebanForm();
+  let editingBebanId = null;
 
   // ---------- PEMINDAHAN DANA ANTAR REKENING ----------
   async function loadTransferRekening() {
@@ -8393,7 +8394,8 @@ window.storage = {
     const filtered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     const total = filtered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
     return `
-      <div class="bk-section-title">Catat beban operasional baru</div>
+      <div class="bk-section-title">${editingBebanId ? 'Edit beban operasional' : 'Catat beban operasional baru'}</div>
+      ${editingBebanId ? `<div class="bk-cancel-edit" id="bk-beban-cancel-edit">&larr; Batal edit</div>` : ''}
       <div class="bk-two-col">
         <div class="bk-field">
           <label>Kategori</label>
@@ -8406,7 +8408,7 @@ window.storage = {
       ${bebanFormState.kategori === 'Lainnya' ? `<div class="bk-field"><label>Nama akun custom</label><input id="bk-beban-custom" value="${escapeAttr(bebanFormState.kategoriCustom)}" placeholder="Contoh: Iuran keamanan" /></div>` : ''}
       <div class="bk-field"><label>Keterangan (opsional)</label><input id="bk-beban-ket" value="${escapeAttr(bebanFormState.keterangan)}" placeholder="Contoh: Gaji bulan Agustus - 2 karyawan" /></div>
       <div id="bk-beban-err" class="bk-err" style="display:none;"></div>
-      <button class="bk-btn primary" id="bk-beban-save" style="margin-bottom:26px;">Simpan beban</button>
+      <button class="bk-btn primary" id="bk-beban-save" style="margin-bottom:26px;">${editingBebanId ? 'Simpan perubahan' : 'Simpan beban'}</button>
 
       <div class="bk-section-title">Riwayat beban operasional</div>
       <div class="bk-field" style="max-width:260px;">
@@ -8435,6 +8437,7 @@ window.storage = {
       </div>
       <div class="bk-row-actions">
         <div class="bk-icon-btn beban-print-btn" title="Cetak bukti pengeluaran">&#9099;</div>
+        <div class="bk-icon-btn beban-edit-btn" title="Edit beban">&#9998;</div>
         <div class="bk-icon-btn danger beban-del-btn" title="Hapus beban">&times;</div>
       </div>
     </div>`;
@@ -8455,15 +8458,35 @@ window.storage = {
       if (nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nominal beban yang valid.'; return; }
       if (bebanFormState.kategori === 'Lainnya' && !bebanFormState.kategoriCustom.trim()) { errEl.style.display = 'block'; errEl.textContent = 'Isi nama akun custom untuk kategori Lainnya.'; return; }
       errEl.style.display = 'none';
-      const b = { id: uid(), kategori: bebanFormState.kategori, kategoriCustom: bebanFormState.kategoriCustom.trim(), nominal, keterangan: bebanFormState.keterangan.trim(), createdAt: Date.now(), createdBy: currentUser ? currentUser.email : null };
+      const isEdit = !!editingBebanId;
+      const existing = isEdit ? bebanList.find(x => x.id === editingBebanId) : null;
+      const b = {
+        id: isEdit ? editingBebanId : uid(),
+        kategori: bebanFormState.kategori,
+        kategoriCustom: bebanFormState.kategoriCustom.trim(),
+        nominal,
+        keterangan: bebanFormState.keterangan.trim(),
+        createdAt: isEdit && existing ? existing.createdAt : Date.now(),
+        createdBy: isEdit && existing ? existing.createdBy : (currentUser ? currentUser.email : null),
+      };
       try {
         await saveBebanItem(b);
-        bebanList.unshift(b);
+        if (isEdit) {
+          const idx = bebanList.findIndex(x => x.id === editingBebanId);
+          if (idx >= 0) bebanList[idx] = b; else bebanList.unshift(b);
+        } else {
+          bebanList.unshift(b);
+        }
+        const wasEdit = isEdit;
+        editingBebanId = null;
         bebanFormState = blankBebanForm();
         renderLaporan();
-        showBebanVoucher(b);
+        if (!wasEdit) showBebanVoucher(b);
+        else showToast('Perubahan beban berhasil disimpan.');
       } catch (e) { console.error(e); errEl.style.display='block'; errEl.textContent = 'Gagal menyimpan beban, coba lagi.'; }
     });
+    const cancelEditBtn = document.getElementById('bk-beban-cancel-edit');
+    if (cancelEditBtn) cancelEditBtn.addEventListener('click', () => { editingBebanId = null; bebanFormState = blankBebanForm(); renderLaporan(); });
     const monthSel = document.getElementById('bk-lap-month');
     if (monthSel) monthSel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
     document.querySelectorAll('#bk-beban-list .bk-list-row-wrap').forEach(w => {
@@ -8472,6 +8495,14 @@ window.storage = {
       if (printBtn) printBtn.addEventListener('click', () => {
         const b = bebanList.find(x => x.id === id);
         if (b) showBebanVoucher(b);
+      });
+      const editBtn = w.querySelector('.beban-edit-btn');
+      if (editBtn) editBtn.addEventListener('click', () => {
+        const b = bebanList.find(x => x.id === id);
+        if (!b) return;
+        editingBebanId = id;
+        bebanFormState = { kategori: b.kategori, kategoriCustom: b.kategoriCustom || '', nominal: b.nominal, keterangan: b.keterangan || '' };
+        renderLaporan();
       });
       w.querySelector('.beban-del-btn').addEventListener('click', () => {
         showConfirm('Hapus catatan beban ini?', async () => {
