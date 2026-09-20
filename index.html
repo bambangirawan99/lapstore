@@ -621,6 +621,7 @@ window.storage = {
     { id: 'cari', label: 'Cari' },
   ];
   let activeTab = 'dashboard';
+  let dashboardSelectedDay = null; // null = hari ini; string 'YYYY-MM-DD' kalau pilih hari lain dari dropdown
   let cariQuery = '';
   let txns = [];
   let riwayatFilter = 'semua';
@@ -1166,9 +1167,12 @@ window.storage = {
     const piutangTotal = txns.filter(x => x.type === 'penjualan' && x.paid === false).reduce((s,x) => s + x.total, 0)
       + manualTagihan.filter(m => m.paid === false).reduce((s,m) => s + (Number(m.nominal)||0), 0);
     const recent = [...txns].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, 6);
-    // ---- Ringkasan Hari Ini: penjualan produk vs pendapatan service, terpisah, khusus hari ini ----
-    const todayStr = new Date().toDateString();
-    const todayTxns = txns.filter(x => new Date(x.createdAt).toDateString() === todayStr);
+    // ---- Ringkasan Harian: penjualan produk vs pendapatan service, terpisah, per hari terpilih ----
+    // dashboardSelectedDay null = hari ini; kalau diisi (format 'YYYY-MM-DD') pakai tanggal itu.
+    function dayKeyOf(ts) { const d = new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    const selectedDayKey = dashboardSelectedDay || dayKeyOf(Date.now());
+    const selectedDayDate = new Date(selectedDayKey + 'T00:00:00');
+    const todayTxns = txns.filter(x => dayKeyOf(x.createdAt) === selectedDayKey);
     const todaySalesTxns = todayTxns.filter(x => x.type === 'penjualan' && !findLinkedService(x.id));
     const todayServiceTxns = todayTxns.filter(x => x.type === 'penjualan' && findLinkedService(x.id));
     const todayPembelianTxns = todayTxns.filter(x => x.type === 'pembelian');
@@ -1178,17 +1182,29 @@ window.storage = {
     const todayHppAll = computeHPP();
     const todayHpp = todaySalesTxns.reduce((s,x) => s + (todayHppAll.hppByTxn[x.id] || 0), 0);
     const todayLabaKotor = todaySalesTotal - todayHpp;
+    // Dropdown 30 hari terakhir (hari ini + 29 hari sebelumnya), terbaru di atas
+    const last30DaysOptions = Array.from({ length: 30 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const dk = dayKeyOf(d.getTime());
+      const label = i === 0 ? `Hari ini (${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long' })})` : d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' });
+      return `<option value="${dk}" ${dk===selectedDayKey?'selected':''}>${label}</option>`;
+    }).join('');
     const laporanHarianHtml = `
-      <div class="bk-section-title">Ringkasan Hari Ini (${new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })})</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <div class="bk-section-title" style="margin-bottom:0;">Ringkasan Harian</div>
+        <select id="bk-dashboard-day-select" style="border:1.5px solid var(--line); border-radius:10px; padding:7px 10px; font-size:12.5px; font-family:'Inter',sans-serif; background:#fff; max-width:220px;">
+          ${last30DaysOptions}
+        </select>
+      </div>
       <div class="bk-stats" style="margin-bottom:10px;">
         <div class="bk-stat in"><div class="lbl">Penjualan Produk</div><div class="val">${rupiah(todaySalesTotal)}</div></div>
         <div class="bk-stat in"><div class="lbl">Pendapatan Service</div><div class="val">${rupiah(todayServiceTotal)}</div></div>
-        <div class="bk-stat" style="border-width:2px;"><div class="lbl">Total Pemasukan Hari Ini</div><div class="val" style="font-size:17px;">${rupiah(todaySalesTotal + todayServiceTotal)}</div></div>
-        <div class="bk-stat out"><div class="lbl">Pembelian Hari Ini</div><div class="val">${rupiah(todayPembelianTotal)}</div></div>
-        <div class="bk-stat in"><div class="lbl">Laba Kotor (Produk) Hari Ini</div><div class="val" style="color:${todayLabaKotor>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(todayLabaKotor)}</div></div>
-        <div class="bk-stat"><div class="lbl">Jumlah Transaksi Hari Ini</div><div class="val" style="font-size:17px;">${todaySalesTxns.length + todayServiceTxns.length}</div></div>
+        <div class="bk-stat" style="border-width:2px;"><div class="lbl">Total Pemasukan</div><div class="val" style="font-size:17px;">${rupiah(todaySalesTotal + todayServiceTotal)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Pembelian</div><div class="val">${rupiah(todayPembelianTotal)}</div></div>
+        <div class="bk-stat in"><div class="lbl">Laba Kotor (Produk)</div><div class="val" style="color:${todayLabaKotor>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(todayLabaKotor)}</div></div>
+        <div class="bk-stat"><div class="lbl">Jumlah Transaksi</div><div class="val" style="font-size:17px;">${todaySalesTxns.length + todayServiceTxns.length}</div></div>
       </div>
-      <div class="bk-stok-note" style="margin-bottom:18px;">Penjualan Produk dan Pendapatan Service dipisah supaya jelas sumbernya masing-masing. Lihat rincian lengkap per bulan di Laporan &rarr; Laba Rugi.</div>
+      <div class="bk-stok-note" style="margin-bottom:18px;">Penjualan Produk dan Pendapatan Service dipisah supaya jelas sumbernya masing-masing. Pilih tanggal lain (30 hari terakhir) di dropdown atas untuk lihat hari sebelumnya. Rincian lengkap per bulan ada di Laporan &rarr; Laba Rugi.</div>
     `;
     if (!isOwner()) {
       bodyEl.innerHTML = `
@@ -1223,6 +1239,8 @@ window.storage = {
       <div id="bk-recent">${recent.length ? recent.map(t2 => rowHtml(t2, false)).join('') : '<div class="bk-empty">Belum ada transaksi. Mulai catat di tab "Catat pembelian" atau "Catat penjualan".</div>'}</div>
     `;
     document.getElementById('bk-ai-btn').addEventListener('click', runAiInsight);
+    const daySel = document.getElementById('bk-dashboard-day-select');
+    if (daySel) daySel.addEventListener('change', e => { dashboardSelectedDay = e.target.value; renderDashboard(); });
   }
 
   function summarizeProduksi(t) {
