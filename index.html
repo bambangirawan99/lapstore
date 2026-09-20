@@ -6936,6 +6936,15 @@ window.storage = {
         <div id="bk-svc-move-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
       </div>
       <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
+        <div class="ai-head"><div class="ai-title">Pindahkan Data Hasil Migrasi ke Bulan Ini</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Khusus untuk data yang berasal dari <strong>Migrasi Data</strong> (upload Excel data lama: Riwayat Penjualan Lama, Stok, Beban Operasional) yang tanggalnya masih tercatat di bulan-bulan sebelumnya. Alat ini akan memindahkan tanggalnya ke bulan ini (${monthLabel(monthKey(Date.now()))}), supaya laporan bulan-bulan lama tetap kosong dan semuanya mulai tercatat dari bulan ini. Transaksi yang dicatat MANUAL (bukan dari upload migrasi) tidak akan tersentuh sama sekali.</div>
+        <div class="bk-stok-note" style="margin-bottom:12px;">Khusus untuk Beban Operasional, tidak ada penanda otomatis mana yang dari migrasi vs dicatat manual di bulan lama &mdash; jadi SEMUA beban sebelum bulan ini ditampilkan sebagai kandidat. Tinjau &amp; hilangkan centang pada beban yang MEMANG sengaja dicatat manual di bulan lama sebelum melanjutkan.</div>
+        <button class="bk-btn ghost" id="bk-migrasi-move-scan-btn" style="margin-bottom:12px;">Cari Data Migrasi di Luar Bulan Ini</button>
+        <div id="bk-migrasi-move-preview">${renderMigrasiMovePreviewHtml()}</div>
+        ${migrasiMovePreviewCache && migrasiMovePreviewCache.length ? `<button class="bk-btn accent" id="bk-migrasi-move-exec-btn" style="margin-top:12px;">Pindahkan yang Dicentang ke Bulan Ini</button>` : ''}
+        <div id="bk-migrasi-move-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>
+      <div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent);">
         <div class="ai-head"><div class="ai-title">Bersihkan Transaksi untuk Barang yang Sudah Dihapus</div></div>
         <div class="ai-body" style="margin-bottom:12px;">Untuk barang yang sudah kamu hapus dari tab Stok, tapi transaksi pembelian/penjualan aslinya masih ikut terhitung di Dashboard/Pengeluaran/Pemasukan. Alat ini <strong>hanya membuang bagian item yang sudah dihapus itu</strong> dari transaksi terkait &mdash; transaksi yang masih ada item lain yang valid TIDAK dihapus seluruhnya, cuma dikurangi bagian yang sudah tidak relevan. Transaksi lain yang tidak terkait barang terhapus sama sekali TIDAK disentuh.</div>
         ${previewBersih.jumlahTransaksiTerpengaruh > 0 ? `
@@ -6987,6 +6996,23 @@ window.storage = {
     if (orphanMigrasiFixBtn) orphanMigrasiFixBtn.addEventListener('click', hapusPembelianMigrasiYatim);
     const svcMovePreviewBtn = document.getElementById('bk-svc-move-preview-btn');
     if (svcMovePreviewBtn) svcMovePreviewBtn.addEventListener('click', pindahkanTanggalServiceKeBulan);
+    const migrasiMoveScanBtn = document.getElementById('bk-migrasi-move-scan-btn');
+    if (migrasiMoveScanBtn) migrasiMoveScanBtn.addEventListener('click', siapkanPreviewMigrasiMove);
+    const migrasiMoveExecBtn = document.getElementById('bk-migrasi-move-exec-btn');
+    if (migrasiMoveExecBtn) migrasiMoveExecBtn.addEventListener('click', eksekusiMigrasiMove);
+    document.querySelectorAll('.bk-migrasi-move-check').forEach(chk => {
+      chk.addEventListener('change', () => {
+        if (chk.checked) migrasiMoveSelectedKeys.add(chk.dataset.key); else migrasiMoveSelectedKeys.delete(chk.dataset.key);
+        renderLaporan();
+      });
+    });
+    const migrasiMoveSelectAll = document.getElementById('bk-migrasi-move-select-all');
+    if (migrasiMoveSelectAll) migrasiMoveSelectAll.addEventListener('change', () => {
+      const groups = migrasiMovePreviewCache || [];
+      if (migrasiMoveSelectAll.checked) groups.forEach(g => migrasiMoveSelectedKeys.add(g.key));
+      else groups.forEach(g => migrasiMoveSelectedKeys.delete(g.key));
+      renderLaporan();
+    });
     document.querySelectorAll('.bk-autobackup-restore-btn').forEach(btn => {
       btn.addEventListener('click', () => restoreDariAutoBackup(btn.dataset.date));
     });
@@ -7258,6 +7284,151 @@ window.storage = {
           statusEl.style.color = 'var(--money-in)';
           statusEl.textContent = `${doneCount} riwayat service berhasil dipindah ke ${monthLabel(toMonthStr)}.`;
           showToast(`${doneCount} riwayat service dipindah ke ${monthLabel(toMonthStr)}.`);
+        } catch (err) {
+          console.error(err);
+          closeLoadingModal();
+          statusEl.style.color = 'var(--money-out)';
+          statusEl.textContent = 'Gagal memindahkan, coba lagi.';
+        }
+      }
+    );
+  }
+
+  // ---------- PINDAHKAN DATA HASIL MIGRASI (Penjualan Lama, Stok, Beban) KE BULAN INI ----------
+  // Khusus data yang berasal dari fitur "Migrasi Data" (upload Excel data lama), BUKAN transaksi
+  // yang dicatat manual lewat form biasa. Ditandai dari sumbernya masing-masing:
+  // - Pembelian & Penjualan pasangan migrasi: supplierName === 'Migrasi data lama' (+ pairTxnId)
+  // - Pembelian migrasi Stok: supplierName diawali 'Import Excel -'
+  // - Beban Operasional: TIDAK ada penanda unik, jadi semua beban SEBELUM bulan ini ditampilkan
+  //   sebagai kandidat (fitur migrasi Beban baru saja ada), tapi WAJIB ditinjau/dicentang manual
+  //   satu per satu sebelum dipindah, supaya beban yang MEMANG dicatat manual di bulan lama tidak
+  //   ikut kepindah tanpa sengaja.
+  function kumpulkanKandidatMigrasiSebelumBulanIni() {
+    const curMonth = monthKey(Date.now());
+    const groups = [];
+    const seenPairIds = new Set();
+    txns.forEach(t => {
+      if (t.type !== 'pembelian') return;
+      if (t.supplierName !== 'Migrasi data lama') return;
+      if (monthKey(t.createdAt) === curMonth) return;
+      if (seenPairIds.has(t.id)) return;
+      const pair = t.pairTxnId ? txns.find(x => x.id === t.pairTxnId) : null;
+      seenPairIds.add(t.id);
+      if (pair) seenPairIds.add(pair.id);
+      const namaItem = (t.items && t.items[0]) ? t.items[0].name : '-';
+      groups.push({
+        key: 'pair:' + t.id,
+        kind: 'penjualan_lama',
+        label: `${namaItem} - ${pair ? (pair.customerName || 'Migrasi data lama') : 'Pembelian saja'}`,
+        nilai: t.total + (pair ? pair.total : 0),
+        tanggalAsli: t.createdAt,
+        txnIds: pair ? [t.id, pair.id] : [t.id],
+      });
+    });
+    txns.forEach(t => {
+      if (t.type !== 'pembelian') return;
+      if (!/^Import Excel -/.test(t.supplierName || '')) return;
+      if (monthKey(t.createdAt) === curMonth) return;
+      groups.push({
+        key: 'stok:' + t.id,
+        kind: 'stok',
+        label: `Migrasi Stok - ${(t.items||[]).length} barang (${t.supplierName})`,
+        nilai: t.total,
+        tanggalAsli: t.createdAt,
+        txnIds: [t.id],
+      });
+    });
+    bebanList.forEach(b => {
+      if (monthKey(b.createdAt) === curMonth) return;
+      groups.push({
+        key: 'beban:' + b.id,
+        kind: 'beban',
+        label: `${b.kategori === 'Lainnya' && b.kategoriCustom ? b.kategoriCustom : b.kategori} - ${b.keterangan || ''}`.trim(),
+        nilai: b.nominal,
+        tanggalAsli: b.createdAt,
+        bebanId: b.id,
+      });
+    });
+    groups.sort((a,b) => (a.tanggalAsli||0) - (b.tanggalAsli||0));
+    return groups;
+  }
+
+  let migrasiMovePreviewCache = null;
+  let migrasiMoveSelectedKeys = new Set();
+  function renderMigrasiMovePreviewHtml() {
+    const groups = migrasiMovePreviewCache || [];
+    if (!groups.length) return '<div class="bk-empty" style="padding:10px 0;">Tidak ada data migrasi yang tanggalnya di luar bulan ini. Semua sudah rapi.</div>';
+    const kindLabel = { penjualan_lama: 'Migrasi Penjualan Lama', stok: 'Migrasi Stok', beban: 'Beban Operasional' };
+    return `
+      <div class="bk-select-bar" style="margin-bottom:10px;">
+        <label class="bk-select-all">
+          <input type="checkbox" id="bk-migrasi-move-select-all" ${groups.every(g=>migrasiMoveSelectedKeys.has(g.key)) ? 'checked' : ''} />
+          Pilih semua (${groups.length})
+        </label>
+        <span style="font-size:12px; color:var(--ink-soft);">${migrasiMoveSelectedKeys.size} terpilih</span>
+      </div>
+      <div style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; padding:4px 10px;">
+        ${groups.map(g => `
+          <div class="bk-list-row">
+            <label style="display:flex; align-items:flex-start; gap:8px; flex:1; min-width:0; cursor:pointer;">
+              <input type="checkbox" class="bk-migrasi-move-check" data-key="${g.key}" ${migrasiMoveSelectedKeys.has(g.key)?'checked':''} style="margin-top:3px;" />
+              <span class="bk-list-left" style="min-width:0;">
+                <span class="nm" style="display:block;">${escapeAttr(g.label)}</span>
+                <span class="sub">${kindLabel[g.kind]} &middot; asalnya ${new Date(g.tanggalAsli).toLocaleDateString('id-ID')}</span>
+              </span>
+            </label>
+            <div class="bk-list-amt">${rupiah(g.nilai)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+  async function siapkanPreviewMigrasiMove() {
+    migrasiMovePreviewCache = kumpulkanKandidatMigrasiSebelumBulanIni();
+    migrasiMoveSelectedKeys = new Set(migrasiMovePreviewCache.map(g => g.key)); // default semua tercentang
+    renderLaporan();
+  }
+  async function eksekusiMigrasiMove() {
+    if (!requireOwnerForDelete()) return;
+    const groups = (migrasiMovePreviewCache || []).filter(g => migrasiMoveSelectedKeys.has(g.key));
+    if (!groups.length) { showToast('Tidak ada yang dicentang untuk dipindah.'); return; }
+    const totalNilai = groups.reduce((s,g) => s + g.nilai, 0);
+    const statusEl = document.getElementById('bk-migrasi-move-status');
+    showConfirm(
+      `Pindahkan <strong>${groups.length}</strong> data migrasi terpilih ke bulan ini (${monthLabel(monthKey(Date.now()))}), total senilai <strong>${rupiah(totalNilai)}</strong>? Tanggal & jam asli (bukan bulan/tahunnya) tetap dipertahankan supaya urutan relatif antar data tidak berantakan.`,
+      async () => {
+        showLoadingModal(`Memindahkan 0/${groups.length} data...`);
+        try {
+          const now = new Date();
+          const targetY = now.getFullYear(), targetM = now.getMonth() + 1;
+          const daysInTargetMonth = new Date(targetY, targetM, 0).getDate();
+          let doneCount = 0;
+          for (const g of groups) {
+            const oldDate = new Date(g.tanggalAsli);
+            const newDay = Math.min(oldDate.getDate(), daysInTargetMonth);
+            const newTs = new Date(targetY, targetM - 1, newDay, oldDate.getHours(), oldDate.getMinutes(), oldDate.getSeconds()).getTime();
+            if (g.kind === 'beban') {
+              const b = bebanList.find(x => x.id === g.bebanId);
+              if (b) { b.createdAt = newTs; await saveBebanItem(b); }
+            } else {
+              for (const tid of g.txnIds) {
+                const t = txns.find(x => x.id === tid);
+                if (t) { t.createdAt = newTs; await saveTxn(t); }
+              }
+            }
+            doneCount++;
+            updateLoadingModal(`Memindahkan ${doneCount}/${groups.length} data...`);
+          }
+          await loadTxns();
+          await loadBeban();
+          invalidateStockCaches();
+          migrasiMovePreviewCache = null;
+          migrasiMoveSelectedKeys = new Set();
+          closeLoadingModal();
+          renderLaporan();
+          statusEl.style.color = 'var(--money-in)';
+          statusEl.textContent = `${doneCount} data migrasi berhasil dipindah ke bulan ini.`;
+          showToast(`${doneCount} data berhasil dipindah ke bulan ini.`);
         } catch (err) {
           console.error(err);
           closeLoadingModal();
