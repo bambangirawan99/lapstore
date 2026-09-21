@@ -199,6 +199,14 @@ body {
 
 /* Forms */
 #bk-root .bk-quickai { display: flex; gap: 8px; margin-bottom: 18px; }
+#bk-root .bk-stok-search-result {
+  padding: 13px 14px; border: 1.5px solid var(--line); border-radius: 10px; margin-bottom: 6px;
+  cursor: pointer; background: #fff; transition: background .1s, border-color .1s;
+}
+#bk-root .bk-stok-search-result:hover, #bk-root .bk-stok-search-result:active { background: var(--accent-bg); border-color: var(--accent); }
+#bk-root .bk-stok-search-result .ssr-code { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: var(--accent-ink); }
+#bk-root .bk-stok-search-result .ssr-name { font-size: 16px; font-weight: 600; color: var(--ink); margin-top: 2px; }
+#bk-root .bk-stok-search-result .ssr-stok { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
 #bk-root .bk-quickai input {
   flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 13.5px;
   font-family: 'Inter', sans-serif; background: #fff;
@@ -1448,6 +1456,11 @@ window.storage = {
         </select>
       </div>` : ''}
       <div class="bk-stok-note" style="margin-top:-6px;">${isJual ? 'Ketik/scan Kode barang untuk otomatis mengisi nama sesuai stok yang sudah tercatat &mdash; hindari salah nama/beda kode.' : 'Isi Kode barang sekali saat pertama beli. Kode ini akan dipakai otomatis saat item ini dijual nanti (cocok untuk barcode scanner).'}</div>
+      ${!isEdit && isJual ? `<div class="bk-field" style="margin-bottom:14px;">
+        <label>Cari &amp; tambah barang dari Stok (ketik kode atau nama laptop)</label>
+        <input id="bk-stok-search" placeholder="Contoh: LPSTK-00072 atau Asus Vivobook" autocomplete="off" style="font-size:15px; padding:11px 14px;" />
+        <div id="bk-stok-search-results" style="margin-top:6px;"></div>
+      </div>` : ''}
       <div class="bk-numbered-row-wrap bk-item-head-wrap" style="margin-bottom:6px;">
         <div class="bk-row-no" style="padding-top:0;"></div>
         <div class="bk-item-head" style="margin-bottom:0;"><div>Kode</div><div>Nama item</div><div>Jumlah</div><div>Satuan</div><div>Harga satuan</div><div></div></div>
@@ -1582,6 +1595,44 @@ window.storage = {
     });
 
     if (!isEdit) document.getElementById('bk-quick-btn').addEventListener('click', () => runQuickAi(type));
+    if (!isEdit && isJual) {
+      const searchInput = document.getElementById('bk-stok-search');
+      const resultsEl = document.getElementById('bk-stok-search-results');
+      if (searchInput) {
+        searchInput.addEventListener('input', () => {
+          const query = searchInput.value.trim().toLowerCase();
+          if (!query) { resultsEl.innerHTML = ''; return; }
+          const reg = getItemCodeRegistry();
+          const stockMap = computeStock();
+          const matches = Object.values(stockMap)
+            .filter(r => r.qty > 0 && !deletedStokNames.has(r.name.trim().toLowerCase()) && !/^Jasa Service Laptop/i.test(r.name))
+            .map(r => ({ name: r.name, unit: r.unit, qty: r.qty, code: reg.byName[r.name.trim().toLowerCase()] || '' }))
+            .filter(r => r.code.toLowerCase().includes(query) || r.name.toLowerCase().includes(query))
+            .sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }))
+            .slice(0, 8);
+          resultsEl.innerHTML = matches.length
+            ? matches.map(m => `<div class="bk-stok-search-result" data-code="${escapeAttr(m.code)}">
+                <div class="ssr-code">${escapeAttr(m.code) || '(tanpa kode)'}</div>
+                <div class="ssr-name">${escapeAttr(m.name)}</div>
+                <div class="ssr-stok">Sisa stok: ${m.qty.toLocaleString('id-ID')} ${escapeAttr(m.unit||'')}</div>
+              </div>`).join('')
+            : '<div class="bk-empty" style="padding:10px 0;">Barang tidak ditemukan di Stok.</div>';
+          resultsEl.querySelectorAll('.bk-stok-search-result').forEach(el => {
+            el.addEventListener('click', () => {
+              const code = el.dataset.code;
+              if (!code) return;
+              // Isi ke baris item yang masih kosong kodenya kalau ada, kalau tidak tambah baris baru
+              let target = st.items.find(i => !i.code);
+              if (!target) { target = blankItem(); st.items.push(target); }
+              target.code = code;
+              applyItemCodeLookup(target, type); // otomatis isi nama, satuan, harga jual (dari Pricelist), lalu render ulang
+              searchInput.value = '';
+              resultsEl.innerHTML = '';
+            });
+          });
+        });
+      }
+    }
     document.getElementById('bk-save-btn').addEventListener('click', () => saveTransaction(type, true));
     if (!isEdit && isJual) document.getElementById('bk-save-noresi-btn').addEventListener('click', () => saveTransaction(type, false));
     if (!isEdit && isJual) {
