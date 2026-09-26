@@ -3577,12 +3577,20 @@ window.storage = {
     const wb = XLSX.utils.book_new();
     const aoa = [
       ['FORMAT UPLOAD RIWAYAT SERVICE LAMA - LAPSTORE'],
-      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Tanggal Selesai format DD/MM/YYYY. Kolom Kode Service boleh dikosongkan (dibuat otomatis). Status isi persis "Lunas" atau "Belum". Kolom Rekening isi persis salah satu: ' + BANK_ACCOUNTS.map(a=>a.label).join(' / ') + ' (boleh dikosongkan, default rekening pertama). Setiap baris otomatis membuat catatan Service berstatus "Sudah diambil" + transaksi pemasukan yang langsung masuk ke laporan keuangan. Baris contoh boleh dihapus/ditimpa.'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Tanggal Selesai format DD/MM/YYYY. Kolom Kode Service boleh dikosongkan (dibuat otomatis). Status isi persis "Lunas" atau "Belum". Kolom Rekening isi persis salah satu: ' + BANK_ACCOUNTS.map(a=>a.label).join(' / ') + ' (boleh dikosongkan, default rekening pertama). Kolom Sparepart 1/2/3 (opsional) dipakai kalau ada onderdil yang dipakai saat service - Nama HARUS persis sama dengan nama item di Stok supaya biayanya (HPP) terhitung otomatis dan stok ikut berkurang; kosongkan kalau tidak dipakai. Kolom Vendor/Pihak ke-3 (opsional) dipakai kalau service dititip ke tempat lain - otomatis tercatat sebagai Beban Operasional. Dari sparepart + vendor tersebut, sistem otomatis menghitung Keuntungan per service (Jasa ke Konsumen - HPP Sparepart - Biaya Vendor) dan terintegrasi langsung ke Laporan Laba Rugi. Setiap baris otomatis membuat catatan Service berstatus "Sudah diambil" + transaksi pemasukan yang langsung masuk ke laporan keuangan. Baris contoh boleh dihapus/ditimpa.'],
       [],
       [],
-      ['Tanggal Selesai', 'Kode Service', 'Nama Pelanggan', 'No. HP', 'Merk/Tipe Laptop', 'Keluhan', 'Biaya Service', 'Status', 'Rekening'],
-      ['15/02/2026', '', 'Budi Santoso', '081234567890', 'Asus A455L', 'Mati total tidak bisa cas', 250000, 'Lunas', BANK_ACCOUNTS[0].label],
-      ['20/02/2026', '', 'Rahmi', '081280572167', 'Lenovo Thinkpad X390', 'Ganti baterai', 350000, 'Lunas', BANK_ACCOUNTS[0].label],
+      ['Tanggal Selesai', 'Kode Service', 'Nama Pelanggan', 'No. HP', 'Merk/Tipe Laptop', 'Keluhan', 'Biaya Service (ke Konsumen)', 'Status', 'Rekening',
+        'Sparepart 1 - Nama', 'Sparepart 1 - Jumlah', 'Sparepart 1 - Satuan',
+        'Sparepart 2 - Nama', 'Sparepart 2 - Jumlah', 'Sparepart 2 - Satuan',
+        'Sparepart 3 - Nama', 'Sparepart 3 - Jumlah', 'Sparepart 3 - Satuan',
+        'Vendor/Pihak ke-3 - Nama', 'Vendor/Pihak ke-3 - Biaya'],
+      ['15/02/2026', '', 'Budi Santoso', '081234567890', 'Asus A455L', 'Mati total tidak bisa cas', 250000, 'Lunas', BANK_ACCOUNTS[0].label,
+        'Adaptor Charger Asus', 1, 'pcs', '', '', '', '', '', '',
+        '', ''],
+      ['20/02/2026', '', 'Rahmi', '081280572167', 'Lenovo Thinkpad X390', 'Ganti baterai + service chip mati total', 350000, 'Lunas', BANK_ACCOUNTS[0].label,
+        'Baterai Laptop Lenovo X390', 1, 'pcs', '', '', '', '', '', '',
+        'Servis Chip ABC', 80000],
     ];
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Template Riwayat Service');
     XLSX.writeFile(wb, 'template-riwayat-service-lama.xlsx');
@@ -3609,10 +3617,14 @@ window.storage = {
         const usedCodes = new Set(services.map(x => (x.kodeService || '').trim().toUpperCase()));
         const jobs = [];
         const errors = [];
-        let successCount = 0;
+        const unmatchedParts = [];
+        let totalHppPreview = 0, totalVendorPreview = 0, totalJasaPreview = 0;
         const nextLocalServiceCode = makeLocalServiceCodeCounter();
+        const stockMapMig = computeStock(); // snapshot stok saat ini, dipakai untuk cek nama sparepart cocok/tidak (sekadar peringatan)
+        const hppPreviewData = computeHPP(); // dipakai untuk estimasi HPP sparepart di ringkasan konfirmasi (nilai final dihitung ulang otomatis setelah tersimpan)
         dataRows.forEach((row, idx) => {
-          const [tglRaw, kodeRaw, nama, hp, device, keluhan, biayaRaw, status, rekeningLabel] = row;
+          const [tglRaw, kodeRaw, nama, hp, device, keluhan, biayaRaw, status, rekeningLabel,
+            sp1n, sp1q, sp1u, sp2n, sp2q, sp2u, sp3n, sp3q, sp3u, vendorNamaRaw, vendorBiayaRaw] = row;
           if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
           const rowNum = headerIdx + idx + 2;
           const selesaiTime = parseTanggalDDMMYYYY(tglRaw);
@@ -3620,6 +3632,27 @@ window.storage = {
           const biaya = Number(biayaRaw);
           if (!(biaya >= 0)) { errors.push(`Baris ${rowNum}: biaya service tidak valid`); return; }
           if (!device || String(device).trim() === '') { errors.push(`Baris ${rowNum}: merk/tipe laptop wajib diisi`); return; }
+
+          // Sparepart 1/2/3 (opsional) - dicocokkan ke Stok supaya HPP-nya otomatis dari harga beli riil.
+          let rowInvalid = false;
+          const parts = [];
+          [[sp1n, sp1q, sp1u], [sp2n, sp2q, sp2u], [sp3n, sp3q, sp3u]].forEach(([pn, pq, pu]) => {
+            const pnTrim = String(pn || '').trim();
+            if (!pnTrim) return;
+            const qty = Number(pq);
+            if (!(qty > 0)) { errors.push(`Baris ${rowNum}: jumlah sparepart "${pnTrim}" tidak valid`); rowInvalid = true; return; }
+            const unit = String(pu || '').trim() || 'pcs';
+            parts.push({ id: uid(), name: pnTrim, qty, unit, code: '' });
+            if (!stockMapMig[pnTrim.trim().toLowerCase()]) unmatchedParts.push(`"${pnTrim}" (baris ${rowNum})`);
+          });
+          if (rowInvalid) return;
+
+          const vendorNamaTrim = String(vendorNamaRaw || '').trim();
+          const vendorBiaya = Number(vendorBiayaRaw) || 0;
+          if (vendorBiayaRaw !== '' && vendorBiayaRaw != null && !(vendorBiaya >= 0)) {
+            errors.push(`Baris ${rowNum}: biaya vendor tidak valid`); return;
+          }
+
           let kode = String(kodeRaw || '').trim();
           while (!kode || usedCodes.has(kode.toUpperCase())) { kode = nextLocalServiceCode(); }
           usedCodes.add(kode.toUpperCase());
@@ -3627,11 +3660,15 @@ window.storage = {
           const accMatch = BANK_ACCOUNTS.find(a => a.label.toLowerCase() === String(rekeningLabel || '').trim().toLowerCase());
           const rekening = accMatch ? accMatch.id : BANK_ACCOUNTS[0].id;
           const deviceTrim = String(device).trim();
+          // Kalau ada sparepart, item jasa dibuat unik per baris (persis pola alur Service langsung) supaya
+          // HPP rata-rata bergerak per order tidak tercampur dengan order lain yang device-nya sama.
+          const serviceItemName = parts.length ? `Jasa Service Laptop - ${deviceTrim} (${kode})` : `Jasa Service Laptop - ${deviceTrim}`;
+
           const txn = {
             id: uid(),
             type: 'penjualan',
             kodeTransaksi: generateTxnCode('penjualan'),
-            items: [{ name: `Jasa Service Laptop - ${deviceTrim}`, qty: 1, unit: 'jasa', price: biaya }],
+            items: [{ name: serviceItemName, qty: 1, unit: 'jasa', price: biaya }],
             total: biaya,
             customerName: String(nama).trim(),
             customerPhone: String(hp || '').trim(),
@@ -3640,6 +3677,31 @@ window.storage = {
             createdAt: selesaiTime,
             createdBy: currentUser ? currentUser.email : null,
           };
+          let prodTxn = null;
+          if (parts.length) {
+            prodTxn = {
+              id: uid(),
+              type: 'produksi',
+              bahan: parts.map(p => ({ name: p.name, qty: p.qty, unit: p.unit })),
+              hasil: [{ name: serviceItemName, qty: 1, unit: 'jasa' }],
+              total: 0,
+              createdAt: selesaiTime - 1500,
+              createdBy: currentUser ? currentUser.email : null,
+            };
+          }
+          let bebanVendor = null;
+          if (vendorBiaya > 0) {
+            bebanVendor = {
+              id: uid(),
+              kategori: 'Jasa Vendor Service',
+              kategoriCustom: vendorNamaTrim,
+              nominal: vendorBiaya,
+              keterangan: `Vendor service (migrasi) untuk ${String(nama).trim()} (${deviceTrim})${vendorNamaTrim ? ' - ' + vendorNamaTrim : ''}`,
+              linkedServiceId: null, // diisi setelah id svc dibuat di bawah
+              createdAt: selesaiTime,
+              createdBy: currentUser ? currentUser.email : null,
+            };
+          }
           const svc = {
             id: uid(),
             kodeService: kode,
@@ -3651,12 +3713,18 @@ window.storage = {
             estimasiBiaya: biaya,
             rekening,
             catatanDiagnosa: '',
+            parts: parts.length ? parts : [blankSvcPart()],
+            serviceItemName: parts.length ? serviceItemName : undefined,
+            vendorNama: vendorNamaTrim,
+            vendorBiaya,
             biayaFinal: biaya,
             dpAmount: 0,
             dpTxnId: null,
             paid: isLunas,
             status: 'diambil',
             linkedTxnId: txn.id,
+            prodTxnId: prodTxn ? prodTxn.id : null,
+            vendorBebanId: bebanVendor ? bebanVendor.id : null,
             createdAt: selesaiTime - 2000,
             createdBy: currentUser ? currentUser.email : null,
             updatedAt: selesaiTime,
@@ -3666,10 +3734,17 @@ window.storage = {
               { status: 'diambil', at: selesaiTime },
             ],
           };
+          if (bebanVendor) bebanVendor.linkedServiceId = svc.id;
+          const sparepartCostPreview = parts.reduce((s,p) => s + p.qty * hppPreviewData.getCurrentUnitCost(p.name), 0);
+          totalJasaPreview += biaya;
+          totalVendorPreview += vendorBiaya;
+          totalHppPreview += sparepartCostPreview;
           jobs.push(async () => {
+            if (prodTxn) { await saveTxn(prodTxn); txns.push(prodTxn); }
             await saveTxn(txn);
-            await saveService(svc);
             txns.push(txn);
+            if (bebanVendor) { await saveBebanItem(bebanVendor); bebanList.push(bebanVendor); }
+            await saveService(svc);
             services.push(svc);
           });
         });
@@ -3681,8 +3756,11 @@ window.storage = {
         statusEl.textContent = `${jobs.length} baris siap dimigrasi. Menunggu konfirmasi...`;
         const errLines = errors.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (errors.length > 5 ? `<br/>...dan ${errors.length - 5} lainnya` : '');
         const errPreview = errors.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">${errors.length} baris akan dilewati (format tidak valid):<br/>${errLines}</span>` : '';
+        const unmatchedUniq = [...new Set(unmatchedParts)];
+        const unmatchedLines = unmatchedUniq.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (unmatchedUniq.length > 5 ? `<br/>...dan ${unmatchedUniq.length - 5} lainnya` : '');
+        const unmatchedPreview = unmatchedUniq.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">Nama sparepart berikut TIDAK ditemukan persis di Stok (biayanya akan tercatat Rp0, cek ejaannya kalau perlu):<br/>${unmatchedLines}</span>` : '';
         showConfirm(
-          `Ditemukan <strong>${jobs.length}</strong> riwayat service lama yang valid di file ini.${errPreview}<br/><br/>Setiap baris akan dicatat sebagai data Service "Sudah diambil" sekaligus transaksi pemasukan, langsung masuk ke laporan keuangan.<br/><br/>Lanjutkan migrasi?`,
+          `Ditemukan <strong>${jobs.length}</strong> riwayat service lama yang valid di file ini.${errPreview}${unmatchedPreview}<br/><br/>Setiap baris akan dicatat sebagai data Service "Sudah diambil" sekaligus transaksi pemasukan (dan biaya sparepart/vendor kalau diisi), langsung masuk ke laporan keuangan.<br/><br/>Ringkasan: Jasa ke Konsumen ${rupiah(totalJasaPreview)}, HPP Sparepart ${rupiah(totalHppPreview)}, Biaya Vendor ${rupiah(totalVendorPreview)}.<br/><br/>Lanjutkan migrasi?`,
           async () => {
             showLoadingModal(`Memproses 0/${jobs.length} baris...`);
             statusEl.textContent = `Memproses ${jobs.length} baris...`;
@@ -3696,6 +3774,7 @@ window.storage = {
               const actualSuccess = jobs.length - failedCount;
               txns.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
               services.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+              bebanList.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
               closeLoadingModal();
               const errNote = errors.length ? `\n${errors.length} baris dilewati (format tidak valid).` : '';
               const failNote = failedCount ? `\n${failedCount} baris GAGAL tersimpan (masalah koneksi) - coba upload ulang file yang sama, baris yang sudah berhasil tidak akan dobel.` : '';
@@ -3703,7 +3782,7 @@ window.storage = {
               statusEl.style.color = failedCount ? 'var(--money-out)' : 'var(--money-in)';
               showResultModal(
                 failedCount ? 'Migrasi selesai (sebagian gagal)' : 'Migrasi berhasil',
-                `${actualSuccess} riwayat service lama berhasil dimigrasi.${errNote}${failNote}\nLangsung masuk ke laporan keuangan.`,
+                `${actualSuccess} riwayat service lama berhasil dimigrasi.${errNote}${failNote}\nSparepart, biaya vendor, dan keuntungan per service langsung masuk ke laporan keuangan.`,
                 () => { svcView = 'riwayat'; activeTab = 'service'; renderTabs(); renderBody(); }
               );
             } catch (err) {
