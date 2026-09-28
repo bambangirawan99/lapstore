@@ -658,7 +658,7 @@ window.storage = {
   }
 
   // ---------- BEBAN OPERASIONAL & KEUANGAN ----------
-  const BEBAN_KATEGORI = ['Gaji', 'Garansi Service', 'Jasa Vendor Service', 'Sewa Tempat', 'Listrik/Air/Internet', 'Lainnya'];
+  const BEBAN_KATEGORI = ['Gaji', 'Garansi Service', 'Jasa Vendor Service', 'Sparepart/Onderdil Service (Migrasi)', 'Sewa Tempat', 'Listrik/Air/Internet', 'Lainnya'];
   let bebanList = [];
   let modalAwal = 0;
   let closings = [];
@@ -3584,19 +3584,17 @@ window.storage = {
     const wb = XLSX.utils.book_new();
     const aoa = [
       ['FORMAT UPLOAD RIWAYAT SERVICE LAMA - LAPSTORE'],
-      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Tanggal Selesai format DD/MM/YYYY. Kolom Kode Service boleh dikosongkan (dibuat otomatis). Status isi persis "Lunas" atau "Belum". Kolom Rekening isi persis salah satu: ' + BANK_ACCOUNTS.map(a=>a.label).join(' / ') + ' (boleh dikosongkan, default rekening pertama). Kolom Sparepart 1/2/3 (opsional) dipakai kalau ada onderdil yang dipakai saat service - Nama HARUS persis sama dengan nama item di Stok supaya biayanya (HPP) terhitung otomatis dan stok ikut berkurang; kosongkan kalau tidak dipakai. Kolom Vendor/Pihak ke-3 (opsional) dipakai kalau service dititip ke tempat lain - otomatis tercatat sebagai Beban Operasional. Dari sparepart + vendor tersebut, sistem otomatis menghitung Keuntungan per service (Jasa ke Konsumen - HPP Sparepart - Biaya Vendor) dan terintegrasi langsung ke Laporan Laba Rugi. Setiap baris otomatis membuat catatan Service berstatus "Sudah diambil" + transaksi pemasukan yang langsung masuk ke laporan keuangan. Baris contoh boleh dihapus/ditimpa.'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-5. Tanggal Selesai format DD/MM/YYYY. Kolom Kode Service boleh dikosongkan (dibuat otomatis). Status isi persis "Lunas" atau "Belum". Kolom Rekening isi persis salah satu: ' + BANK_ACCOUNTS.map(a=>a.label).join(' / ') + ' (boleh dikosongkan, default rekening pertama). Kolom Sparepart/Onderdil & Vendor/Pihak ke-3 (opsional) SEPENUHNYA MANUAL - tidak dicocokkan/diambil dari data Stok sistem dan TIDAK mengurangi stok, jadi tinggal ketik nama & biayanya sendiri persis seperti yang dulu dikeluarkan. Dari situ sistem otomatis menghitung Keuntungan per service (Jasa ke Konsumen - Biaya Sparepart - Biaya Vendor) dan mencatat biaya sparepart & vendor sebagai Beban Operasional yang otomatis masuk ke Laporan Laba Rugi. Setiap baris otomatis membuat catatan Service berstatus "Sudah diambil" + transaksi pemasukan yang langsung masuk ke laporan keuangan. Baris contoh boleh dihapus/ditimpa.'],
       [],
       [],
       ['Tanggal Selesai', 'Kode Service', 'Nama Pelanggan', 'No. HP', 'Merk/Tipe Laptop', 'Keluhan', 'Biaya Service (ke Konsumen)', 'Status', 'Rekening',
-        'Sparepart 1 - Nama', 'Sparepart 1 - Jumlah', 'Sparepart 1 - Satuan',
-        'Sparepart 2 - Nama', 'Sparepart 2 - Jumlah', 'Sparepart 2 - Satuan',
-        'Sparepart 3 - Nama', 'Sparepart 3 - Jumlah', 'Sparepart 3 - Satuan',
-        'Vendor/Pihak ke-3 - Nama', 'Vendor/Pihak ke-3 - Biaya'],
+        'Sparepart/Onderdil - Keterangan (manual)', 'Sparepart/Onderdil - Biaya (Rp, manual)',
+        'Vendor/Pihak ke-3 - Nama', 'Vendor/Pihak ke-3 - Biaya (Rp)'],
       ['15/02/2026', '', 'Budi Santoso', '081234567890', 'Asus A455L', 'Mati total tidak bisa cas', 250000, 'Lunas', BANK_ACCOUNTS[0].label,
-        'Adaptor Charger Asus', 1, 'pcs', '', '', '', '', '', '',
+        'Adaptor Charger Asus', 60000,
         '', ''],
       ['20/02/2026', '', 'Rahmi', '081280572167', 'Lenovo Thinkpad X390', 'Ganti baterai + service chip mati total', 350000, 'Lunas', BANK_ACCOUNTS[0].label,
-        'Baterai Laptop Lenovo X390', 1, 'pcs', '', '', '', '', '', '',
+        'Baterai Laptop Lenovo X390', 120000,
         'Servis Chip ABC', 80000],
     ];
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Template Riwayat Service');
@@ -3624,14 +3622,11 @@ window.storage = {
         const usedCodes = new Set(services.map(x => (x.kodeService || '').trim().toUpperCase()));
         const jobs = [];
         const errors = [];
-        const unmatchedParts = [];
-        let totalHppPreview = 0, totalVendorPreview = 0, totalJasaPreview = 0;
+        let totalSparepartPreview = 0, totalVendorPreview = 0, totalJasaPreview = 0;
         const nextLocalServiceCode = makeLocalServiceCodeCounter();
-        const stockMapMig = computeStock(); // snapshot stok saat ini, dipakai untuk cek nama sparepart cocok/tidak (sekadar peringatan)
-        const hppPreviewData = computeHPP(); // dipakai untuk estimasi HPP sparepart di ringkasan konfirmasi (nilai final dihitung ulang otomatis setelah tersimpan)
         dataRows.forEach((row, idx) => {
           const [tglRaw, kodeRaw, nama, hp, device, keluhan, biayaRaw, status, rekeningLabel,
-            sp1n, sp1q, sp1u, sp2n, sp2q, sp2u, sp3n, sp3q, sp3u, vendorNamaRaw, vendorBiayaRaw] = row;
+            sparepartKetRaw, sparepartBiayaRaw, vendorNamaRaw, vendorBiayaRaw] = row;
           if (!nama || String(nama).trim() === '') return; // baris kosong dilewati diam-diam
           const rowNum = headerIdx + idx + 2;
           const selesaiTime = parseTanggalDDMMYYYY(tglRaw);
@@ -3640,20 +3635,13 @@ window.storage = {
           if (!(biaya >= 0)) { errors.push(`Baris ${rowNum}: biaya service tidak valid`); return; }
           if (!device || String(device).trim() === '') { errors.push(`Baris ${rowNum}: merk/tipe laptop wajib diisi`); return; }
 
-          // Sparepart 1/2/3 (opsional) - dicocokkan ke Stok supaya HPP-nya otomatis dari harga beli riil.
-          let rowInvalid = false;
-          const parts = [];
-          [[sp1n, sp1q, sp1u], [sp2n, sp2q, sp2u], [sp3n, sp3q, sp3u]].forEach(([pn, pq, pu]) => {
-            const pnTrim = String(pn || '').trim();
-            if (!pnTrim) return;
-            const qty = Number(pq);
-            if (!(qty > 0)) { errors.push(`Baris ${rowNum}: jumlah sparepart "${pnTrim}" tidak valid`); rowInvalid = true; return; }
-            const unit = String(pu || '').trim() || 'pcs';
-            parts.push({ id: uid(), name: pnTrim, qty, unit, code: '' });
-            if (!stockMapMig[pnTrim.trim().toLowerCase()]) unmatchedParts.push(`"${pnTrim}" (baris ${rowNum})`);
-          });
-          if (rowInvalid) return;
-
+          // Sparepart/onderdil & vendor SEPENUHNYA MANUAL - tidak dicocokkan/diambil dari Stok sistem,
+          // jadi tidak ada pengurangan stok sama sekali. Biayanya langsung dicatat sebagai Beban Operasional.
+          const sparepartKet = String(sparepartKetRaw || '').trim();
+          const sparepartBiaya = Number(sparepartBiayaRaw) || 0;
+          if (sparepartBiayaRaw !== '' && sparepartBiayaRaw != null && !(sparepartBiaya >= 0)) {
+            errors.push(`Baris ${rowNum}: biaya sparepart/onderdil tidak valid`); return;
+          }
           const vendorNamaTrim = String(vendorNamaRaw || '').trim();
           const vendorBiaya = Number(vendorBiayaRaw) || 0;
           if (vendorBiayaRaw !== '' && vendorBiayaRaw != null && !(vendorBiaya >= 0)) {
@@ -3667,15 +3655,12 @@ window.storage = {
           const accMatch = BANK_ACCOUNTS.find(a => a.label.toLowerCase() === String(rekeningLabel || '').trim().toLowerCase());
           const rekening = accMatch ? accMatch.id : BANK_ACCOUNTS[0].id;
           const deviceTrim = String(device).trim();
-          // Kalau ada sparepart, item jasa dibuat unik per baris (persis pola alur Service langsung) supaya
-          // HPP rata-rata bergerak per order tidak tercampur dengan order lain yang device-nya sama.
-          const serviceItemName = parts.length ? `Jasa Service Laptop - ${deviceTrim} (${kode})` : `Jasa Service Laptop - ${deviceTrim}`;
 
           const txn = {
             id: uid(),
             type: 'penjualan',
             kodeTransaksi: generateTxnCode('penjualan'),
-            items: [{ name: serviceItemName, qty: 1, unit: 'jasa', price: biaya }],
+            items: [{ name: `Jasa Service Laptop - ${deviceTrim}`, qty: 1, unit: 'jasa', price: biaya }],
             total: biaya,
             customerName: String(nama).trim(),
             customerPhone: String(hp || '').trim(),
@@ -3684,15 +3669,16 @@ window.storage = {
             createdAt: selesaiTime,
             createdBy: currentUser ? currentUser.email : null,
           };
-          let prodTxn = null;
-          if (parts.length) {
-            prodTxn = {
+          let bebanSparepart = null;
+          if (sparepartBiaya > 0) {
+            bebanSparepart = {
               id: uid(),
-              type: 'produksi',
-              bahan: parts.map(p => ({ name: p.name, qty: p.qty, unit: p.unit })),
-              hasil: [{ name: serviceItemName, qty: 1, unit: 'jasa' }],
-              total: 0,
-              createdAt: selesaiTime - 1500,
+              kategori: 'Sparepart/Onderdil Service (Migrasi)',
+              kategoriCustom: sparepartKet,
+              nominal: sparepartBiaya,
+              keterangan: `Sparepart/onderdil (migrasi, manual) untuk ${String(nama).trim()} (${deviceTrim})${sparepartKet ? ' - ' + sparepartKet : ''}`,
+              linkedServiceId: null, // diisi setelah id svc dibuat di bawah
+              createdAt: selesaiTime,
               createdBy: currentUser ? currentUser.email : null,
             };
           }
@@ -3720,8 +3706,9 @@ window.storage = {
             estimasiBiaya: biaya,
             rekening,
             catatanDiagnosa: '',
-            parts: parts.length ? parts : [blankSvcPart()],
-            serviceItemName: parts.length ? serviceItemName : undefined,
+            parts: [blankSvcPart()], // tidak dipakai untuk migrasi (sparepart di sini manual, bukan dari Stok)
+            sparepartKeterangan: sparepartKet,
+            sparepartCostManual: sparepartBiaya,
             vendorNama: vendorNamaTrim,
             vendorBiaya,
             biayaFinal: biaya,
@@ -3730,7 +3717,8 @@ window.storage = {
             paid: isLunas,
             status: 'diambil',
             linkedTxnId: txn.id,
-            prodTxnId: prodTxn ? prodTxn.id : null,
+            prodTxnId: null,
+            sparepartBebanId: bebanSparepart ? bebanSparepart.id : null,
             vendorBebanId: bebanVendor ? bebanVendor.id : null,
             createdAt: selesaiTime - 2000,
             createdBy: currentUser ? currentUser.email : null,
@@ -3741,15 +3729,15 @@ window.storage = {
               { status: 'diambil', at: selesaiTime },
             ],
           };
+          if (bebanSparepart) bebanSparepart.linkedServiceId = svc.id;
           if (bebanVendor) bebanVendor.linkedServiceId = svc.id;
-          const sparepartCostPreview = parts.reduce((s,p) => s + p.qty * hppPreviewData.getCurrentUnitCost(p.name), 0);
           totalJasaPreview += biaya;
           totalVendorPreview += vendorBiaya;
-          totalHppPreview += sparepartCostPreview;
+          totalSparepartPreview += sparepartBiaya;
           jobs.push(async () => {
-            if (prodTxn) { await saveTxn(prodTxn); txns.push(prodTxn); }
             await saveTxn(txn);
             txns.push(txn);
+            if (bebanSparepart) { await saveBebanItem(bebanSparepart); bebanList.push(bebanSparepart); }
             if (bebanVendor) { await saveBebanItem(bebanVendor); bebanList.push(bebanVendor); }
             await saveService(svc);
             services.push(svc);
@@ -3763,11 +3751,8 @@ window.storage = {
         statusEl.textContent = `${jobs.length} baris siap dimigrasi. Menunggu konfirmasi...`;
         const errLines = errors.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (errors.length > 5 ? `<br/>...dan ${errors.length - 5} lainnya` : '');
         const errPreview = errors.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">${errors.length} baris akan dilewati (format tidak valid):<br/>${errLines}</span>` : '';
-        const unmatchedUniq = [...new Set(unmatchedParts)];
-        const unmatchedLines = unmatchedUniq.slice(0, 5).map(x => escapeAttr(x)).join('<br/>') + (unmatchedUniq.length > 5 ? `<br/>...dan ${unmatchedUniq.length - 5} lainnya` : '');
-        const unmatchedPreview = unmatchedUniq.length ? `<br/><br/><span style="font-size:12px; color:var(--money-out); text-align:left; display:block;">Nama sparepart berikut TIDAK ditemukan persis di Stok (biayanya akan tercatat Rp0, cek ejaannya kalau perlu):<br/>${unmatchedLines}</span>` : '';
         showConfirm(
-          `Ditemukan <strong>${jobs.length}</strong> riwayat service lama yang valid di file ini.${errPreview}${unmatchedPreview}<br/><br/>Setiap baris akan dicatat sebagai data Service "Sudah diambil" sekaligus transaksi pemasukan (dan biaya sparepart/vendor kalau diisi), langsung masuk ke laporan keuangan.<br/><br/>Ringkasan: Jasa ke Konsumen ${rupiah(totalJasaPreview)}, HPP Sparepart ${rupiah(totalHppPreview)}, Biaya Vendor ${rupiah(totalVendorPreview)}.<br/><br/>Lanjutkan migrasi?`,
+          `Ditemukan <strong>${jobs.length}</strong> riwayat service lama yang valid di file ini.${errPreview}<br/><br/>Setiap baris akan dicatat sebagai data Service "Sudah diambil" sekaligus transaksi pemasukan (biaya sparepart/vendor manual dicatat sebagai Beban Operasional, TIDAK mengurangi Stok), langsung masuk ke laporan keuangan.<br/><br/>Ringkasan: Jasa ke Konsumen ${rupiah(totalJasaPreview)}, Biaya Sparepart/Onderdil ${rupiah(totalSparepartPreview)}, Biaya Vendor ${rupiah(totalVendorPreview)}.<br/><br/>Lanjutkan migrasi?`,
           async () => {
             showLoadingModal(`Memproses 0/${jobs.length} baris...`);
             statusEl.textContent = `Memproses ${jobs.length} baris...`;
@@ -4894,10 +4879,12 @@ window.storage = {
     }
   }
 
-  // Total HPP untuk satu order service = biaya sparepart yang dipakai (dari produksi txn, dihitung
-  // otomatis via HPP rata-rata bergerak) + biaya jasa vendor/pihak ke-3 (kalau ada).
+  // Total HPP untuk satu order service = biaya sparepart yang dipakai + biaya jasa vendor/pihak ke-3 (kalau ada).
+  // Sparepart bisa dari 2 sumber: order service LANGSUNG (prodTxnId, dari Stok, dihitung otomatis via
+  // HPP rata-rata bergerak) ATAU order hasil MIGRASI data lama (sparepartCostManual, diisi manual saat
+  // upload karena onderdilnya tidak diambil dari Stok sistem).
   function svcTotalHpp(s, hppData) {
-    const sparepartCost = (s.prodTxnId && hppData.prodCostByTxn[s.prodTxnId]) ? hppData.prodCostByTxn[s.prodTxnId].batchCost : 0;
+    const sparepartCost = (s.prodTxnId && hppData.prodCostByTxn[s.prodTxnId]) ? hppData.prodCostByTxn[s.prodTxnId].batchCost : (Number(s.sparepartCostManual) || 0);
     const vendorCost = Number(s.vendorBiaya) || 0;
     return sparepartCost + vendorCost;
   }
@@ -4906,7 +4893,7 @@ window.storage = {
   // Hanya ditampilkan untuk service yang sudah ada biaya final-nya (status selesai/diambil).
   function svcProfitBreakdownHtml(s, hppData) {
     if (!hppData || !(Number(s.biayaFinal) > 0)) return '';
-    const sparepartCost = (s.prodTxnId && hppData.prodCostByTxn[s.prodTxnId]) ? hppData.prodCostByTxn[s.prodTxnId].batchCost : 0;
+    const sparepartCost = (s.prodTxnId && hppData.prodCostByTxn[s.prodTxnId]) ? hppData.prodCostByTxn[s.prodTxnId].batchCost : (Number(s.sparepartCostManual) || 0);
     const vendorCost = Number(s.vendorBiaya) || 0;
     const hppTotalSvc = sparepartCost + vendorCost;
     const untung = (Number(s.biayaFinal) || 0) - hppTotalSvc;
