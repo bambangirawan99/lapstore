@@ -3031,6 +3031,11 @@ window.storage = {
     const adaProduksi = txns.some(t => t.type === 'produksi');
     const showNilai = isOwner();
     const totalNilaiView = rows.reduce((s,r) => s + (r.qty > 0 ? r.qty * hpp.getCurrentUnitCost(r.name) : 0), 0);
+    // Total nilai (HPP x sisa stok) per status, supaya kelihatan berapa modal yang masih "aman" (Ready),
+    // berapa yang nyangkut nunggu diservice (Not Ready), dan berapa yang sudah 0 (Terjual Habis - selalu 0).
+    const totalNilaiReady = rowsReady.reduce((s,r) => s + (r.qty > 0 ? r.qty * hpp.getCurrentUnitCost(r.name) : 0), 0);
+    const totalNilaiNotReady = rowsNotReady.reduce((s,r) => s + (r.qty > 0 ? r.qty * hpp.getCurrentUnitCost(r.name) : 0), 0);
+    const totalNilaiHabis = rowsHabis.reduce((s,r) => s + (r.qty > 0 ? r.qty * hpp.getCurrentUnitCost(r.name) : 0), 0);
     // Bikin tabel HTML untuk satu daftar barang (dipakai buat section "Ready" & "Terjual Habis" terpisah,
     // atau satu tabel gabungan kalau lagi difilter salah satunya saja).
     function stokRowsTableHtml(list) {
@@ -3087,21 +3092,25 @@ window.storage = {
     // diservice dulu, dan mana yang stoknya sudah habis. Kalau user sudah pilih salah satu chip status,
     // cukup tampilkan 1 tabel gabungan (tidak perlu subjudul lagi).
     const STOK_STATUS_LABEL = { ready: 'Ready', notready: 'Not Ready', habis: 'Terjual Habis' };
+    const STOK_STATUS_NILAI = { ready: totalNilaiReady, notready: totalNilaiNotReady, habis: totalNilaiHabis };
     const stokListSectionsHtml = !rows.length ? '' : stokStatusFilter !== 'semua' ? `
-      <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${rowsDisplayed.length.toLocaleString('id-ID')} jenis barang ${STOK_STATUS_LABEL[stokStatusFilter]} di kategori ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'}.</div>
+      <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${rowsDisplayed.length.toLocaleString('id-ID')} jenis barang ${STOK_STATUS_LABEL[stokStatusFilter]} di kategori ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'}${showNilai ? ` &mdash; senilai <strong>${rupiah(STOK_STATUS_NILAI[stokStatusFilter])}</strong> (HPP)` : ''}.</div>
       ${rowsDisplayed.length ? stokRowsTableHtml(rowsDisplayed) : `<div class="bk-empty">Tidak ada barang ${STOK_STATUS_LABEL[stokStatusFilter]} di kategori ini.</div>`}
     ` : `
-      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:0;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-in); display:inline-block;"></span>Ready (${rowsReady.length})</div>
+      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:0; flex-wrap:wrap;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-in); display:inline-block;"></span>Ready (${rowsReady.length})${showNilai ? ` <span style="font-weight:600; color:var(--ink-soft); font-size:12px;">&middot; ${rupiah(totalNilaiReady)}</span>` : ''}</div>
       ${rowsReady.length ? stokRowsTableHtml(rowsReady) : `<div class="bk-empty" style="margin-bottom:18px;">Tidak ada barang Ready di kategori ini.</div>`}
-      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--accent); display:inline-block;"></span>Not Ready &mdash; masih perlu diservice (${rowsNotReady.length})</div>
+      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px; flex-wrap:wrap;"><span style="width:9px; height:9px; border-radius:50%; background:var(--accent); display:inline-block;"></span>Not Ready &mdash; masih perlu diservice (${rowsNotReady.length})${showNilai ? ` <span style="font-weight:600; color:var(--ink-soft); font-size:12px;">&middot; ${rupiah(totalNilaiNotReady)}</span>` : ''}</div>
       ${rowsNotReady.length ? stokRowsTableHtml(rowsNotReady) : `<div class="bk-empty" style="margin-bottom:18px;">Tidak ada barang Not Ready di kategori ini.</div>`}
-      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-out); display:inline-block;"></span>Terjual Habis (${rowsHabis.length})</div>
+      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px; flex-wrap:wrap;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-out); display:inline-block;"></span>Terjual Habis (${rowsHabis.length})${showNilai ? ` <span style="font-weight:600; color:var(--ink-soft); font-size:12px;">&middot; ${rupiah(totalNilaiHabis)}</span>` : ''}</div>
       ${rowsHabis.length ? stokRowsTableHtml(rowsHabis) : `<div class="bk-empty">Tidak ada barang yang terjual habis di kategori ini.</div>`}
     `;
     bodyEl.innerHTML = `
       ${showNilai ? `
-      <div class="bk-stats" style="margin-bottom:16px; grid-template-columns: 1fr;">
+      <div class="bk-stats" style="margin-bottom:16px;">
         <div class="bk-stat"><div class="lbl">Total nilai ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'} saat ini (HPP)</div><div class="val">${rupiah(totalNilaiView)}</div></div>
+        <div class="bk-stat"><div class="lbl">Nilai Ready</div><div class="val" style="color:var(--money-in);">${rupiah(totalNilaiReady)}</div></div>
+        <div class="bk-stat"><div class="lbl">Nilai Not Ready (masih diservice)</div><div class="val" style="color:var(--accent-ink,var(--accent));">${rupiah(totalNilaiNotReady)}</div></div>
+        <div class="bk-stat"><div class="lbl">Nilai Terjual Habis</div><div class="val" style="color:var(--money-out);">${rupiah(totalNilaiHabis)}</div></div>
       </div>
       ` : ''}
       <div class="bk-stok-note" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
@@ -4097,6 +4106,10 @@ window.storage = {
     }
     const proyeksiSemua = hitungProyeksi(rowsWithMeta);
     const proyeksiView = hitungProyeksi(rowsInView);
+    // Nilai HPP & proyeksi untung per status (Ready/Not Ready/Terjual Habis), sama polanya dengan tab Stok.
+    const proyeksiReady = hitungProyeksi(rowsReady);
+    const proyeksiNotReady = hitungProyeksi(rowsNotReady);
+    const proyeksiHabis = hitungProyeksi(rowsHabis);
 
     // Tabel HTML untuk satu daftar barang (dipakai buat section "Ready" & "Terjual Habis" terpisah,
     // atau satu tabel gabungan kalau lagi difilter salah satunya saja) - sama pola dengan tab Stok.
@@ -4154,15 +4167,16 @@ window.storage = {
       </div>`;
     }
     const PRICELIST_STATUS_LABEL = { ready: 'Ready', notready: 'Not Ready', habis: 'Terjual Habis' };
+    const PRICELIST_STATUS_HPP = { ready: proyeksiReady.hppTotal, notready: proyeksiNotReady.hppTotal, habis: proyeksiHabis.hppTotal };
     const pricelistSectionsHtml = !rows.length ? '' : pricelistStatusFilter !== 'semua' ? `
-      <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${rowsDisplayed.length.toLocaleString('id-ID')} jenis barang ${PRICELIST_STATUS_LABEL[pricelistStatusFilter]} di kategori ${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'}.</div>
+      <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${rowsDisplayed.length.toLocaleString('id-ID')} jenis barang ${PRICELIST_STATUS_LABEL[pricelistStatusFilter]} di kategori ${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'} &mdash; senilai <strong>${rupiah(PRICELIST_STATUS_HPP[pricelistStatusFilter])}</strong> (HPP).</div>
       ${rowsDisplayed.length ? pricelistRowsTableHtml(rowsDisplayed) : `<div class="bk-empty">Tidak ada barang ${PRICELIST_STATUS_LABEL[pricelistStatusFilter]} di kategori ini.</div>`}
     ` : `
-      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:0;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-in); display:inline-block;"></span>Ready (${rowsReady.length})</div>
+      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:0; flex-wrap:wrap;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-in); display:inline-block;"></span>Ready (${rowsReady.length}) <span style="font-weight:600; color:var(--ink-soft); font-size:12px;">&middot; ${rupiah(proyeksiReady.hppTotal)}</span></div>
       ${rowsReady.length ? pricelistRowsTableHtml(rowsReady) : `<div class="bk-empty" style="margin-bottom:18px;">Tidak ada barang Ready di kategori ini.</div>`}
-      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--accent); display:inline-block;"></span>Not Ready &mdash; masih perlu diservice (${rowsNotReady.length})</div>
+      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px; flex-wrap:wrap;"><span style="width:9px; height:9px; border-radius:50%; background:var(--accent); display:inline-block;"></span>Not Ready &mdash; masih perlu diservice (${rowsNotReady.length}) <span style="font-weight:600; color:var(--ink-soft); font-size:12px;">&middot; ${rupiah(proyeksiNotReady.hppTotal)}</span></div>
       ${rowsNotReady.length ? pricelistRowsTableHtml(rowsNotReady) : `<div class="bk-empty" style="margin-bottom:18px;">Tidak ada barang Not Ready di kategori ini.</div>`}
-      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-out); display:inline-block;"></span>Terjual Habis (${rowsHabis.length})</div>
+      <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; margin-top:22px; flex-wrap:wrap;"><span style="width:9px; height:9px; border-radius:50%; background:var(--money-out); display:inline-block;"></span>Terjual Habis (${rowsHabis.length}) <span style="font-weight:600; color:var(--ink-soft); font-size:12px;">&middot; ${rupiah(proyeksiHabis.hppTotal)}</span></div>
       ${rowsHabis.length ? pricelistRowsTableHtml(rowsHabis) : `<div class="bk-empty">Tidak ada barang yang terjual habis di kategori ini.</div>`}
     `;
 
@@ -4174,6 +4188,11 @@ window.storage = {
         <div class="bk-stat out"><div class="lbl">Total HPP (semua kategori)</div><div class="val">${rupiah(proyeksiSemua.hppTotal)}</div></div>
         <div class="bk-stat in"><div class="lbl">Proyeksi Untung (semua kategori)</div><div class="val" style="color:${proyeksiSemua.untung>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(proyeksiSemua.untung)}</div></div>
         <div class="bk-stat in"><div class="lbl">Proyeksi Untung (${pricelistView === 'barang' ? 'Stock Laptop' : 'Stock Onderdil'} saja)</div><div class="val" style="color:${proyeksiView.untung>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(proyeksiView.untung)}</div></div>
+      </div>
+      <div class="bk-stats" style="margin-bottom:12px;">
+        <div class="bk-stat"><div class="lbl">Nilai Ready (HPP)</div><div class="val" style="color:var(--money-in);">${rupiah(proyeksiReady.hppTotal)}</div></div>
+        <div class="bk-stat"><div class="lbl">Nilai Not Ready (HPP, masih diservice)</div><div class="val" style="color:var(--accent-ink,var(--accent));">${rupiah(proyeksiNotReady.hppTotal)}</div></div>
+        <div class="bk-stat"><div class="lbl">Nilai Terjual Habis (HPP)</div><div class="val" style="color:var(--money-out);">${rupiah(proyeksiHabis.hppTotal)}</div></div>
       </div>
       <div class="bk-stok-note" style="margin-bottom:16px;">Dihitung dari <strong>(Harga Jual &minus; HPP) &times; Sisa Stok</strong> untuk semua barang yang stoknya masih ada (belum termasuk barang habis). Angka ini proyeksi kalau SEMUA terjual persis di harga yang tercatat sekarang &mdash; belum tentu sama dengan hasil nyata kalau ada diskon, barang rusak, atau harga jual berubah nanti.</div>
       ` : ''}
