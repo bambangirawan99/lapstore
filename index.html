@@ -7047,11 +7047,9 @@ window.storage = {
         inflow.push({ label: `Setoran modal: ${m.keterangan || 'Tanpa keterangan'}`, amount: amt, date: m.createdAt });
       }
     });
-    // Arus Kas diurutkan KRONOLOGIS (lama ke terbaru) - beda dari daftar Riwayat/Service yang
-    // sengaja terbaru-di-atas, karena laporan arus kas gaya buku kas/ledger lebih enak dibaca
-    // urut kejadian dari awal periode.
-    inflow.sort((a,b)=>a.date-b.date);
-    outflow.sort((a,b)=>a.date-b.date);
+    // Arus Kas diurutkan terbaru ke terlama (sama seperti daftar Riwayat/Service lainnya di aplikasi).
+    inflow.sort((a,b)=>b.date-a.date);
+    outflow.sort((a,b)=>b.date-a.date);
     const totalMasuk = inflow.reduce((s,x)=>s+x.amount,0);
     const totalKeluar = outflow.reduce((s,x)=>s+x.amount,0);
     return { inflow, outflow, totalMasuk, totalKeluar, netKas: totalMasuk - totalKeluar };
