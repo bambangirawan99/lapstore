@@ -1835,10 +1835,25 @@ window.storage = {
   }
 
   // Deteksi kategori dari kata kunci di nama barang (dipakai untuk auto-arahkan dropdown kode
-  // saat scan barcode/ketik nama), tapi hasilnya tetap bisa diubah manual oleh pengguna.
+  // saat scan barcode/ketik nama, dan sebagai FALLBACK terakhir saat migrasi Excel kalau kolom
+  // Kategori & Kode dikosongkan), tapi hasilnya tetap bisa diubah manual oleh pengguna.
+  //
+  // PENTING: kata kunci ONDERDIL dicek LEBIH DULU daripada kata kunci merek laptop. Sebelumnya
+  // ini terbalik, jadi nama seperti "Adaptor Charger Asus" atau "Baterai Laptop Lenovo X390"
+  // salah kedeteksi sebagai kategori Laptop (LPSTK) gara-gara ada kata merek ("asus"/"lenovo") di
+  // dalamnya - padahal barangnya jelas onderdil/sparepart, bukan unit laptop utuh.
   const LAPTOP_KEYWORDS = ['laptop', 'notebook', 'macbook', 'asus', 'lenovo', 'thinkpad', 'acer', 'hp ', 'hp-', 'dell', 'msi', 'axioo', 'toshiba', 'fujitsu', 'huawei', 'gigabyte', 'razer', 'chromebook', 'zenbook', 'ideapad', 'aspire', 'pavilion', 'vivobook'];
+  const ONDERDIL_KEYWORDS = [
+    'adaptor', 'adapter', 'charger', 'casan', 'baterai', 'battery', 'batre', 'keyboard', 'keybord',
+    'lcd', 'layar', 'screen', 'engsel', 'hinge', 'kipas', 'fan', 'heatsink', 'ram', 'ssd', 'hdd',
+    'hardisk', 'harddisk', 'motherboard', 'mainboard', 'mobo', 'casing', 'kabel', 'flexibel', 'flexible',
+    'touchpad', 'speaker', 'fingerprint', 'kamera', 'webcam', 'vga', 'processor', 'prosesor', 'cpu',
+    'bezel', 'cover', 'tutup', 'engkol', 'konektor', 'connector', 'ic ', 'ic-', 'chip', 'antena',
+    'port', 'soket', 'socket', 'mouse', 'tas laptop', 'cooling pad', 'coolingpad', 'stand laptop',
+  ];
   function detectKategoriFromName(name) {
     const n = (' ' + (name || '').toLowerCase() + ' ');
+    if (ONDERDIL_KEYWORDS.some(k => n.includes(k))) return 'LPSRV';
     return LAPTOP_KEYWORDS.some(k => n.includes(k)) ? 'LPSTK' : 'LPSRV';
   }
   // Registry nomor seri/barcode hasil scan -> data barang, dibangun dari riwayat pembelian
@@ -3227,7 +3242,7 @@ window.storage = {
     const wb = XLSX.utils.book_new();
     const aoa = [
       ['FORMAT UPLOAD STOK BARANG - LAPSTORE'],
-      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-6. Kolom Kode boleh dikosongkan (dibuat otomatis sesuai Kategori). Kolom Kategori isi persis "Laptop" atau "Onderdil". Kolom Harga Jual & Spesifikasi Laptop boleh dikosongkan (opsional). Hasil upload otomatis dipisah jadi 2 transaksi pembelian: Stock Laptop dan Stock Sparepart/Logistik. Harga Jual otomatis mengisi tab Pricelist. Baris contoh di bawah boleh dihapus/ditimpa.'],
+      ['Petunjuk: JANGAN ubah urutan/nama kolom di baris ke-6. Kolom Kode boleh dikosongkan (dibuat otomatis sesuai Kategori). Kolom Kategori WAJIB diisi persis "Laptop" atau "Onderdil" - JANGAN dikosongkan, karena kalau kosong sistem akan MENEBAK dari nama barang dan bisa salah (misal "Adaptor Charger Asus" bisa salah kedeteksi sebagai Laptop gara-gara ada kata "Asus", padahal itu onderdil). Kolom Harga Jual & Spesifikasi Laptop boleh dikosongkan (opsional). Hasil upload otomatis dipisah jadi 2 transaksi pembelian: Stock Laptop dan Stock Sparepart/Logistik. Harga Jual otomatis mengisi tab Pricelist. Baris contoh di bawah boleh dihapus/ditimpa.'],
       [],
       [],
       [],
