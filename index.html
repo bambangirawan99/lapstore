@@ -7694,7 +7694,7 @@ window.storage = {
         bebanId: b.id,
       });
     });
-    groups.sort((a,b) => (a.tanggalAsli||0) - (b.tanggalAsli||0));
+    groups.sort((a,b) => (b.tanggalAsli||0) - (a.tanggalAsli||0));
     return groups;
   }
 
