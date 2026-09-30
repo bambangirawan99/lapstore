@@ -1937,12 +1937,12 @@ window.storage = {
     return fields.some(f => String(f || '').toLowerCase().includes(q));
   }
   // ---------- STATUS STOK: Ready / Not Ready (masih perlu diservice) / Terjual Habis ----------
-  // Barang yang NAMANYA diakhiri "NR" (mis. "Laptop Asus X441 NR", "Baterai Laptop Lenovo NR") =
-  // barang itu masih ADA fisiknya tapi belum bisa dijual karena masih perlu diservice dulu. Status ini
-  // menang duluan, TIDAK PEDULI berapa sisa stoknya - baru kalau namanya bukan *NR, dicek dari sisa
+  // Barang yang NAMANYA DIAWALI "*NR" (mis. "*NR Asus X453 M Putih", "*NR HP BW -087T 4") = barang
+  // itu masih ADA fisiknya tapi belum bisa dijual karena masih perlu diservice dulu. Status ini menang
+  // duluan, TIDAK PEDULI berapa sisa stoknya - baru kalau namanya bukan diawali *NR, dicek dari sisa
   // stok seperti biasa (qty > 0 = Ready, qty <= 0 = Terjual Habis).
   function isNamaNotReady(name) {
-    return /(^|[\s\-_])NR\s*$/i.test((name || '').trim());
+    return /^\*?\s*NR\b/i.test((name || '').trim());
   }
   function classifyStokStatus(name, qty) {
     if (isNamaNotReady(name)) return 'notready';
@@ -3146,7 +3146,7 @@ window.storage = {
         <div class="bk-chip ${stokStatusFilter==='habis'?'active':''}" data-ss="habis">Terjual Habis (${rowsHabis.length})</div>
       </div>
       ${searchBoxHtml('bk-stok-list-search', stokSearchQuery, 'Cari nama atau kode barang...')}
-      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Barang dianggap <strong>Ready</strong> selama sisa stok masih di atas 0, pindah otomatis ke <strong>Terjual Habis</strong> begitu sisa stok jadi 0 atau minus, dan kalau nama barangnya diakhiri <strong>"NR"</strong> (mis. "Laptop Asus X441 NR") otomatis dianggap <strong>Not Ready</strong> (masih perlu diservice dulu) apapun sisa stoknya &mdash; semua ini otomatis, tidak perlu diatur manual.${isOwner() ? ' Kolom "Sisa stok" bisa diketik ulang langsung untuk koreksi manual (otomatis dicatat sebagai penyesuaian, riwayat lama tidak berubah).' : ''} Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
+      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Barang dianggap <strong>Ready</strong> selama sisa stok masih di atas 0, pindah otomatis ke <strong>Terjual Habis</strong> begitu sisa stok jadi 0 atau minus, dan kalau nama barangnya diawali <strong>"*NR"</strong> (mis. "*NR Asus X453 M Putih") otomatis dianggap <strong>Not Ready</strong> (masih perlu diservice dulu) apapun sisa stoknya &mdash; semua ini otomatis, tidak perlu diatur manual.${isOwner() ? ' Kolom "Sisa stok" bisa diketik ulang langsung untuk koreksi manual (otomatis dicatat sebagai penyesuaian, riwayat lama tidak berubah).' : ''} Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
       ${rowsDisplayed.length && isOwner() ? `<div class="bk-select-bar">
         <label class="bk-select-all">
           <input type="checkbox" id="bk-stok-select-all" ${rowsDisplayed.length && rowsDisplayed.every(r=>selectedStokNames.has(r.name)) ? 'checked' : ''} />
