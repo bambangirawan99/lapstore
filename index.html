@@ -6182,11 +6182,11 @@ window.storage = {
       [],
       ['Riwayat Modal (Setoran & Penarikan)'],
       ['Jenis', 'Keterangan', 'Tanggal', 'Nominal'],
-      ...modalEntries.map(m => [m.jenis === 'penarikan' ? 'Penarikan' : 'Setoran', m.keterangan || '-', new Date(m.createdAt).toLocaleDateString('id-ID'), m.jenis === 'penarikan' ? -m.nominal : m.nominal]),
+      ...[...modalEntries].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).map(m => [m.jenis === 'penarikan' ? 'Penarikan' : 'Setoran', m.keterangan || '-', new Date(m.createdAt).toLocaleDateString('id-ID'), m.jenis === 'penarikan' ? -m.nominal : m.nominal]),
       [],
       ['Riwayat Tutup Buku'],
       ['Bulan', 'Total Aset', 'Laba Ditahan', 'Disimpan'],
-      ...closings.map(c => [monthLabel(c.month), c.totalAset, c.labaDitahan, new Date(c.savedAt).toLocaleDateString('id-ID')]),
+      ...[...closings].sort((a,b) => (b.savedAt||0) - (a.savedAt||0)).map(c => [monthLabel(c.month), c.totalAset, c.labaDitahan, new Date(c.savedAt).toLocaleDateString('id-ID')]),
     ];
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Neraca');
     XLSX.writeFile(wb, 'neraca.xlsx');
@@ -6431,11 +6431,11 @@ window.storage = {
       [],
       ['Riwayat Modal (Setoran & Penarikan)'],
       ['Jenis', 'Keterangan', 'Tanggal', 'Nominal'],
-      ...modalEntries.map(m => [m.jenis === 'penarikan' ? 'Penarikan' : 'Setoran', m.keterangan || '-', new Date(m.createdAt).toLocaleDateString('id-ID'), m.jenis === 'penarikan' ? -m.nominal : m.nominal]),
+      ...[...modalEntries].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).map(m => [m.jenis === 'penarikan' ? 'Penarikan' : 'Setoran', m.keterangan || '-', new Date(m.createdAt).toLocaleDateString('id-ID'), m.jenis === 'penarikan' ? -m.nominal : m.nominal]),
       [],
       ['Riwayat Tutup Buku'],
       ['Bulan', 'Total Aset', 'Laba Ditahan', 'Disimpan'],
-      ...closings.map(c => [monthLabel(c.month), c.totalAset, c.labaDitahan, new Date(c.savedAt).toLocaleDateString('id-ID')]),
+      ...[...closings].sort((a,b) => (b.savedAt||0) - (a.savedAt||0)).map(c => [monthLabel(c.month), c.totalAset, c.labaDitahan, new Date(c.savedAt).toLocaleDateString('id-ID')]),
     ]), 'Neraca');
 
     const ak = computeArusKasForMonth(mKey);
