@@ -2880,41 +2880,50 @@ window.storage = {
   let kategoriFixPreviewCache = null; // null = belum discan, [] = sudah discan & tidak ada masalah
   let kategoriFixSelectedNames = new Set();
   // Barang di Stock Laptop (kode LPSTK) yang namanya mengandung kata kunci onderdil - kandidat salah kategori.
+  // Daftar SEMUA barang yang sekarang di Stock Laptop (bukan cuma yang kena tebakan kata kunci
+  // onderdil) - supaya pengguna bisa pilih manual sendiri barang mana saja yang mau dipindahkan,
+  // bukan cuma yang terdeteksi otomatis. Yang cocok kata kunci onderdil ditandai `autoDetected`
+  // dan otomatis tercentang duluan sebagai saran, sisanya tetap tampil tapi tidak tercentang.
   function kumpulkanKandidatSalahKategori() {
     const reg = getItemCodeRegistry();
-    const candidates = [];
+    const all = [];
     Object.values(reg.byNameFull).forEach(rec => {
       if (!rec.code || !/^LPSTK/i.test(rec.code.trim())) return; // sekarang di Stock Laptop
       if (deletedStokNames.has((rec.name||'').trim().toLowerCase())) return;
-      if (detectKategoriFromName(rec.name) === 'LPSRV') candidates.push({ name: rec.name, code: rec.code, spec: rec.spec || '' });
+      all.push({ name: rec.name, code: rec.code, spec: rec.spec || '', autoDetected: detectKategoriFromName(rec.name) === 'LPSRV' });
     });
-    candidates.sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
-    return candidates;
+    all.sort((a,b) => (b.autoDetected - a.autoDetected) || a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
+    return all;
   }
+  let kategoriFixSearchQuery = '';
   function renderKategoriFixPreviewHtml() {
-    const list = kategoriFixPreviewCache || [];
-    if (!list.length) return '<div class="bk-empty" style="padding:10px 0;">Tidak ditemukan barang Stock Laptop yang namanya mengandung kata onderdil (adaptor, baterai, keyboard, dst). Semua sudah sesuai.</div>';
+    const all = kategoriFixPreviewCache || [];
+    if (!all.length) return '<div class="bk-empty" style="padding:10px 0;">Tidak ada barang di Stock Laptop saat ini.</div>';
+    const list = all.filter(x => searchMatch(kategoriFixSearchQuery, x.name, x.code));
+    const autoCount = all.filter(x => x.autoDetected).length;
     return `
+      <div class="bk-stok-note" style="margin-bottom:10px;">Semua barang yang sekarang ada di Stock Laptop ditampilkan di bawah supaya kamu bisa ceklis MANUAL barang mana saja yang mau dipindah ke Stock Onderdil.${autoCount ? ` ${autoCount} barang yang namanya mengandung kata onderdil sudah otomatis tercentang sebagai saran - tetap bisa diubah.` : ''}</div>
+      ${searchBoxHtml('bk-kategori-fix-search', kategoriFixSearchQuery, 'Cari nama atau kode barang...')}
       <div class="bk-select-bar" style="margin-bottom:10px;">
         <label class="bk-select-all">
-          <input type="checkbox" id="bk-kategori-fix-select-all" ${list.every(x=>kategoriFixSelectedNames.has(x.name)) ? 'checked' : ''} />
+          <input type="checkbox" id="bk-kategori-fix-select-all" ${list.length && list.every(x=>kategoriFixSelectedNames.has(x.name)) ? 'checked' : ''} />
           Pilih semua (${list.length})
         </label>
-        <span style="font-size:12px; color:var(--ink-soft);">${kategoriFixSelectedNames.size} terpilih</span>
+        <span style="font-size:12px; color:var(--ink-soft);">${kategoriFixSelectedNames.size} terpilih dari total ${all.length} barang</span>
       </div>
-      <div style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; padding:4px 10px;">
+      ${list.length ? `<div style="max-height:340px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; padding:4px 10px;">
         ${list.map(x => `
           <div class="bk-list-row">
             <label style="display:flex; align-items:flex-start; gap:8px; flex:1; min-width:0; cursor:pointer;">
               <input type="checkbox" class="bk-kategori-fix-check" data-name="${escapeAttr(x.name)}" ${kategoriFixSelectedNames.has(x.name)?'checked':''} style="margin-top:3px;" />
               <span class="bk-list-left" style="min-width:0;">
-                <span class="nm" style="display:block;">${escapeAttr(x.name)}</span>
-                <span class="sub">Kode sekarang ${escapeAttr(x.code)} (Stock Laptop) &rarr; akan diberi kode baru LPSRV (Stock Onderdil)</span>
+                <span class="nm" style="display:block;">${escapeAttr(x.name)}${x.autoDetected ? ' <span class="bk-badge belum" style="font-size:9.5px;">terdeteksi onderdil</span>' : ''}</span>
+                <span class="sub">Kode sekarang ${escapeAttr(x.code)} (Stock Laptop) &rarr; kalau dicentang &amp; dipindah, dapat kode baru LPSRV (Stock Onderdil)</span>
               </span>
             </label>
           </div>
         `).join('')}
-      </div>
+      </div>` : '<div class="bk-empty">Tidak ada barang yang cocok pencarian.</div>'}
       <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
         <button class="bk-btn accent" id="bk-kategori-fix-apply" style="padding:7px 14px; font-size:12px;">Pindahkan Terpilih ke Stock Onderdil</button>
         <button class="bk-btn ghost" id="bk-kategori-fix-cancel" style="padding:7px 14px; font-size:12px;">Tutup</button>
@@ -2923,7 +2932,8 @@ window.storage = {
   }
   function siapkanPreviewKategoriFix() {
     kategoriFixPreviewCache = kumpulkanKandidatSalahKategori();
-    kategoriFixSelectedNames = new Set(kategoriFixPreviewCache.map(x => x.name));
+    kategoriFixSearchQuery = '';
+    kategoriFixSelectedNames = new Set(kategoriFixPreviewCache.filter(x => x.autoDetected).map(x => x.name));
     renderStok();
   }
   async function eksekusiKategoriFix() {
@@ -3006,8 +3016,8 @@ window.storage = {
       </div>` : ''}
       ${isOwner() ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--money-out);">
         <div class="ai-head"><div class="ai-title">Perbaiki Barang yang Salah Kategori (Laptop &rarr; Onderdil)</div></div>
-        <div class="ai-body" style="margin-bottom:12px;">Kalau ada barang onderdil (misal "Adaptor Charger Asus", "Baterai Laptop Lenovo") yang terlanjur tercatat di kategori Stock Laptop gara-gara namanya mengandung kata merek laptop, klik tombol ini untuk memindai &amp; memindahkannya ke Stock Onderdil. Kamu bisa pilih satu-satu barang mana saja yang mau dipindah sebelum diterapkan.</div>
-        ${kategoriFixPreviewCache === null ? `<button class="bk-btn ghost" id="bk-kategori-fix-scan-btn" style="border-color:var(--money-out); color:var(--money-out);">Cek Barang Salah Kategori</button>` : renderKategoriFixPreviewHtml()}
+        <div class="ai-body" style="margin-bottom:12px;">Kalau ada barang onderdil (misal "Adaptor Charger Asus", "Baterai Laptop Lenovo") yang terlanjur tercatat di kategori Stock Laptop gara-gara namanya mengandung kata merek laptop, klik tombol ini untuk menampilkan SEMUA barang di Stock Laptop dengan ceklis - yang kena tebakan kata kunci onderdil sudah otomatis tercentang sebagai saran, tapi kamu bisa ceklis/uncek manual barang mana saja sebelum diterapkan.</div>
+        ${kategoriFixPreviewCache === null ? `<button class="bk-btn ghost" id="bk-kategori-fix-scan-btn" style="border-color:var(--money-out); color:var(--money-out);">Tampilkan &amp; Pilih Barang Stock Laptop</button>` : renderKategoriFixPreviewHtml()}
       </div>` : ''}
       ${isOwner() && deletedStokNames.size > 0 ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent); padding-bottom:${stokDeletedListOpen ? '18px' : '10px'};">
         <div class="ai-head" id="bk-stok-deleted-toggle" style="cursor:pointer; user-select:none;">
@@ -3115,11 +3125,18 @@ window.storage = {
     if (fixDupBtn) fixDupBtn.addEventListener('click', perbaikiKodeDuplikat);
     const kategoriFixScanBtn = document.getElementById('bk-kategori-fix-scan-btn');
     if (kategoriFixScanBtn) kategoriFixScanBtn.addEventListener('click', siapkanPreviewKategoriFix);
+    const kategoriFixSearchInput = document.getElementById('bk-kategori-fix-search');
+    if (kategoriFixSearchInput) {
+      kategoriFixSearchInput.addEventListener('input', (e) => { kategoriFixSearchQuery = e.target.value; renderStok(); });
+      kategoriFixSearchInput.focus();
+      kategoriFixSearchInput.setSelectionRange(kategoriFixSearchInput.value.length, kategoriFixSearchInput.value.length);
+    }
     const kategoriFixSelectAll = document.getElementById('bk-kategori-fix-select-all');
     if (kategoriFixSelectAll) kategoriFixSelectAll.addEventListener('change', () => {
-      const list = kategoriFixPreviewCache || [];
-      if (kategoriFixSelectAll.checked) list.forEach(x => kategoriFixSelectedNames.add(x.name));
-      else list.forEach(x => kategoriFixSelectedNames.delete(x.name));
+      const all = kategoriFixPreviewCache || [];
+      const visible = all.filter(x => searchMatch(kategoriFixSearchQuery, x.name, x.code));
+      if (kategoriFixSelectAll.checked) visible.forEach(x => kategoriFixSelectedNames.add(x.name));
+      else visible.forEach(x => kategoriFixSelectedNames.delete(x.name));
       renderStok();
     });
     bodyEl.querySelectorAll('.bk-kategori-fix-check').forEach(chk => chk.addEventListener('change', () => {
