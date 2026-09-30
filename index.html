@@ -1937,15 +1937,15 @@ window.storage = {
     return fields.some(f => String(f || '').toLowerCase().includes(q));
   }
   // ---------- STATUS STOK: Ready / Not Ready (masih perlu diservice) / Terjual Habis ----------
-  // Kode barang yang diakhiri "NR" (mis. "LPSTK-00012-NR", "LPSTK-00012NR") = barang itu masih ADA
-  // fisiknya tapi belum bisa dijual karena masih perlu diservice dulu. Status ini menang duluan,
-  // TIDAK PEDULI berapa sisa stoknya - baru kalau kodenya bukan *NR, dicek dari sisa stok seperti biasa
-  // (qty > 0 = Ready, qty <= 0 = Terjual Habis).
-  function isKodeNotReady(code) {
-    return /NR\s*$/i.test((code || '').trim());
+  // Barang yang NAMANYA diakhiri "NR" (mis. "Laptop Asus X441 NR", "Baterai Laptop Lenovo NR") =
+  // barang itu masih ADA fisiknya tapi belum bisa dijual karena masih perlu diservice dulu. Status ini
+  // menang duluan, TIDAK PEDULI berapa sisa stoknya - baru kalau namanya bukan *NR, dicek dari sisa
+  // stok seperti biasa (qty > 0 = Ready, qty <= 0 = Terjual Habis).
+  function isNamaNotReady(name) {
+    return /(^|[\s\-_])NR\s*$/i.test((name || '').trim());
   }
-  function classifyStokStatus(code, qty) {
-    if (isKodeNotReady(code)) return 'notready';
+  function classifyStokStatus(name, qty) {
+    if (isNamaNotReady(name)) return 'notready';
     return qty > 0 ? 'ready' : 'habis';
   }
   function searchBoxHtml(id, value, placeholder) {
@@ -3024,9 +3024,9 @@ window.storage = {
     const rows = rowsWithCode.map(x => x.r);
     // Status Ready (masih ada sisa stok) / Not Ready (kode *NR - masih perlu diservice, tidak peduli sisa
     // stok) / Terjual Habis (sisa stok 0/minus & bukan kode NR) - tetap dalam kategori & pencarian aktif.
-    const rowsReady = rowsWithCode.filter(x => classifyStokStatus(x.code, x.r.qty) === 'ready').map(x => x.r);
-    const rowsNotReady = rowsWithCode.filter(x => classifyStokStatus(x.code, x.r.qty) === 'notready').map(x => x.r);
-    const rowsHabis = rowsWithCode.filter(x => classifyStokStatus(x.code, x.r.qty) === 'habis').map(x => x.r);
+    const rowsReady = rowsWithCode.filter(x => classifyStokStatus(x.r.name, x.r.qty) === 'ready').map(x => x.r);
+    const rowsNotReady = rowsWithCode.filter(x => classifyStokStatus(x.r.name, x.r.qty) === 'notready').map(x => x.r);
+    const rowsHabis = rowsWithCode.filter(x => classifyStokStatus(x.r.name, x.r.qty) === 'habis').map(x => x.r);
     const rowsDisplayed = stokStatusFilter === 'ready' ? rowsReady : stokStatusFilter === 'notready' ? rowsNotReady : stokStatusFilter === 'habis' ? rowsHabis : rows;
     const adaProduksi = txns.some(t => t.type === 'produksi');
     const showNilai = isOwner();
@@ -3065,7 +3065,7 @@ window.storage = {
                 ${isOwner() ? `<td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line);"><input type="checkbox" class="bk-row-check stok-row-check" data-name="${escapeAttr(r.name)}" ${checked} /></td>` : ''}
                 <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:700;">${idx + 1}</td>
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
-                  ${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${isKodeNotReady(code) ? ' <span class="bk-badge belum" style="background:var(--accent-bg); color:var(--accent-ink);">Not Ready</span>' : (r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : ''))}
+                  ${r.name}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${isNamaNotReady(r.name) ? ' <span class="bk-badge belum" style="background:var(--accent-bg); color:var(--accent-ink);">Not Ready</span>' : (r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : ''))}
                   ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; white-space:normal;">${escapeAttr(spec)}</div>` : ''}
                 </td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft);">${r.unit || '-'}</td>
@@ -3146,7 +3146,7 @@ window.storage = {
         <div class="bk-chip ${stokStatusFilter==='habis'?'active':''}" data-ss="habis">Terjual Habis (${rowsHabis.length})</div>
       </div>
       ${searchBoxHtml('bk-stok-list-search', stokSearchQuery, 'Cari nama atau kode barang...')}
-      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Barang dianggap <strong>Ready</strong> selama sisa stok masih di atas 0, pindah otomatis ke <strong>Terjual Habis</strong> begitu sisa stok jadi 0 atau minus, dan kalau kode barangnya diakhiri <strong>"NR"</strong> (mis. "LPSTK-00012-NR") otomatis dianggap <strong>Not Ready</strong> (masih perlu diservice dulu) apapun sisa stoknya &mdash; semua ini otomatis, tidak perlu diatur manual.${isOwner() ? ' Kolom "Sisa stok" bisa diketik ulang langsung untuk koreksi manual (otomatis dicatat sebagai penyesuaian, riwayat lama tidak berubah).' : ''} Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
+      <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Barang dianggap <strong>Ready</strong> selama sisa stok masih di atas 0, pindah otomatis ke <strong>Terjual Habis</strong> begitu sisa stok jadi 0 atau minus, dan kalau nama barangnya diakhiri <strong>"NR"</strong> (mis. "Laptop Asus X441 NR") otomatis dianggap <strong>Not Ready</strong> (masih perlu diservice dulu) apapun sisa stoknya &mdash; semua ini otomatis, tidak perlu diatur manual.${isOwner() ? ' Kolom "Sisa stok" bisa diketik ulang langsung untuk koreksi manual (otomatis dicatat sebagai penyesuaian, riwayat lama tidak berubah).' : ''} Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
       ${rowsDisplayed.length && isOwner() ? `<div class="bk-select-bar">
         <label class="bk-select-all">
           <input type="checkbox" id="bk-stok-select-all" ${rowsDisplayed.length && rowsDisplayed.every(r=>selectedStokNames.has(r.name)) ? 'checked' : ''} />
@@ -4075,9 +4075,9 @@ window.storage = {
     const rowsInView = rowsWithMeta.filter(x => x.kategori === pricelistView);
     const rows = rowsInView.filter(x => searchMatch(pricelistSearchQuery, x.r.name, x.code));
     // Status Ready/Not Ready (kode *NR - masih perlu diservice)/Terjual Habis - sama seperti tab Stok.
-    const rowsReady = rows.filter(x => classifyStokStatus(x.code, x.r.qty) === 'ready');
-    const rowsNotReady = rows.filter(x => classifyStokStatus(x.code, x.r.qty) === 'notready');
-    const rowsHabis = rows.filter(x => classifyStokStatus(x.code, x.r.qty) === 'habis');
+    const rowsReady = rows.filter(x => classifyStokStatus(x.r.name, x.r.qty) === 'ready');
+    const rowsNotReady = rows.filter(x => classifyStokStatus(x.r.name, x.r.qty) === 'notready');
+    const rowsHabis = rows.filter(x => classifyStokStatus(x.r.name, x.r.qty) === 'habis');
     const rowsDisplayed = pricelistStatusFilter === 'ready' ? rowsReady : pricelistStatusFilter === 'notready' ? rowsNotReady : pricelistStatusFilter === 'habis' ? rowsHabis : rows;
 
     // Proyeksi keuntungan kalau SEMUA sisa stok berhasil terjual di Harga Jual yang tercatat sekarang
@@ -4131,7 +4131,7 @@ window.storage = {
               return `<tr data-key="${itemKey}" data-cost="${unitCost}">
                 <td style="padding:9px 6px 9px 0; border-bottom:1px solid var(--line); text-align:right; color:var(--ink); font-family:'IBM Plex Mono',monospace; font-size:15px; font-weight:700;">${idx + 1}</td>
                 <td style="padding:9px 10px 9px 0; border-bottom:1px solid var(--line); white-space:normal;">
-                  ${escapeAttr(r.name)}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${isKodeNotReady(code) ? ' <span class="bk-badge belum" style="background:var(--accent-bg); color:var(--accent-ink);">Not Ready</span>' : ''}
+                  ${escapeAttr(r.name)}${code ? ` <span class="mono" style="font-size:10.5px; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(code)}</span>` : ''}${isNamaNotReady(r.name) ? ' <span class="bk-badge belum" style="background:var(--accent-bg); color:var(--accent-ink);">Not Ready</span>' : ''}
                   ${spec ? `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${escapeAttr(spec)}</div>` : ''}
                 </td>
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; color:var(--ink-soft);">${r.unit || '-'}</td>
@@ -9399,7 +9399,7 @@ window.storage = {
     const code = codeReg.byName[r.name.trim().toLowerCase()];
     const unitCost = hppData.getCurrentUnitCost(r.name);
     const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
-    const statusBadge = isKodeNotReady(code) ? ' <span class="bk-badge belum" style="background:var(--accent-bg); color:var(--accent-ink);">Not Ready</span>' : (r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : ''));
+    const statusBadge = isNamaNotReady(r.name) ? ' <span class="bk-badge belum" style="background:var(--accent-bg); color:var(--accent-ink);">Not Ready</span>' : (r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : ''));
     return `<div class="bk-list-row-wrap">
       <div class="bk-list-row">
         <div class="bk-list-left">
