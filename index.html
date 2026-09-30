@@ -2850,6 +2850,101 @@ window.storage = {
   let pendingStokEdits = new Map(); // name -> { unit, orig, newQty } - perubahan sisa stok yang belum disimpan
   let stokSaveAttemptFailed = false; // true kalau percobaan simpan terakhir ada yang gagal - tombol berubah jadi "Lanjutkan"
   let stokSavingInProgress = false; // true selagi proses simpan+verifikasi berjalan - tampilkan loading, kunci tombol
+  // ---------- PERBAIKI BARANG YANG SALAH MASUK KATEGORI (mis. "Adaptor Charger Asus" kepencet ke Stock Laptop) ----------
+  let kategoriFixPreviewCache = null; // null = belum discan, [] = sudah discan & tidak ada masalah
+  let kategoriFixSelectedNames = new Set();
+  // Barang di Stock Laptop (kode LPSTK) yang namanya mengandung kata kunci onderdil - kandidat salah kategori.
+  function kumpulkanKandidatSalahKategori() {
+    const reg = getItemCodeRegistry();
+    const candidates = [];
+    Object.values(reg.byNameFull).forEach(rec => {
+      if (!rec.code || !/^LPSTK/i.test(rec.code.trim())) return; // sekarang di Stock Laptop
+      if (deletedStokNames.has((rec.name||'').trim().toLowerCase())) return;
+      if (detectKategoriFromName(rec.name) === 'LPSRV') candidates.push({ name: rec.name, code: rec.code, spec: rec.spec || '' });
+    });
+    candidates.sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
+    return candidates;
+  }
+  function renderKategoriFixPreviewHtml() {
+    const list = kategoriFixPreviewCache || [];
+    if (!list.length) return '<div class="bk-empty" style="padding:10px 0;">Tidak ditemukan barang Stock Laptop yang namanya mengandung kata onderdil (adaptor, baterai, keyboard, dst). Semua sudah sesuai.</div>';
+    return `
+      <div class="bk-select-bar" style="margin-bottom:10px;">
+        <label class="bk-select-all">
+          <input type="checkbox" id="bk-kategori-fix-select-all" ${list.every(x=>kategoriFixSelectedNames.has(x.name)) ? 'checked' : ''} />
+          Pilih semua (${list.length})
+        </label>
+        <span style="font-size:12px; color:var(--ink-soft);">${kategoriFixSelectedNames.size} terpilih</span>
+      </div>
+      <div style="max-height:280px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; padding:4px 10px;">
+        ${list.map(x => `
+          <div class="bk-list-row">
+            <label style="display:flex; align-items:flex-start; gap:8px; flex:1; min-width:0; cursor:pointer;">
+              <input type="checkbox" class="bk-kategori-fix-check" data-name="${escapeAttr(x.name)}" ${kategoriFixSelectedNames.has(x.name)?'checked':''} style="margin-top:3px;" />
+              <span class="bk-list-left" style="min-width:0;">
+                <span class="nm" style="display:block;">${escapeAttr(x.name)}</span>
+                <span class="sub">Kode sekarang ${escapeAttr(x.code)} (Stock Laptop) &rarr; akan diberi kode baru LPSRV (Stock Onderdil)</span>
+              </span>
+            </label>
+          </div>
+        `).join('')}
+      </div>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="bk-btn accent" id="bk-kategori-fix-apply" style="padding:7px 14px; font-size:12px;">Pindahkan Terpilih ke Stock Onderdil</button>
+        <button class="bk-btn ghost" id="bk-kategori-fix-cancel" style="padding:7px 14px; font-size:12px;">Tutup</button>
+      </div>
+    `;
+  }
+  function siapkanPreviewKategoriFix() {
+    kategoriFixPreviewCache = kumpulkanKandidatSalahKategori();
+    kategoriFixSelectedNames = new Set(kategoriFixPreviewCache.map(x => x.name));
+    renderStok();
+  }
+  async function eksekusiKategoriFix() {
+    if (!requireOwnerForDelete()) return;
+    const list = (kategoriFixPreviewCache || []).filter(x => kategoriFixSelectedNames.has(x.name));
+    if (!list.length) { showToast('Tidak ada yang dicentang untuk dipindah.'); return; }
+    showConfirm(
+      `Pindahkan <strong>${list.length}</strong> barang terpilih dari Stock Laptop ke Stock Onderdil? Kode barangnya akan diganti dengan kode LPSRV baru - riwayat pembelian/produksi & sisa stok TIDAK hilang, cuma kategorinya diperbaiki.`,
+      async () => {
+        showLoadingModal(`Memproses 0/${list.length} barang...`);
+        try {
+          const relevant = [...txns].filter(t => t.type === 'pembelian' || t.type === 'produksi');
+          const nextLocalCode = makeLocalItemCodeCounter();
+          const touchedTxnIds = new Set();
+          let doneCount = 0;
+          for (const cand of list) {
+            const nameLower = cand.name.trim().toLowerCase();
+            const newCode = nextLocalCode('LPSRV');
+            relevant.forEach(t => {
+              const itemList = t.type === 'pembelian' ? (t.items || []) : (t.hasil || []);
+              itemList.forEach(item => {
+                if ((item.name || '').trim().toLowerCase() === nameLower && item.code && /^LPSTK/i.test(item.code.trim())) {
+                  item.code = newCode;
+                  touchedTxnIds.add(t.id);
+                }
+              });
+            });
+            doneCount++;
+            updateLoadingModal(`Memproses ${doneCount}/${list.length} barang...`);
+          }
+          const txnsToSave = [...touchedTxnIds].map(id => relevant.find(t => t.id === id)).filter(Boolean);
+          await Promise.all(txnsToSave.map(t => saveTxn(t)));
+          _itemCodeRegistryCache = null;
+          kategoriFixPreviewCache = null;
+          kategoriFixSelectedNames = new Set();
+          closeLoadingModal();
+          stokView = 'onderdil';
+          renderStok();
+          showToast(`${list.length} barang berhasil dipindah ke Stock Onderdil.`);
+        } catch (err) {
+          closeLoadingModal();
+          console.error(err);
+          showToast('Gagal memindahkan, coba lagi.');
+        }
+      }
+    );
+  }
   function renderStok() {
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
@@ -2881,6 +2976,11 @@ window.storage = {
         <div class="ai-body" style="margin-bottom:12px;">Kalau ada beberapa barang berbeda yang ternyata dapat kode yang sama persis (misal semua tertulis LPSTK-00006), klik tombol ini untuk otomatis memberi kode baru yang unik ke barang-barang yang bentrok. Data pembelian lama tidak dihapus, hanya kode yang diperbaiki.</div>
         <button class="bk-btn ghost" id="bk-stok-fix-duplicate-btn" style="border-color:var(--money-out); color:var(--money-out);">Cek &amp; Perbaiki Kode Duplikat</button>
         <div id="bk-stok-fix-status" style="margin-top:10px; font-size:12.5px; color:var(--ink-soft);"></div>
+      </div>` : ''}
+      ${isOwner() ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--money-out);">
+        <div class="ai-head"><div class="ai-title">Perbaiki Barang yang Salah Kategori (Laptop &rarr; Onderdil)</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Kalau ada barang onderdil (misal "Adaptor Charger Asus", "Baterai Laptop Lenovo") yang terlanjur tercatat di kategori Stock Laptop gara-gara namanya mengandung kata merek laptop, klik tombol ini untuk memindai &amp; memindahkannya ke Stock Onderdil. Kamu bisa pilih satu-satu barang mana saja yang mau dipindah sebelum diterapkan.</div>
+        ${kategoriFixPreviewCache === null ? `<button class="bk-btn ghost" id="bk-kategori-fix-scan-btn" style="border-color:var(--money-out); color:var(--money-out);">Cek Barang Salah Kategori</button>` : renderKategoriFixPreviewHtml()}
       </div>` : ''}
       ${isOwner() && deletedStokNames.size > 0 ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent); padding-bottom:${stokDeletedListOpen ? '18px' : '10px'};">
         <div class="ai-head" id="bk-stok-deleted-toggle" style="cursor:pointer; user-select:none;">
@@ -2985,6 +3085,27 @@ window.storage = {
     });
     const fixDupBtn = document.getElementById('bk-stok-fix-duplicate-btn');
     if (fixDupBtn) fixDupBtn.addEventListener('click', perbaikiKodeDuplikat);
+    const kategoriFixScanBtn = document.getElementById('bk-kategori-fix-scan-btn');
+    if (kategoriFixScanBtn) kategoriFixScanBtn.addEventListener('click', siapkanPreviewKategoriFix);
+    const kategoriFixSelectAll = document.getElementById('bk-kategori-fix-select-all');
+    if (kategoriFixSelectAll) kategoriFixSelectAll.addEventListener('change', () => {
+      const list = kategoriFixPreviewCache || [];
+      if (kategoriFixSelectAll.checked) list.forEach(x => kategoriFixSelectedNames.add(x.name));
+      else list.forEach(x => kategoriFixSelectedNames.delete(x.name));
+      renderStok();
+    });
+    bodyEl.querySelectorAll('.bk-kategori-fix-check').forEach(chk => chk.addEventListener('change', () => {
+      if (chk.checked) kategoriFixSelectedNames.add(chk.dataset.name); else kategoriFixSelectedNames.delete(chk.dataset.name);
+      renderStok();
+    }));
+    const kategoriFixApplyBtn = document.getElementById('bk-kategori-fix-apply');
+    if (kategoriFixApplyBtn) kategoriFixApplyBtn.addEventListener('click', eksekusiKategoriFix);
+    const kategoriFixCancelBtn = document.getElementById('bk-kategori-fix-cancel');
+    if (kategoriFixCancelBtn) kategoriFixCancelBtn.addEventListener('click', () => {
+      kategoriFixPreviewCache = null;
+      kategoriFixSelectedNames = new Set();
+      renderStok();
+    });
     const deletedToggle = document.getElementById('bk-stok-deleted-toggle');
     if (deletedToggle) deletedToggle.addEventListener('click', () => { stokDeletedListOpen = !stokDeletedListOpen; renderStok(); });
     bodyEl.querySelectorAll('.stok-restore-btn').forEach(btn => btn.addEventListener('click', async () => {
