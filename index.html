@@ -1942,6 +1942,19 @@ window.storage = {
         style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px 9px 34px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23999%22 stroke-width=%222.5%22><circle cx=%2211%22 cy=%2211%22 r=%228%22/><line x1=%2221%22 y1=%2221%22 x2=%2216.65%22 y2=%2216.65%22/></svg>') no-repeat 11px center; background-size:15px;" />
     </div>`;
   }
+  // Sebelum sebuah render*() menimpa bodyEl.innerHTML (yang otomatis menghapus fokus elemen manapun),
+  // simpan dulu id elemen yang sedang fokus. Dipakai supaya kotak search HANYA di-refocus kalau memang
+  // dia yang lagi diketik, bukan setiap kali render ulang dipicu hal lain (misal klik checkbox di tempat lain).
+  let __lastFocusedSearchId = '';
+  function captureSearchFocus() {
+    __lastFocusedSearchId = (document.activeElement && document.activeElement.id) || '';
+  }
+  function restoreSearchFocus(inputEl) {
+    if (inputEl && inputEl.id && inputEl.id === __lastFocusedSearchId) {
+      inputEl.focus();
+      inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+    }
+  }
 
   async function runQuickAi(type) {
     const input = document.getElementById('bk-quick-input');
@@ -2520,6 +2533,7 @@ window.storage = {
 
   // ---------- RIWAYAT ----------
   function renderRiwayat() {
+    captureSearchFocus();
     const months = availableMonths();
     const byMonth = txns.filter(t => riwayatMonth === 'semua' ? true : monthKey(t.createdAt) === riwayatMonth).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     // Transaksi yang tertaut ke data Service (penjualan jasa, DP, atau sparepart yang dipakai)
@@ -2579,8 +2593,7 @@ window.storage = {
     const riwayatSearchInput = document.getElementById('bk-riwayat-search');
     if (riwayatSearchInput) {
       riwayatSearchInput.addEventListener('input', (e) => { riwayatSearchQuery = e.target.value; renderRiwayat(); });
-      riwayatSearchInput.focus();
-      riwayatSearchInput.setSelectionRange(riwayatSearchInput.value.length, riwayatSearchInput.value.length);
+      restoreSearchFocus(riwayatSearchInput);
     }
     const dlLrBtn = document.getElementById('bk-download-lr');
     if (dlLrBtn) dlLrBtn.addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
@@ -2982,6 +2995,7 @@ window.storage = {
     );
   }
   function renderStok() {
+    captureSearchFocus();
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
@@ -3128,8 +3142,7 @@ window.storage = {
     const kategoriFixSearchInput = document.getElementById('bk-kategori-fix-search');
     if (kategoriFixSearchInput) {
       kategoriFixSearchInput.addEventListener('input', (e) => { kategoriFixSearchQuery = e.target.value; renderStok(); });
-      kategoriFixSearchInput.focus();
-      kategoriFixSearchInput.setSelectionRange(kategoriFixSearchInput.value.length, kategoriFixSearchInput.value.length);
+      restoreSearchFocus(kategoriFixSearchInput);
     }
     const kategoriFixSelectAll = document.getElementById('bk-kategori-fix-select-all');
     if (kategoriFixSelectAll) kategoriFixSelectAll.addEventListener('change', () => {
@@ -3207,8 +3220,7 @@ window.storage = {
     const stokListSearchInput = document.getElementById('bk-stok-list-search');
     if (stokListSearchInput) {
       stokListSearchInput.addEventListener('input', (e) => { stokSearchQuery = e.target.value; renderStok(); });
-      stokListSearchInput.focus();
-      stokListSearchInput.setSelectionRange(stokListSearchInput.value.length, stokListSearchInput.value.length);
+      restoreSearchFocus(stokListSearchInput);
     }
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
@@ -4001,6 +4013,7 @@ window.storage = {
   }
 
   function renderPricelist() {
+    captureSearchFocus();
     const stockMap = computeStock();
     const codeReg = getItemCodeRegistry();
     const hpp = computeHPP();
@@ -4112,8 +4125,7 @@ window.storage = {
     const pricelistSearchInput = document.getElementById('bk-pricelist-search');
     if (pricelistSearchInput) {
       pricelistSearchInput.addEventListener('input', (e) => { pricelistSearchQuery = e.target.value; renderPricelist(); });
-      pricelistSearchInput.focus();
-      pricelistSearchInput.setSelectionRange(pricelistSearchInput.value.length, pricelistSearchInput.value.length);
+      restoreSearchFocus(pricelistSearchInput);
     }
 
     bodyEl.querySelectorAll('.pricelist-markup-input').forEach(input => {
@@ -4447,6 +4459,7 @@ window.storage = {
 
   // ---------- SERVICE LAPTOP ----------
   function renderService() {
+    captureSearchFocus();
     const unpaidCount = services.filter(s => s.paid === false && s.linkedTxnId).length + manualTagihan.filter(m => m.paid === false).length;
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
@@ -4548,8 +4561,7 @@ window.storage = {
     const svcAktifSearchInput = document.getElementById('bk-svc-aktif-search');
     if (svcAktifSearchInput) {
       svcAktifSearchInput.addEventListener('input', (e) => { svcAktifSearchQuery = e.target.value; renderService(); });
-      svcAktifSearchInput.focus();
-      svcAktifSearchInput.setSelectionRange(svcAktifSearchInput.value.length, svcAktifSearchInput.value.length);
+      restoreSearchFocus(svcAktifSearchInput);
     }
     wireServiceCardEvents();
     wireServiceBulkDeleteBar(() => { renderService(); });
@@ -7119,6 +7131,7 @@ window.storage = {
 
   const LAPORAN_OWNER_ONLY_VIEWS = ['labarugi', 'jurnal', 'neraca', 'utang', 'stokbulanan', 'rekening', 'backup'];
   function renderLaporan() {
+    captureSearchFocus();
     if (!isOwner() && LAPORAN_OWNER_ONLY_VIEWS.includes(laporanView)) {
       laporanView = 'aruskas'; // admin cuma boleh Arus Kas & Beban Operasional
     }
@@ -8262,8 +8275,7 @@ window.storage = {
     const searchInput = document.getElementById('bk-aruskas-search');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => { arusKasSearchQuery = e.target.value; renderLaporan(); });
-      searchInput.focus();
-      searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+      restoreSearchFocus(searchInput);
     }
   }
 
@@ -8678,8 +8690,7 @@ window.storage = {
     const utangSearchInput = document.getElementById('bk-utang-search');
     if (utangSearchInput) {
       utangSearchInput.addEventListener('input', (e) => { utangSearchQuery = e.target.value; renderLaporan(); });
-      utangSearchInput.focus();
-      utangSearchInput.setSelectionRange(utangSearchInput.value.length, utangSearchInput.value.length);
+      restoreSearchFocus(utangSearchInput);
     }
     document.getElementById('bk-utang-save').addEventListener('click', async () => {
       const errEl = document.getElementById('bk-utang-err');
@@ -8799,8 +8810,7 @@ window.storage = {
     const bebanSearchInput = document.getElementById('bk-beban-search');
     if (bebanSearchInput) {
       bebanSearchInput.addEventListener('input', (e) => { bebanSearchQuery = e.target.value; renderLaporan(); });
-      bebanSearchInput.focus();
-      bebanSearchInput.setSelectionRange(bebanSearchInput.value.length, bebanSearchInput.value.length);
+      restoreSearchFocus(bebanSearchInput);
     }
     const katSel = document.getElementById('bk-beban-kategori');
     katSel.addEventListener('change', e => { bebanFormState.kategori = e.target.value; renderLaporan(); });
