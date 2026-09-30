@@ -641,6 +641,7 @@ window.storage = {
   let txns = [];
   let riwayatFilter = 'semua';
   let riwayatMonth = 'semua';
+  let riwayatSearchQuery = '';
   let editingTxnId = null;
   let selectedTxnIds = new Set();
   const STOK_AMBANG_DEFAULT = 5;
@@ -665,6 +666,7 @@ window.storage = {
   let transferRekening = [];
   let laporanView = 'aruskas'; // aruskas | jurnal | neraca | beban | utang | stokbulanan | rekening
   let laporanBulan = 'semua';
+  let arusKasSearchQuery = '';
   function blankBebanForm() { return { kategori: BEBAN_KATEGORI[0], kategoriCustom: '', nominal: '', keterangan: '' }; }
   let bebanFormState = blankBebanForm();
   let editingBebanId = null;
@@ -826,6 +828,7 @@ window.storage = {
   let svcView = 'aktif';
   let svcRiwayatMonth = 'semua';
   let svcSearchQuery = '';
+  let svcAktifSearchQuery = '';
   let selectedSvcIds = new Set();
   let editingServiceDetailId = null;
   let editingServiceTxnId = null;
@@ -1926,6 +1929,20 @@ window.storage = {
     return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
   }
 
+  // ---------- KOTAK SEARCH GENERIK (dipakai di banyak menu: Riwayat, Service, Stok, Pricelist, Laporan) ----------
+  // Cocokkan teks pencarian ke salah satu field target, tidak peduli besar/kecil huruf & spasi berlebih.
+  function searchMatch(query, ...fields) {
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return true;
+    return fields.some(f => String(f || '').toLowerCase().includes(q));
+  }
+  function searchBoxHtml(id, value, placeholder) {
+    return `<div class="bk-field" style="max-width:340px; margin-bottom:12px;">
+      <input type="text" id="${id}" value="${escapeAttr(value || '')}" placeholder="${escapeAttr(placeholder || 'Cari...')}" autocomplete="off"
+        style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 12px 9px 34px; font-size:13.5px; font-family:'Inter',sans-serif; background:#fff url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%23999%22 stroke-width=%222.5%22><circle cx=%2211%22 cy=%2211%22 r=%228%22/><line x1=%2221%22 y1=%2221%22 x2=%2216.65%22 y2=%2216.65%22/></svg>') no-repeat 11px center; background-size:15px;" />
+    </div>`;
+  }
+
   async function runQuickAi(type) {
     const input = document.getElementById('bk-quick-input');
     const btn = document.getElementById('bk-quick-btn');
@@ -2509,7 +2526,8 @@ window.storage = {
     // TIDAK ditampilkan di daftar Riwayat ini karena sudah bisa dilihat lengkap di tab
     // Service > Riwayat service. Total keuangan di atas (Pemasukan, HPP, Laba Kotor, PDF/Excel)
     // TETAP menghitung transaksi ini seperti biasa - yang disaring cuma daftar barisnya saja.
-    const filtered = byMonth.filter(t => (riwayatFilter === 'semua' ? true : t.type === riwayatFilter) && !findLinkedService(t.id));
+    const filteredPreSearch = byMonth.filter(t => (riwayatFilter === 'semua' ? true : t.type === riwayatFilter) && !findLinkedService(t.id));
+    const filtered = filteredPreSearch.filter(t => searchMatch(riwayatSearchQuery, t.kodeTransaksi, t.customerName, t.supplierName, (t.items||[]).map(i=>i.name).join(' '), (t.bahan||[]).map(i=>i.name).join(' '), (t.hasil||[]).map(i=>i.name).join(' ')));
     const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total, 0);
     const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
     const hppAll = computeHPP();
@@ -2539,6 +2557,7 @@ window.storage = {
       ` : `
       <div class="bk-stok-note">Ringkasan keuangan &amp; unduh laporan hanya untuk akun Pemilik.</div>
       `}
+      ${searchBoxHtml('bk-riwayat-search', riwayatSearchQuery, 'Cari kode, nama pelanggan/supplier, atau nama barang...')}
       <div class="bk-filter">
         <div class="bk-chip ${riwayatFilter==='semua'?'active':''}" data-f="semua">Semua</div>
         <div class="bk-chip ${riwayatFilter==='penjualan'?'active':''}" data-f="penjualan">Penjualan</div>
@@ -2557,6 +2576,12 @@ window.storage = {
       <div id="bk-riwayat-list">${filtered.length ? filtered.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('') : '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>'}</div>
     `;
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
+    const riwayatSearchInput = document.getElementById('bk-riwayat-search');
+    if (riwayatSearchInput) {
+      riwayatSearchInput.addEventListener('input', (e) => { riwayatSearchQuery = e.target.value; renderRiwayat(); });
+      riwayatSearchInput.focus();
+      riwayatSearchInput.setSelectionRange(riwayatSearchInput.value.length, riwayatSearchInput.value.length);
+    }
     const dlLrBtn = document.getElementById('bk-download-lr');
     if (dlLrBtn) dlLrBtn.addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
     const dlLrExcelBtn = document.getElementById('bk-download-lr-excel');
@@ -2845,6 +2870,7 @@ window.storage = {
 
 
   let stokView = 'laptop'; // laptop | onderdil
+  let stokSearchQuery = '';
   let stokDeletedListOpen = false;
   let selectedStokNames = new Set();
   let pendingStokEdits = new Map(); // name -> { unit, orig, newQty } - perubahan sisa stok yang belum disimpan
@@ -2956,7 +2982,8 @@ window.storage = {
     });
     const countLaptop = rowsWithKategori.filter(x => x.kategori === 'laptop').length;
     const countOnderdil = rowsWithKategori.filter(x => x.kategori === 'onderdil').length;
-    const rows = rowsWithKategori.filter(x => x.kategori === stokView).map(x => x.r);
+    const rowsInView = rowsWithKategori.filter(x => x.kategori === stokView);
+    const rows = rowsInView.filter(x => searchMatch(stokSearchQuery, x.r.name, x.code)).map(x => x.r);
     const adaProduksi = txns.some(t => t.type === 'produksi');
     const showNilai = isOwner();
     const totalNilaiView = rows.reduce((s,r) => s + (r.qty > 0 ? r.qty * hpp.getCurrentUnitCost(r.name) : 0), 0);
@@ -3001,6 +3028,7 @@ window.storage = {
         <div class="bk-chip ${stokView==='laptop'?'active':''}" data-sv="laptop">Stock Laptop (${countLaptop})</div>
         <div class="bk-chip ${stokView==='onderdil'?'active':''}" data-sv="onderdil">Stock Onderdil (${countOnderdil})</div>
       </div>
+      ${searchBoxHtml('bk-stok-list-search', stokSearchQuery, 'Cari nama atau kode barang...')}
       <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}.${isOwner() ? ' Kolom "Sisa stok" bisa diketik ulang langsung untuk koreksi manual (otomatis dicatat sebagai penyesuaian, riwayat lama tidak berubah).' : ''} Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
       ${rows.length && isOwner() ? `<div class="bk-select-bar">
         <label class="bk-select-all">
@@ -3159,6 +3187,12 @@ window.storage = {
       showToast(`Sisa stok seragam ${target.toLocaleString('id-ID')} disiapkan untuk ${appliedCount} item. Cek daftar lalu klik "Simpan Semua Perubahan".`);
     });
     bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); pendingStokEdits.clear(); stokSaveAttemptFailed = false; renderStok(); }));
+    const stokListSearchInput = document.getElementById('bk-stok-list-search');
+    if (stokListSearchInput) {
+      stokListSearchInput.addEventListener('input', (e) => { stokSearchQuery = e.target.value; renderStok(); });
+      stokListSearchInput.focus();
+      stokListSearchInput.setSelectionRange(stokListSearchInput.value.length, stokListSearchInput.value.length);
+    }
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
     }));
@@ -3936,6 +3970,7 @@ window.storage = {
 
   // ---------- PRICELIST (harga jual dari HPP + markup, siap ekspor Excel) ----------
   let pricelistView = 'barang'; // barang | onderdil
+  let pricelistSearchQuery = '';
   function pricelistCategoryOf(code) {
     return /^LPSRV/i.test(code || '') ? 'onderdil' : 'barang'; // LPSTK & LPPRD & tanpa kode masuk "barang"
   }
@@ -3959,7 +3994,8 @@ window.storage = {
     });
     const countBarang = rowsWithMeta.filter(x => x.kategori === 'barang').length;
     const countOnderdil = rowsWithMeta.filter(x => x.kategori === 'onderdil').length;
-    const rows = rowsWithMeta.filter(x => x.kategori === pricelistView);
+    const rowsInView = rowsWithMeta.filter(x => x.kategori === pricelistView);
+    const rows = rowsInView.filter(x => searchMatch(pricelistSearchQuery, x.r.name, x.code));
 
     // Proyeksi keuntungan kalau SEMUA sisa stok berhasil terjual di Harga Jual yang tercatat sekarang
     function hitungProyeksi(list) {
@@ -3977,7 +4013,7 @@ window.storage = {
       return { jual, hppTotal, untung: jual - hppTotal };
     }
     const proyeksiSemua = hitungProyeksi(rowsWithMeta);
-    const proyeksiView = hitungProyeksi(rows);
+    const proyeksiView = hitungProyeksi(rowsInView);
 
     bodyEl.innerHTML = `
       ${isOwner() ? `
@@ -3995,6 +4031,7 @@ window.storage = {
         <div class="bk-chip ${pricelistView==='barang'?'active':''}" data-pv="barang">Stock Laptop (${countBarang})</div>
         <div class="bk-chip ${pricelistView==='onderdil'?'active':''}" data-pv="onderdil">Stock Onderdil (${countOnderdil})</div>
       </div>
+      ${searchBoxHtml('bk-pricelist-search', pricelistSearchQuery, 'Cari nama atau kode barang...')}
       <div class="bk-two-col" style="margin-bottom:10px; max-width:460px;">
         <input id="bk-pricelist-default-markup" type="number" min="0" step="any" placeholder="Markup default % (mis: 20)" />
         <button class="bk-btn ghost" id="bk-pricelist-apply-default">Terapkan ke yang masih 0%</button>
@@ -4055,6 +4092,12 @@ window.storage = {
     `;
 
     bodyEl.querySelectorAll('.bk-filter [data-pv]').forEach(c => c.addEventListener('click', () => { pricelistView = c.dataset.pv; renderPricelist(); }));
+    const pricelistSearchInput = document.getElementById('bk-pricelist-search');
+    if (pricelistSearchInput) {
+      pricelistSearchInput.addEventListener('input', (e) => { pricelistSearchQuery = e.target.value; renderPricelist(); });
+      pricelistSearchInput.focus();
+      pricelistSearchInput.setSelectionRange(pricelistSearchInput.value.length, pricelistSearchInput.value.length);
+    }
 
     bodyEl.querySelectorAll('.pricelist-markup-input').forEach(input => {
       input.addEventListener('input', async (e) => {
@@ -4408,7 +4451,8 @@ window.storage = {
   function renderServiceAktifHtml() {
     const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
     const pool = services.filter(s => s.status !== 'diambil').sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-    const filtered = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
+    const filteredByStatus = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
+    const filtered = filteredByStatus.filter(s => searchMatch(svcAktifSearchQuery, s.kodeService, s.customerName, s.device, s.complaint));
     const hppData = computeHPP();
     const svcKodeOptions = generateServiceCodeSequence(5);
     if (!serviceFormState.kodeService || !svcKodeOptions.includes(serviceFormState.kodeService)) {
@@ -4451,6 +4495,7 @@ window.storage = {
       </div>
 
       <div class="bk-section-title">Sedang berjalan</div>
+      ${searchBoxHtml('bk-svc-aktif-search', svcAktifSearchQuery, 'Cari kode service, nama pelanggan, atau device...')}
       <div class="bk-filter bk-service-status-bar">
         <div class="bk-chip ${svcFilter==='semua'?'active':''}" data-f="semua">Semua (${pool.length})</div>
         ${activeStatuses.map(s => `<div class="bk-chip ${svcFilter===s.id?'active':''}" data-f="${s.id}">${s.label} (${pool.filter(x=>x.status===s.id).length})</div>`).join('')}
@@ -4483,6 +4528,12 @@ window.storage = {
       renderBody();
     });
     bodyEl.querySelectorAll('.bk-service-status-bar .bk-chip').forEach(c => c.addEventListener('click', () => { svcFilter = c.dataset.f; selectedSvcIds.clear(); renderService(); }));
+    const svcAktifSearchInput = document.getElementById('bk-svc-aktif-search');
+    if (svcAktifSearchInput) {
+      svcAktifSearchInput.addEventListener('input', (e) => { svcAktifSearchQuery = e.target.value; renderService(); });
+      svcAktifSearchInput.focus();
+      svcAktifSearchInput.setSelectionRange(svcAktifSearchInput.value.length, svcAktifSearchInput.value.length);
+    }
     wireServiceCardEvents();
     wireServiceBulkDeleteBar(() => { renderService(); });
   }
@@ -6967,8 +7018,11 @@ window.storage = {
         inflow.push({ label: `Setoran modal: ${m.keterangan || 'Tanpa keterangan'}`, amount: amt, date: m.createdAt });
       }
     });
-    inflow.sort((a,b)=>b.date-a.date);
-    outflow.sort((a,b)=>b.date-a.date);
+    // Arus Kas diurutkan KRONOLOGIS (lama ke terbaru) - beda dari daftar Riwayat/Service yang
+    // sengaja terbaru-di-atas, karena laporan arus kas gaya buku kas/ledger lebih enak dibaca
+    // urut kejadian dari awal periode.
+    inflow.sort((a,b)=>a.date-b.date);
+    outflow.sort((a,b)=>a.date-b.date);
     const totalMasuk = inflow.reduce((s,x)=>s+x.amount,0);
     const totalKeluar = outflow.reduce((s,x)=>s+x.amount,0);
     return { inflow, outflow, totalMasuk, totalKeluar, netKas: totalMasuk - totalKeluar };
@@ -8156,6 +8210,8 @@ window.storage = {
     const data = computeArusKasForMonth(mKey);
     const saldoAwal = computeSaldoKasSebelum(mKey);
     const saldoAkhir = saldoAwal + data.netKas;
+    const inflowFiltered = data.inflow.filter(x => searchMatch(arusKasSearchQuery, x.label));
+    const outflowFiltered = data.outflow.filter(x => searchMatch(arusKasSearchQuery, x.label));
     return `
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
@@ -8171,20 +8227,27 @@ window.storage = {
         <div class="bk-stat out"><div class="lbl">Kas keluar</div><div class="val">${rupiah(data.totalKeluar)}</div></div>
         <div class="bk-stat"><div class="lbl">Saldo akhir</div><div class="val" style="color:${saldoAkhir>=0?'var(--money-in)':'var(--money-out)'}">${rupiah(saldoAkhir)}</div></div>
       </div>
+      ${searchBoxHtml('bk-aruskas-search', arusKasSearchQuery, 'Cari keterangan kas masuk/keluar...')}
       <div class="bk-section-title">Rincian kas masuk</div>
-      ${data.inflow.length ? data.inflow.map(x => `
+      ${inflowFiltered.length ? inflowFiltered.map(x => `
         <div class="bk-list-row"><div class="bk-list-left"><div class="nm">${x.label}</div><div class="sub">${new Date(x.date).toLocaleDateString('id-ID')}</div></div><div class="bk-list-amt in">+${rupiah(x.amount)}</div></div>
-      `).join('') : '<div class="bk-empty">Tidak ada kas masuk pada periode ini.</div>'}
+      `).join('') : '<div class="bk-empty">Tidak ada kas masuk pada periode/pencarian ini.</div>'}
       <div class="bk-section-title" style="margin-top:18px;">Rincian kas keluar</div>
-      ${data.outflow.length ? data.outflow.map(x => `
+      ${outflowFiltered.length ? outflowFiltered.map(x => `
         <div class="bk-list-row"><div class="bk-list-left"><div class="nm">${x.label}</div><div class="sub">${new Date(x.date).toLocaleDateString('id-ID')}</div></div><div class="bk-list-amt out">-${rupiah(x.amount)}</div></div>
-      `).join('') : '<div class="bk-empty">Tidak ada kas keluar pada periode ini.</div>'}
+      `).join('') : '<div class="bk-empty">Tidak ada kas keluar pada periode/pencarian ini.</div>'}
     `;
   }
   function wireArusKasEvents() {
     const sel = document.getElementById('bk-lap-month');
     if (sel) sel.addEventListener('change', e => { laporanBulan = e.target.value; renderLaporan(); });
     document.getElementById('bk-aruskas-excel').addEventListener('click', () => downloadArusKasExcel(laporanBulan));
+    const searchInput = document.getElementById('bk-aruskas-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => { arusKasSearchQuery = e.target.value; renderLaporan(); });
+      searchInput.focus();
+      searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+    }
   }
 
   function renderJurnalUmumHtml() {
@@ -8535,8 +8598,10 @@ window.storage = {
     });
   }
 
+  let utangSearchQuery = '';
   function renderUtangHtml() {
     const totalKewajiban = computeKewajibanTotal();
+    const utangFiltered = utangList.filter(u => searchMatch(utangSearchQuery, u.kreditur, u.jenis, u.keterangan)).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     return `
       <div class="bk-stats" style="margin-bottom:16px; grid-template-columns: 1fr;">
         <div class="bk-stat out"><div class="lbl">Total kewajiban (sisa utang)</div><div class="val">${rupiah(totalKewajiban)}</div></div>
@@ -8558,7 +8623,8 @@ window.storage = {
       <button class="bk-btn ghost" id="bk-utang-excel" style="margin-bottom:26px;">Unduh Excel</button>
 
       <div class="bk-section-title">Daftar utang</div>
-      <div id="bk-utang-list">${utangList.length ? [...utangList].sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).map(utangRowHtml).join('') : '<div class="bk-empty">Belum ada catatan utang.</div>'}</div>
+      ${searchBoxHtml('bk-utang-search', utangSearchQuery, 'Cari kreditur, jenis, atau keterangan...')}
+      <div id="bk-utang-list">${utangFiltered.length ? utangFiltered.map(utangRowHtml).join('') : '<div class="bk-empty">Belum ada catatan utang yang cocok.</div>'}</div>
     `;
   }
 
@@ -8592,6 +8658,12 @@ window.storage = {
     document.getElementById('bk-utang-nominal').addEventListener('input', e => utangFormState.nominal = e.target.value);
     document.getElementById('bk-utang-ket').addEventListener('input', e => utangFormState.keterangan = e.target.value);
     document.getElementById('bk-utang-excel').addEventListener('click', downloadUtangExcel);
+    const utangSearchInput = document.getElementById('bk-utang-search');
+    if (utangSearchInput) {
+      utangSearchInput.addEventListener('input', (e) => { utangSearchQuery = e.target.value; renderLaporan(); });
+      utangSearchInput.focus();
+      utangSearchInput.setSelectionRange(utangSearchInput.value.length, utangSearchInput.value.length);
+    }
     document.getElementById('bk-utang-save').addEventListener('click', async () => {
       const errEl = document.getElementById('bk-utang-err');
       const kreditur = utangFormState.kreditur.trim();
@@ -8648,11 +8720,13 @@ window.storage = {
     });
   }
 
+  let bebanSearchQuery = '';
   function renderBebanHtml() {
     const months = laporanAvailableMonths();
     const mKey = laporanBulan;
-    const filtered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-    const total = filtered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
+    const byMonth = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+    const filtered = byMonth.filter(b => searchMatch(bebanSearchQuery, b.kategori, b.kategoriCustom, b.keterangan));
+    const total = byMonth.reduce((s,b) => s + (Number(b.nominal)||0), 0);
     return `
       <div class="bk-section-title">${editingBebanId ? 'Edit beban operasional' : 'Catat beban operasional baru'}</div>
       ${editingBebanId ? `<div class="bk-cancel-edit" id="bk-beban-cancel-edit">&larr; Batal edit</div>` : ''}
@@ -8682,7 +8756,8 @@ window.storage = {
         <div class="bk-stat out"><div class="lbl">Total beban ${mKey==='semua'?'(semua waktu)':('&middot; '+monthLabel(mKey))}</div><div class="val">${rupiah(total)}</div></div>
       </div>
       <button class="bk-btn ghost" id="bk-beban-excel" style="margin-bottom:14px;">Unduh Excel</button>
-      <div id="bk-beban-list">${filtered.length ? filtered.map(bebanRowHtml).join('') : '<div class="bk-empty">Belum ada catatan beban pada periode ini.</div>'}</div>
+      ${searchBoxHtml('bk-beban-search', bebanSearchQuery, 'Cari kategori atau keterangan beban...')}
+      <div id="bk-beban-list">${filtered.length ? filtered.map(bebanRowHtml).join('') : '<div class="bk-empty">Belum ada catatan beban pada periode/pencarian ini.</div>'}</div>
     `;
   }
   function bebanRowHtml(b) {
@@ -8704,6 +8779,12 @@ window.storage = {
   }
   function wireBebanEvents() {
     document.getElementById('bk-beban-excel').addEventListener('click', () => downloadBebanExcel(laporanBulan));
+    const bebanSearchInput = document.getElementById('bk-beban-search');
+    if (bebanSearchInput) {
+      bebanSearchInput.addEventListener('input', (e) => { bebanSearchQuery = e.target.value; renderLaporan(); });
+      bebanSearchInput.focus();
+      bebanSearchInput.setSelectionRange(bebanSearchInput.value.length, bebanSearchInput.value.length);
+    }
     const katSel = document.getElementById('bk-beban-kategori');
     katSel.addEventListener('change', e => { bebanFormState.kategori = e.target.value; renderLaporan(); });
     if (bebanFormState.kategori === 'Lainnya') {
