@@ -1204,16 +1204,52 @@ window.storage = {
     // Daftar semua transaksi di hari terpilih (penjualan produk, service, pembelian, produksi), terbaru di atas.
     const todayTxnsSorted = [...todayTxns].sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     const todayProduksiCount = todayTxns.filter(x => x.type === 'produksi').length;
+    // Detail per transaksi (bisa dibuka/ditutup) + tombol lompat ke Riwayat (atau Service kalau tertaut service).
+    function dailyDetailHtml(x) {
+      const lbl = 'font-size:9.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.03em;';
+      const mono = "font-family:'IBM Plex Mono',monospace;";
+      const meta = [];
+      if (x.kodeTransaksi) meta.push(`Kode: <span class="mono" style="font-weight:700;">${escapeAttr(x.kodeTransaksi)}</span>`);
+      if (x.customerPhone) meta.push(`HP: ${escapeAttr(x.customerPhone)}`);
+      if (x.createdBy) meta.push(`Dicatat oleh: ${escapeAttr(x.createdBy)}`);
+      if (x.note) meta.push(`Catatan: ${escapeAttr(x.note)}`);
+      let body = '';
+      if (x.type === 'produksi') {
+        const lst = arr => (arr || []).map(i => `<div style="display:flex; justify-content:space-between; gap:10px; padding:3px 0;"><span>${escapeAttr(i.name)}</span><span style="${mono}">${Number(i.qty).toLocaleString('id-ID')} ${escapeAttr(i.unit || '')}</span></div>`).join('') || '-';
+        body = `<div style="${lbl}">Bahan dipakai</div>${lst(x.bahan)}<div style="${lbl} margin-top:8px;">Hasil produksi</div>${lst(x.hasil)}`;
+      } else {
+        const rows = (x.items || []).map(i => {
+          const q = Number(i.qty) || 0, pr = Number(i.price) || 0;
+          return `<div style="display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px dashed var(--line);"><span style="min-width:0;">${escapeAttr(i.name)}<div style="font-size:11px; color:var(--ink-soft);">${q.toLocaleString('id-ID')} ${escapeAttr(i.unit || '')} &times; ${rupiah(pr)}</div></span><span style="${mono} font-weight:700; white-space:nowrap;">${rupiah(q * pr)}</span></div>`;
+        }).join('');
+        const ongkir = (x.type === 'pembelian' && Number(x.ongkosKirim) > 0) ? `<div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Ongkos kirim</span><span style="${mono}">${rupiah(x.ongkosKirim)}</span></div>` : '';
+        let hppRow = '';
+        if (x.type === 'penjualan') {
+          const h = todayHppAll.hppByTxn[x.id] || 0, u = x.total - h;
+          hppRow = `<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px;"><div><div style="${lbl}">Hasil Jual</div><div style="${mono} font-weight:700;">${rupiah(x.total)}</div></div><div><div style="${lbl}">HPP</div><div style="${mono} font-weight:700; color:var(--ink-soft);">${rupiah(h)}</div></div><div><div style="${lbl}">Untung</div><div style="${mono} font-weight:700; color:${u>=0?'var(--money-in)':'var(--money-out)'};">${rupiah(u)}</div></div></div>`;
+        } else {
+          hppRow = `<div style="display:flex; justify-content:space-between; padding-top:6px; font-weight:700;"><span>Total</span><span style="${mono}">${rupiah(x.total)}</span></div>`;
+        }
+        body = rows + ongkir + hppRow;
+      }
+      const tujuan = findLinkedService(x.id) ? 'Buka di Service &rarr; Riwayat service' : 'Buka di Riwayat transaksi';
+      return `<div class="bk-daily-detail" style="display:none; padding:10px 12px; margin:-2px 0 8px; background:var(--paper); border:1px solid var(--line); border-radius:8px; font-size:12.5px;">
+        ${meta.length ? `<div style="font-size:11.5px; color:var(--ink-soft); margin-bottom:8px; line-height:1.6;">${meta.join(' &middot; ')}</div>` : ''}
+        ${body}
+        <button class="bk-btn ghost bk-daily-jump" data-id="${x.id}" style="margin-top:10px; padding:6px 12px; font-size:12px;">${tujuan} &rarr;</button>
+      </div>`;
+    }
     function dailyTxnRowHtml(x) {
       const jam = new Date(x.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':');
+      const chev = '<span class="bk-daily-chev" style="color:var(--ink-soft); font-size:11px; margin-left:6px;">&#9662;</span>';
       if (x.type === 'produksi') {
-        return `<div class="bk-list-row">
+        return `<div class="bk-daily-item" data-id="${x.id}"><div class="bk-list-row bk-daily-toggle" style="cursor:pointer;">
           <div class="bk-list-left">
             <div class="nm">Produksi <span class="bk-badge lunas" style="background:var(--accent-bg); color:var(--accent-ink);">Konversi stok</span></div>
             <div class="sub">${jam} &middot; ${summarizeProduksi(x)}${serviceLinkNoteHtml(x)}</div>
           </div>
-          <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;</div>
-        </div>`;
+          <div class="bk-list-amt" style="color:var(--ink-soft);">&mdash;${chev}</div>
+        </div>${dailyDetailHtml(x)}</div>`;
       }
       const isIn = x.type === 'penjualan';
       const isSvc = isIn && !!findLinkedService(x.id);
@@ -1221,13 +1257,13 @@ window.storage = {
       const nama = isIn ? (x.customerName || 'Tanpa nama') : (x.supplierName || 'Pembelian bahan baku');
       const names = (x.items || []).map(i => escapeAttr(i.name)).join(', ');
       const badge = isIn ? `<span class="bk-badge ${x.paid===false?'belum':'lunas'}">${x.paid===false?'Belum lunas':'Lunas'}</span>` : '';
-      return `<div class="bk-list-row">
+      return `<div class="bk-daily-item" data-id="${x.id}"><div class="bk-list-row bk-daily-toggle" style="cursor:pointer;">
         <div class="bk-list-left">
           <div class="nm"><span style="font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-soft);">${jenis}</span> ${escapeAttr(nama)} ${badge}</div>
           <div class="sub">${jam} &middot; ${names || '-'}${serviceLinkNoteHtml(x)}</div>
         </div>
-        <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(x.total)}</div>
-      </div>`;
+        <div class="bk-list-amt ${isIn?'in':'out'}">${isIn?'+':'-'}${rupiah(x.total)}${chev}</div>
+      </div>${dailyDetailHtml(x)}</div>`;
     }
     // Dropdown 30 hari terakhir (hari ini + 29 hari sebelumnya), terbaru di atas
     const last30DaysOptions = Array.from({ length: 30 }, (_, i) => {
@@ -1290,6 +1326,44 @@ window.storage = {
     document.getElementById('bk-ai-btn').addEventListener('click', runAiInsight);
     const daySel = document.getElementById('bk-dashboard-day-select');
     if (daySel) daySel.addEventListener('change', e => { dashboardSelectedDay = e.target.value; renderDashboard(); });
+    bodyEl.querySelectorAll('#bk-daily-txn-list .bk-daily-toggle').forEach(row => row.addEventListener('click', () => {
+      const det = row.parentElement.querySelector('.bk-daily-detail');
+      if (!det) return;
+      const open = det.style.display === 'none';
+      det.style.display = open ? 'block' : 'none';
+      const ch = row.querySelector('.bk-daily-chev'); if (ch) ch.innerHTML = open ? '&#9652;' : '&#9662;';
+    }));
+    bodyEl.querySelectorAll('#bk-daily-txn-list .bk-daily-jump').forEach(btn => btn.addEventListener('click', () => jumpToTxnFromDashboard(btn.dataset.id)));
+  }
+
+  // Lompat dari daftar transaksi harian di Dasbor ke data aslinya: Riwayat transaksi (bulan & filter
+  // otomatis disesuaikan), atau Service > Riwayat service kalau transaksinya tertaut ke service
+  // (karena transaksi service memang tidak ditampilkan di daftar Riwayat).
+  function highlightAfterRender(attr, value) {
+    setTimeout(() => {
+      const el = Array.from(bodyEl.querySelectorAll('[' + attr + ']')).find(e => e.getAttribute(attr) === value);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const prev = el.style.boxShadow, prevT = el.style.transition;
+      el.style.transition = 'box-shadow .3s';
+      el.style.boxShadow = '0 0 0 3px var(--accent)';
+      setTimeout(() => { el.style.boxShadow = prev; el.style.transition = prevT; }, 2600);
+    }, 60);
+  }
+  function jumpToTxnFromDashboard(id) {
+    const t = txns.find(x => x.id === id);
+    if (!t) return;
+    const svc = findLinkedService(id);
+    if (svc) {
+      svcView = 'riwayat'; activeTab = 'service';
+      renderTabs(); renderBody();
+      highlightAfterRender('data-svc', svc.id);
+      return;
+    }
+    riwayatMonth = monthKey(t.createdAt); riwayatFilter = 'semua'; riwayatSearchQuery = ''; selectedTxnIds.clear();
+    activeTab = 'riwayat';
+    renderTabs(); renderBody();
+    highlightAfterRender('data-txn', id);
   }
 
   function summarizeProduksi(t) {
