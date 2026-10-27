@@ -5795,16 +5795,19 @@ window.storage = {
       showLoadingModal('Menyimpan perubahan transaksi...');
       try {
         // 1) Sparepart berubah? Hapus produksi txn lama (stok kembali), buat baru kalau ada sparepart.
-        const oldPartsKey = JSON.stringify((s.parts||[]).filter(p=>p.name&&Number(p.qty)>0).map(p=>({n:p.name.trim().toLowerCase(),q:Number(p.qty)})).sort((a,b)=>a.n.localeCompare(b.n)));
-        const newPartsKey = JSON.stringify(newParts.map(p=>({n:p.name.toLowerCase(),q:p.qty})).sort((a,b)=>a.n.localeCompare(b.n)));
+        // PENTING: pembanding "sparepart lama" HARUS diambil dari transaksi produksi yang BENAR-BENAR sudah
+        // mengurangi stok (bahan di prodTxn), BUKAN dari s.parts - karena s.parts sudah ikut berubah live
+        // saat kolom sparepart diketik, jadi kalau dibandingkan dengan s.parts hasilnya SELALU "sama" dan
+        // stok tidak pernah dikurangi/dikembalikan (bug "sparepart service tidak mengurangi stok").
+        const normParts = arr => JSON.stringify((arr || []).map(p => ({ n: String(p.name || '').trim().toLowerCase(), q: Number(p.qty) || 0 })).filter(p => p.n && p.q > 0).sort((a,b) => a.n.localeCompare(b.n) || a.q - b.q));
+        const oldProdTxn = s.prodTxnId ? txns.find(x => x.id === s.prodTxnId) : null;
+        const oldPartsKey = normParts(oldProdTxn ? oldProdTxn.bahan : []);
+        const newPartsKey = normParts(newParts);
         if (oldPartsKey !== newPartsKey) {
-          if (s.prodTxnId) {
-            try { await deleteTxnFromStore(s.prodTxnId); } catch (e) { /* mungkin sudah terhapus */ }
-            txns = txns.filter(x => x.id !== s.prodTxnId);
-            s.prodTxnId = null;
-          }
+          // Cek kecukupan stok DULU (dengan mengabaikan produksi lama yang akan diganti), baru hapus/ganti.
+          // Dulu produksi lama dihapus lebih dulu, jadi kalau stok ternyata kurang, datanya sudah terlanjur hilang.
           if (newParts.length) {
-            const stockMapNow = computeStock();
+            const stockMapNow = computeStockExcluding(oldProdTxn ? oldProdTxn.id : null);
             const kurang = [];
             newParts.forEach(p => {
               const avail = getAvailableQty(stockMapNow, p.name);
@@ -5815,6 +5818,13 @@ window.storage = {
               if (errEl) { errEl.style.display = 'block'; errEl.textContent = `Stok sparepart tidak cukup untuk: ${kurang.join('; ')}.`; }
               return;
             }
+          }
+          if (s.prodTxnId) {
+            try { await deleteTxnFromStore(s.prodTxnId); } catch (e) { /* mungkin sudah terhapus */ }
+            txns = txns.filter(x => x.id !== s.prodTxnId);
+            s.prodTxnId = null;
+          }
+          if (newParts.length) {
             const prodTxn = {
               id: uid(), type: 'produksi', bahan: newParts,
               hasil: [{ name: s.serviceItemName || `Jasa Service Laptop - ${s.device} (${id.slice(0,6)})`, qty: 1, unit: 'jasa' }],
