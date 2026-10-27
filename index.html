@@ -1196,7 +1196,6 @@ window.storage = {
     // sisa stok ikut berkurang - ITU BUKAN PENJUALAN. Kalau ikut dihitung, HPP barangnya (bisa jutaan)
     // terhitung tanpa pemasukan sama sekali sehingga Laba Kotor hari itu jadi minus besar. Jadi di Ringkasan
     // Harian dikeluarkan dari Penjualan/HPP/Laba Kotor/Jumlah Transaksi, dan ditampilkan terpisah.
-    const isPenyesuaianStokTxn = x => (x.type === 'penjualan' || x.type === 'pembelian') && /^Penyesuaian Stok/i.test(x.customerName || x.supplierName || '');
     const todayPenyesuaianTxns = todayTxns.filter(isPenyesuaianStokTxn);
     const todaySalesTxns = todayTxns.filter(x => x.type === 'penjualan' && !isPenyesuaianStokTxn(x) && !findLinkedService(x.id));
     const todayServiceTxns = todayTxns.filter(x => x.type === 'penjualan' && findLinkedService(x.id));
@@ -1207,7 +1206,7 @@ window.storage = {
     const todayHppAll = computeHPP();
     const todayHpp = todaySalesTxns.reduce((s,x) => s + (todayHppAll.hppByTxn[x.id] || 0), 0);
     const todayLabaKotor = todaySalesTotal - todayHpp;
-    const todayPenyesuaianHpp = todayPenyesuaianTxns.filter(x => x.type === 'penjualan').reduce((s,x) => s + (todayHppAll.hppByTxn[x.id] || 0), 0);
+    const todayPenyesuaianHpp = todayPenyesuaianTxns.filter(x => x.type === 'penjualan').reduce((s,x) => s + (todayHppAll.penyesuaianHppByTxn[x.id] || 0), 0);
     // Daftar semua transaksi di hari terpilih (penjualan produk, service, pembelian, produksi), terbaru di atas.
     const todayTxnsSorted = [...todayTxns].sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     const todayProduksiCount = todayTxns.filter(x => x.type === 'produksi').length;
@@ -2857,6 +2856,14 @@ window.storage = {
     return stockMap[key] ? stockMap[key].qty : 0;
   }
 
+  // Penyesuaian stok (hapus item / edit manual sisa stok) dicatat sebagai transaksi "penjualan"/"pembelian" Rp0
+  // supaya sisa stok ikut berubah - ITU BUKAN PENJUALAN. Nilai barangnya tetap ikut menggerakkan stok & rata-rata
+  // HPP, tapi TIDAK boleh dihitung sebagai HPP penjualan (kalau dihitung, Laba Kotor jadi minus tanpa ada
+  // pemasukan). Dipakai konsisten di Dasbor, Riwayat, Laporan Laba Rugi, dan Excel/PDF.
+  function isPenyesuaianStokTxn(x) {
+    return !!x && (x.type === 'penjualan' || x.type === 'pembelian') && /^Penyesuaian Stok/i.test(x.customerName || x.supplierName || '');
+  }
+
   // ---------- HPP (Harga Pokok Penjualan) via metode rata-rata bergerak ----------
   function computeHPP() {
     const sorted = [...txns].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -2888,8 +2895,9 @@ window.storage = {
     }
 
     const hppByTxn = {};
+    const penyesuaianHppByTxn = {}; // nilai stok yang dihapus/dikoreksi (BUKAN HPP penjualan)
     const prodCostByTxn = {};
-    let totalRevenue = 0, totalHPP = 0;
+    let totalRevenue = 0, totalHPP = 0, totalPenyesuaianHpp = 0;
 
     sorted.forEach(t => {
       if (t.type === 'pembelian') {
@@ -2922,13 +2930,20 @@ window.storage = {
           const qty = Number(i.qty) || 0;
           txnHpp += qty * removeStock(i.name, qty);
         });
-        hppByTxn[t.id] = txnHpp;
-        totalHPP += txnHpp;
+        if (isPenyesuaianStokTxn(t)) {
+          // stok tetap berkurang (removeStock di atas), tapi nilainya dicatat terpisah, bukan HPP penjualan
+          hppByTxn[t.id] = 0;
+          penyesuaianHppByTxn[t.id] = txnHpp;
+          totalPenyesuaianHpp += txnHpp;
+        } else {
+          hppByTxn[t.id] = txnHpp;
+          totalHPP += txnHpp;
+        }
         totalRevenue += t.total;
       }
     });
 
-    return { hppByTxn, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf };
+    return { hppByTxn, penyesuaianHppByTxn, totalPenyesuaianHpp, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf };
   }
 
   // Sama seperti computeHPP, tapi hanya memproses transaksi sampai tanggal cutoff tertentu.
@@ -6291,7 +6306,8 @@ window.storage = {
     const bebanFiltered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey);
     const totalBeban = bebanFiltered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
     const labaBersih = labaKotorBulan - totalBeban;
-    return { byMonth, masuk, keluar, hppBulan, labaKotorBulan, bebanFiltered, totalBeban, labaBersih };
+    const penyesuaianStokHpp = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + (hppAll.penyesuaianHppByTxn[t.id] || 0), 0);
+    return { byMonth, masuk, keluar, hppBulan, labaKotorBulan, bebanFiltered, totalBeban, labaBersih, penyesuaianStokHpp };
   }
 
   function sheetFromAOA(aoa) {
@@ -8762,6 +8778,7 @@ window.storage = {
         <div class="bk-stat in" style="border-width:2px; border-color:${lr.labaBersih>=0?'var(--money-in)':'var(--money-out)'};"><div class="lbl">Laba Bersih</div><div class="val" style="color:${lr.labaBersih>=0?'var(--money-in)':'var(--money-out)'}; font-size:20px;">${rupiah(lr.labaBersih)}</div></div>
         <div class="bk-stat"><div class="lbl">Margin Kotor / Bersih</div><div class="val" style="font-size:15px;">${marginKotor.toFixed(1)}% / ${marginBersih.toFixed(1)}%</div></div>
       </div>
+      ${lr.penyesuaianStokHpp > 0 ? `<div class="bk-stok-note" style="margin-top:-8px; margin-bottom:18px;">Periode ini ada penyesuaian stok (hapus item / edit manual sisa stok) senilai HPP <strong>${rupiah(lr.penyesuaianStokHpp)}</strong>. Itu koreksi stok, bukan penjualan, jadi <strong>tidak dihitung</strong> di HPP maupun Laba Kotor. Nilai stok di Neraca tetap sudah berkurang.</div>` : ''}
 
       <div class="bk-ai-box" style="border-color:var(--accent); margin-bottom:22px;">
         <div class="ai-head"><div class="ai-title">Modal yang Masih Tertahan di Stok (Belum Terjual)</div></div>
