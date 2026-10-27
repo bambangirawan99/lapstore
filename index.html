@@ -3021,7 +3021,7 @@ window.storage = {
       return uc;
     }
 
-    const hppByTxn = {};
+    const hppByTxn = {}, hppTerhapusByTxn = {}, revTerhapusByTxn = {};
     const penyesuaianHppByTxn = {}; // nilai stok yang dihapus/dikoreksi (BUKAN HPP penjualan)
     const prodCostByTxn = {};
     let totalRevenue = 0, totalHPP = 0, totalPenyesuaianHpp = 0;
@@ -3052,11 +3052,14 @@ window.storage = {
         });
         prodCostByTxn[t.id] = { batchCost, hasil: hasilDetail };
       } else if (t.type === 'penjualan') {
-        let txnHpp = 0;
+        let txnHpp = 0, delHpp = 0, delRev = 0;
         t.items.forEach(i => {
           const qty = Number(i.qty) || 0;
-          txnHpp += qty * removeStock(i.name, qty);
+          const c = qty * removeStock(i.name, qty);
+          txnHpp += c;
+          if (isItemTerhapus(i.name)) { delHpp += c; delRev += qty * (Number(i.price) || 0); }
         });
+        if (!isPenyesuaianStokTxn(t)) { hppTerhapusByTxn[t.id] = delHpp; revTerhapusByTxn[t.id] = delRev; }
         if (isPenyesuaianStokTxn(t)) {
           // stok tetap berkurang (removeStock di atas), tapi nilainya dicatat terpisah, bukan HPP penjualan
           hppByTxn[t.id] = 0;
@@ -3070,7 +3073,7 @@ window.storage = {
       }
     });
 
-    return { hppByTxn, penyesuaianHppByTxn, totalPenyesuaianHpp, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf };
+    return { hppByTxn, hppTerhapusByTxn, revTerhapusByTxn, penyesuaianHppByTxn, totalPenyesuaianHpp, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf };
   }
 
   // Sama seperti computeHPP, tapi hanya memproses transaksi sampai tanggal cutoff tertentu.
@@ -6219,10 +6222,11 @@ window.storage = {
 
   function computeLabaRugiForMonth(mKey) {
     const byMonth = mKey === 'semua' ? txns : txns.filter(t => monthKey(t.createdAt) === mKey);
-    const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total, 0);
-    const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
     const hppAll = computeHPP();
-    const hppBulan = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + (hppAll.hppByTxn[t.id] || 0), 0);
+    // Penjualan item yang sudah dihapus dari sistem tidak ikut dihitung (pendapatan maupun HPP-nya).
+    const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total - (hppAll.revTerhapusByTxn[t.id] || 0), 0);
+    const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
+    const hppBulan = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + (hppAll.hppByTxn[t.id] || 0) - (hppAll.hppTerhapusByTxn[t.id] || 0), 0);
     const labaKotorBulan = masuk - hppBulan;
     const bebanFiltered = bebanList.filter(b => mKey === 'semua' ? true : monthKey(b.createdAt) === mKey);
     const totalBeban = bebanFiltered.reduce((s,b) => s + (Number(b.nominal)||0), 0);
