@@ -4753,10 +4753,10 @@ window.storage = {
         </div>
       </div>
       <div class="bk-stats" style="margin-bottom:16px;">
-        <div class="bk-stat"><div class="lbl">Service selesai ${svcRiwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(svcRiwayatMonth))}</div><div class="val" id="bk-svc-riwayat-count">${byMonth.length}</div></div>
+        <div class="bk-stat"><div class="lbl" id="bk-svc-riwayat-lbl">Service selesai ${svcRiwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(svcRiwayatMonth))}</div><div class="val" id="bk-svc-riwayat-count">${byMonth.length}</div></div>
         <div class="bk-stat in"><div class="lbl">Total Jasa Service ke Konsumen</div><div class="val" id="bk-svc-riwayat-total">${rupiah(totalPendapatan)}</div></div>
-        <div class="bk-stat out"><div class="lbl">Total HPP (Sparepart + Vendor)</div><div class="val">${rupiah(totalHppSvc)}</div></div>
-        <div class="bk-stat in" style="border-width:2px; border-color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};"><div class="lbl">Total Keuntungan Service</div><div class="val" style="color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};">${rupiah(totalUntungSvc)}</div></div>
+        <div class="bk-stat out"><div class="lbl">Total HPP (Sparepart + Vendor)</div><div class="val" id="bk-svc-riwayat-hpp">${rupiah(totalHppSvc)}</div></div>
+        <div class="bk-stat in" style="border-width:2px; border-color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};"><div class="lbl">Total Keuntungan Service</div><div class="val" id="bk-svc-riwayat-untung" style="color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};">${rupiah(totalUntungSvc)}</div></div>
       </div>
       <div id="bk-svc-select-bar-wrap">${filtered.length ? `<div class="bk-select-bar">
         <label class="bk-select-all">
@@ -4790,6 +4790,14 @@ window.storage = {
     const totalEl = document.getElementById('bk-svc-riwayat-total');
     if (countEl) countEl.textContent = byMonth.length;
     if (totalEl) totalEl.textContent = rupiah(totalPendapatan);
+    const totalHppSvc = byMonth.reduce((sum,s) => sum + svcTotalHpp(s, hppData), 0);
+    const totalUntungSvc = totalPendapatan - totalHppSvc;
+    const lblEl = document.getElementById('bk-svc-riwayat-lbl');
+    if (lblEl) lblEl.innerHTML = 'Service selesai ' + (svcRiwayatMonth==='semua' ? '(semua waktu)' : ('&middot; ' + monthLabel(svcRiwayatMonth)));
+    const hppEl = document.getElementById('bk-svc-riwayat-hpp');
+    if (hppEl) hppEl.textContent = rupiah(totalHppSvc);
+    const untungEl = document.getElementById('bk-svc-riwayat-untung');
+    if (untungEl) { untungEl.textContent = rupiah(totalUntungSvc); untungEl.style.color = totalUntungSvc>=0 ? 'var(--money-in)' : 'var(--money-out)'; if (untungEl.parentElement) untungEl.parentElement.style.borderColor = untungEl.style.color; }
     wireServiceCardEvents();
     wireServiceBulkDeleteBar(refreshSvcRiwayatList);
   }
