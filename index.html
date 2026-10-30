@@ -466,12 +466,25 @@ body {
     padding: 0 !important; min-height: 0 !important; height: auto !important;
   }
   .bk-receipt-wrap { position: static !important; height: auto !important; }
+  /* Printer thermal 58mm (Desktop 58D): area cetak lebar 48mm x tinggi 180mm, margin 0. Lebar nota dibuat
+     asli 48mm (bukan 300px yang dikecilkan paksa) sehingga huruf tidak jadi kecil. */
   #bk-receipt-card {
-    position: static !important; width: 300px !important; margin: 0 auto !important;
-    box-shadow: none !important; border: none !important;
+    position: static !important; width: 48mm !important; max-width: 48mm !important; margin: 0 !important;
+    padding: 1.5mm 1.2mm 1mm !important; box-sizing: border-box !important;
+    box-shadow: none !important; border: none !important; border-radius: 0 !important; overflow: visible !important;
+    font-size: 11.5px !important; line-height: 1.35 !important; color: #000 !important; background: #fff !important;
   }
+  #bk-receipt-card::before { display: none !important; }
+  #bk-receipt-card .r-store { font-size: 16px !important; color: #000 !important; }
+  #bk-receipt-card .r-sub, #bk-receipt-card .r-item-sub, #bk-receipt-card .r-note { font-size: 10.5px !important; color: #000 !important; }
+  #bk-receipt-card .r-total { font-size: 13px !important; color: #000 !important; }
+  #bk-receipt-card .r-item-top, #bk-receipt-card .r-total { gap: 6px; }
+  #bk-receipt-card .r-total { flex-wrap: wrap; }
+  #bk-receipt-card .r-item-top span:first-child { word-break: break-word; }
+  #bk-receipt-card div { color: #000 !important; }
+  #bk-receipt-card hr { margin: 5px 0 !important; border-top: 1px dashed #000 !important; }
   .bk-receipt-actions, .bk-close-x, .zigzag { display: none !important; }
-  @page { size: auto; margin: 4mm; }
+  @page { size: 48mm 180mm; margin: 0; }
 }
 </style>
 
@@ -3438,6 +3451,11 @@ window.storage = {
         ${isLaptopView ? `<div class="bk-chip ${stokStatusFilter==='notready'?'active':''}" data-ss="notready">Not Ready (${rowsNotReady.length})</div>` : ''}
         <div class="bk-chip ${stokStatusFilter==='habis'?'active':''}" data-ss="habis">Terjual Habis (${rowsHabis.length})</div>
       </div>
+      <div style="margin:-4px 0 14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <button class="bk-btn" id="bk-stok-xls-btn" type="button">Unduh Excel</button>
+        <button class="bk-btn ghost" id="bk-stok-pdf-btn" type="button">Unduh PDF</button>
+        <span style="font-size:12px; color:var(--ink-soft);">${stokView==='laptop'?'Stock Laptop':'Stock Onderdil'} &middot; ${stokStatusFilter==='semua'?'Semua Status':STOK_STATUS_LABEL[stokStatusFilter]} (${rowsSorted.length} barang), sesuai urutan di tabel.</span>
+      </div>
       ${searchBoxHtml('bk-stok-list-search', stokSearchQuery, 'Cari nama atau kode barang...')}
       <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Di <strong>Stock Laptop</strong>, kolom <strong>Status</strong> (Ready / Not Ready) bisa diubah lewat dropdown dan tersimpan per barang; barang yang namanya diawali <strong>"*NR"</strong> otomatis Not Ready sampai statusnya kamu ubah. Chip <strong>Terjual Habis</strong> menampilkan barang yang sisa stoknya 0 atau minus.${isOwner() ? ' Kolom "Sisa stok" bisa diketik ulang langsung untuk koreksi manual (otomatis dicatat sebagai penyesuaian, riwayat lama tidak berubah).' : ''} Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
       ${rowsDisplayed.length && isOwner() ? `<div class="bk-select-bar">
@@ -3574,6 +3592,83 @@ window.storage = {
     }));
     bodyEl.querySelectorAll('.bk-filter [data-sv]').forEach(c => c.addEventListener('click', () => { stokView = c.dataset.sv; selectedStokNames.clear(); pendingStokEdits.clear(); stokSaveAttemptFailed = false; renderStok(); }));
     bodyEl.querySelectorAll('.bk-filter [data-ss]').forEach(c => c.addEventListener('click', () => { stokStatusFilter = c.dataset.ss; selectedStokNames.clear(); pendingStokEdits.clear(); stokSaveAttemptFailed = false; renderStok(); }));
+    // ---- Unduh Excel / PDF daftar stok (kategori & status yang sedang tampil; kolom: No, Nama item, Kode barang, Satuan, Sisa stok, HPP/unit, Total nilai) ----
+    function exportStok(kind) {
+      if (!rowsSorted.length) { showToast('Tidak ada data stok pada filter ini.'); return; }
+      const storeName = (document.getElementById('bk-storename') && document.getElementById('bk-storename').value) || 'Toko Saya';
+      const kat = stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil';
+      const stLabel = stokStatusFilter === 'semua' ? 'Semua Status' : STOK_STATUS_LABEL[stokStatusFilter];
+      const head = ['No', 'Nama item', 'Kode barang', 'Satuan', 'Sisa stok', 'HPP/unit', 'Total nilai'];
+      let totNilai = 0;
+      const data = rowsSorted.map((r, i) => {
+        const nilai = nilaiOfRow(r); totNilai += nilai;
+        return [i + 1, r.name, codeOfRow.get(r.name) || '', r.unit || '', r.qty, Math.round(unitCostOfRow(r)), Math.round(nilai)];
+      });
+      const fileBase = `stok-${stokView}-${stokStatusFilter}`;
+      if (kind === 'xls') {
+        if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+        const aoa = [[storeName], [kat + ' - ' + stLabel], ['Dicetak', new Date().toLocaleString('id-ID')], [], head, ...data, ['', '', '', '', '', 'TOTAL', Math.round(totNilai)]];
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = [{wch:5},{wch:48},{wch:14},{wch:9},{wch:10},{wch:14},{wch:16}];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, kat.slice(0, 31));
+        XLSX.writeFile(wb, fileBase + '.xlsx');
+        return;
+      }
+      if (!window.jspdf) { showToast('Modul PDF belum siap, coba lagi sebentar.'); return; }
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const L = 10, W = 190, pageH = 297, bottom = 285;
+      const colW = [10, 68, 26, 14, 16, 28, 28];
+      const colX = []; colW.reduce((x, w, i) => { colX[i] = x; return x + w; }, L);
+      const rupiahPlain = n => 'Rp' + Math.round(n).toLocaleString('id-ID');
+      let y = 0;
+      function drawHead() {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+        doc.setFillColor(230, 233, 240); doc.rect(L, y - 4, W, 6.5, 'F');
+        head.forEach((h, i) => {
+          if (i >= 4) doc.text(h, colX[i] + colW[i] - 1.5, y, { align: 'right' });
+          else if (i === 0) doc.text(h, colX[i] + colW[i] - 1.5, y, { align: 'right' });
+          else doc.text(h, colX[i] + 1, y);
+        });
+        y += 5.5;
+      }
+      function newPage(first) {
+        if (!first) doc.addPage();
+        y = 14;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(storeName, L, y); y += 6;
+        doc.setFontSize(10.5); doc.text(kat + ' - ' + stLabel, L, y); y += 5;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(110);
+        doc.text('Dicetak ' + new Date().toLocaleString('id-ID') + '  |  ' + data.length + ' jenis barang', L, y); doc.setTextColor(0); y += 7;
+        drawHead();
+      }
+      newPage(true);
+      doc.setFontSize(8.5);
+      data.forEach(row => {
+        doc.setFont('helvetica', 'normal');
+        const nameLines = doc.splitTextToSize(String(row[1]), colW[1] - 2);
+        const h = Math.max(1, nameLines.length) * 3.9 + 1.6;
+        if (y + h > bottom) newPage(false), doc.setFont('helvetica', 'normal');
+        doc.text(String(row[0]), colX[0] + colW[0] - 1.5, y, { align: 'right' });
+        doc.text(nameLines, colX[1] + 1, y);
+        doc.text(String(row[2]), colX[2] + 1, y);
+        doc.text(String(row[3]), colX[3] + 1, y);
+        doc.text(String(row[4]), colX[4] + colW[4] - 1.5, y, { align: 'right' });
+        doc.text(rupiahPlain(row[5]), colX[5] + colW[5] - 1.5, y, { align: 'right' });
+        doc.text(rupiahPlain(row[6]), colX[6] + colW[6] - 1.5, y, { align: 'right' });
+        y += h;
+        doc.setDrawColor(225); doc.line(L, y - 3, L + W, y - 3);
+      });
+      if (y + 8 > bottom) newPage(false);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5);
+      doc.text('TOTAL NILAI', colX[5] + colW[5] - 1.5, y + 2, { align: 'right' });
+      doc.text(rupiahPlain(totNilai), colX[6] + colW[6] - 1.5, y + 2, { align: 'right' });
+      doc.save(fileBase + '.pdf');
+    }
+    const stokXlsBtn = document.getElementById('bk-stok-xls-btn');
+    if (stokXlsBtn) stokXlsBtn.addEventListener('click', () => exportStok('xls'));
+    const stokPdfBtn = document.getElementById('bk-stok-pdf-btn');
+    if (stokPdfBtn) stokPdfBtn.addEventListener('click', () => exportStok('pdf'));
     const stokListSearchInput = document.getElementById('bk-stok-list-search');
     if (stokListSearchInput) {
       stokListSearchInput.addEventListener('input', (e) => { stokSearchQuery = e.target.value; renderStok(); });
