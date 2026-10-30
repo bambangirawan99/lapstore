@@ -4752,6 +4752,10 @@ window.storage = {
           <input id="bk-svc-search" value="${escapeAttr(svcSearchQuery)}" placeholder="Contoh: SVC-ABC123 / Budi / Asus A455L" />
         </div>
       </div>
+      <div style="margin:-6px 0 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <button class="bk-btn" id="bk-svc-excel-btn" type="button">Unduh Excel riwayat service</button>
+        <span style="font-size:12px; color:var(--ink-soft);">Sesuai filter bulan &amp; pencarian di atas.</span>
+      </div>
       <div class="bk-stats" style="margin-bottom:16px;">
         <div class="bk-stat"><div class="lbl" id="bk-svc-riwayat-lbl">Service selesai ${svcRiwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(svcRiwayatMonth))}</div><div class="val" id="bk-svc-riwayat-count">${byMonth.length}</div></div>
         <div class="bk-stat in"><div class="lbl">Total Jasa Service ke Konsumen</div><div class="val" id="bk-svc-riwayat-total">${rupiah(totalPendapatan)}</div></div>
@@ -4802,7 +4806,45 @@ window.storage = {
     wireServiceBulkDeleteBar(refreshSvcRiwayatList);
   }
 
+  // Unduh Excel riwayat service (mengikuti filter bulan & pencarian yang sedang aktif).
+  function downloadSvcRiwayatExcel() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    const done = services.filter(s => s.status === 'diambil').sort((a,b) => svcCompletedAt(b) - svcCompletedAt(a));
+    const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
+    const q = svcSearchQuery.trim().toLowerCase();
+    const list = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
+    if (!list.length) { showToast('Tidak ada riwayat service pada filter ini.'); return; }
+    const hppData = computeHPP();
+    const storeName = (document.getElementById('bk-storename') && document.getElementById('bk-storename').value) || 'Toko Saya';
+    let totBiaya = 0, totHpp = 0;
+    const rows = list.map((s, i) => {
+      const biaya = Number(s.biayaFinal) || 0;
+      const hpp = svcTotalHpp(s, hppData);
+      totBiaya += biaya; totHpp += hpp;
+      const ket = [s.device, s.complaint].map(x => (x || '').trim()).filter(Boolean).join(' - ');
+      return [i + 1, s.customerName || '', String(s.customerPhone || ''), new Date(svcCompletedAt(s)).toLocaleDateString('id-ID'), ket, biaya, hpp, biaya - hpp];
+    });
+    const periode = svcRiwayatMonth === 'semua' ? 'Semua bulan' : monthLabel(svcRiwayatMonth);
+    const aoa = [
+      [storeName],
+      ['Riwayat Service Laptop'],
+      ['Periode', periode],
+      ['Dicetak', new Date().toLocaleString('id-ID')],
+      [],
+      ['No', 'Nama', 'No. HP', 'Tanggal Nota', 'Keterangan Servis', 'Biaya Final', 'HPP (Sparepart+Vendor)', 'Keuntungan'],
+      ...rows,
+      ['', '', '', '', 'TOTAL', totBiaya, totHpp, totBiaya - totHpp],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:5},{wch:24},{wch:16},{wch:14},{wch:46},{wch:14},{wch:22},{wch:14}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Riwayat Service');
+    XLSX.writeFile(wb, `riwayat-service-${svcRiwayatMonth === 'semua' ? 'semua' : svcRiwayatMonth}.xlsx`);
+  }
+
   function wireServiceRiwayatEvents() {
+    const xlsBtn = document.getElementById('bk-svc-excel-btn');
+    if (xlsBtn) xlsBtn.addEventListener('click', downloadSvcRiwayatExcel);
     const monthSel = document.getElementById('bk-svc-month-select');
     if (monthSel) monthSel.addEventListener('change', e => { svcRiwayatMonth = e.target.value; selectedSvcIds.clear(); refreshSvcRiwayatList(); });
     const searchInp = document.getElementById('bk-svc-search');
