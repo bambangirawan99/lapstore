@@ -7326,6 +7326,7 @@ window.storage = {
     let total = 0;
     Object.values(stockMap).forEach(r => {
       if (/^Jasa Service Laptop/i.test(r.name)) return;
+      if (deletedStokNames.has(r.name.trim().toLowerCase())) return; // barang yang sudah dihapus dari Stok tidak dihitung
       if (r.qty > 0) total += r.qty * hpp.getCurrentUnitCost(r.name);
     });
     return total;
