@@ -830,13 +830,17 @@ window.storage = {
     { id: 'diagnosa', label: 'Dicek/Diagnosa' },
     { id: 'menunggu_konfirmasi', label: 'Menunggu konfirmasi biaya' },
     { id: 'dikerjakan', label: 'Dikerjakan' },
-    { id: 'selesai', label: 'Selesai (siap diambil)' },
-    { id: 'diambil', label: 'Sudah diambil' },
+    { id: 'selesai', label: 'Selesai (belum diambil)' },
+    { id: 'diambil', label: 'Selesai' },
   ];
   function serviceStatusLabel(id) {
     const s = SERVICE_STATUSES.find(x => x.id === id);
     return s ? s.label : id;
   }
+  // Alur service disederhanakan jadi 2 langkah: Diterima -> Selesai. Status lama (diagnosa, menunggu konfirmasi,
+  // dikerjakan) yang masih tersimpan di data lama ditampilkan sebagai "Diterima".
+  const SVC_STATUS_DITERIMA_GROUP = ['diterima', 'diagnosa', 'menunggu_konfirmasi', 'dikerjakan'];
+  function serviceStatusBadgeLabel(id) { return SVC_STATUS_DITERIMA_GROUP.includes(id) ? 'Diterima' : serviceStatusLabel(id); }
   let services = [];
   let svcFilter = 'semua';
   let svcView = 'aktif';
@@ -4705,7 +4709,7 @@ window.storage = {
     bodyEl.innerHTML = `
       ${itemNamesDatalistHtml()}
       ${itemCodesDatalistHtml()}
-      <div class="bk-stok-note">Catat alur service laptop dari masuk sampai diambil pelanggan. Saat status diubah jadi "Sudah diambil", biaya service otomatis tercatat sebagai pemasukan di Ringkasan &amp; Riwayat (dan otomatis jadi piutang kalau belum lunas). Sparepart yang diisi di tahap "Dikerjakan" otomatis mengurangi Stok dan dihitung sebagai biaya (HPP) service tersebut.</div>
+      <div class="bk-stok-note">Alur service hanya 2 langkah: <strong>Diterima</strong> (service masuk) lalu <strong>Selesai</strong>. Di kartu service, isi biaya final, sparepart (otomatis mengurangi Stok dan dihitung sebagai HPP), dan biaya vendor kalau ada, lalu klik "Service selesai". Biaya otomatis tercatat sebagai pemasukan di Ringkasan &amp; Riwayat (jadi tagihan kalau belum lunas), service pindah ke Riwayat service, dan nota langsung tampil untuk dicetak.</div>
       <div class="bk-filter" style="margin-bottom:18px;">
         <div class="bk-chip ${svcView==='aktif'?'active':''}" data-view="aktif">Sedang berjalan</div>
         <div class="bk-chip ${svcView==='tagihan'?'active':''}" data-view="tagihan">Tagihan${unpaidCount ? ` (${unpaidCount})` : ''}</div>
@@ -4720,9 +4724,9 @@ window.storage = {
   }
 
   function renderServiceAktifHtml() {
-    const activeStatuses = SERVICE_STATUSES.filter(st => st.id !== 'diambil');
+    const activeStatuses = SERVICE_STATUSES.filter(st => st.id === 'diterima' || (st.id === 'selesai' && services.some(x => x.status === 'selesai')));
     const pool = services.filter(s => s.status !== 'diambil').sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-    const filteredByStatus = svcFilter === 'semua' ? pool : pool.filter(s => s.status === svcFilter);
+    const filteredByStatus = svcFilter === 'semua' ? pool : pool.filter(s => svcFilter === 'diterima' ? SVC_STATUS_DITERIMA_GROUP.includes(s.status) : s.status === svcFilter);
     const filtered = filteredByStatus.filter(s => searchMatch(svcAktifSearchQuery, s.kodeService, s.customerName, s.device, s.complaint));
     const hppData = computeHPP();
     const svcKodeOptions = generateServiceCodeSequence(5);
@@ -4769,7 +4773,7 @@ window.storage = {
       ${searchBoxHtml('bk-svc-aktif-search', svcAktifSearchQuery, 'Cari kode service, nama pelanggan, atau device...')}
       <div class="bk-filter bk-service-status-bar">
         <div class="bk-chip ${svcFilter==='semua'?'active':''}" data-f="semua">Semua (${pool.length})</div>
-        ${activeStatuses.map(s => `<div class="bk-chip ${svcFilter===s.id?'active':''}" data-f="${s.id}">${s.label} (${pool.filter(x=>x.status===s.id).length})</div>`).join('')}
+        ${activeStatuses.map(s => `<div class="bk-chip ${svcFilter===s.id?'active':''}" data-f="${s.id}">${s.label} (${pool.filter(x => s.id === 'diterima' ? SVC_STATUS_DITERIMA_GROUP.includes(x.status) : x.status === s.id).length})</div>`).join('')}
       </div>
       ${filtered.length ? `<div class="bk-select-bar" id="bk-svc-aktif-select-bar">
         <label class="bk-select-all">
@@ -5439,28 +5443,9 @@ window.storage = {
   }
 
   function serviceCardHtml(s, idx, hppData) {
-    const badge = `<span class="bk-svc-badge ${s.status}">${serviceStatusLabel(s.status)}</span>`;
+    const badge = `<span class="bk-svc-badge ${SVC_STATUS_DITERIMA_GROUP.includes(s.status) ? 'diterima' : s.status}">${serviceStatusBadgeLabel(s.status)}</span>`;
     let actionHtml = '';
-    if (s.status === 'diterima') {
-      actionHtml = `<div class="bk-svc-actions">
-        <button class="bk-btn ghost act-wa-diterima" data-id="${s.id}">Kirim WA konfirmasi diterima</button>
-        <button class="bk-btn primary act-diagnosa" data-id="${s.id}">Mulai diagnosa</button>
-      </div>`;
-    } else if (s.status === 'diagnosa') {
-      actionHtml = `
-        <div class="bk-field"><label>Catatan diagnosa</label><input class="svc-diag-note" data-id="${s.id}" value="${escapeAttr(s.catatanDiagnosa)}" placeholder="Contoh: motherboard short, perlu ganti IC power" /></div>
-        <div class="bk-field"><label>Estimasi biaya ke pelanggan</label><input class="svc-diag-est" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.estimasiBiaya)}" placeholder="0" /></div>
-        <div class="bk-svc-actions">
-          <button class="bk-btn primary act-kirim-estimasi" data-id="${s.id}">Kirim estimasi ke pelanggan</button>
-        </div>`;
-    } else if (s.status === 'menunggu_konfirmasi') {
-      actionHtml = `
-        <div class="bk-svc-detail"><span class="lbl">Estimasi biaya:</span> ${rupiah(s.estimasiBiaya)}</div>
-        <div class="bk-svc-actions">
-          <button class="bk-btn primary act-setuju" data-id="${s.id}">Pelanggan setuju, mulai kerjakan</button>
-          <button class="bk-btn ghost act-revisi" data-id="${s.id}">Revisi diagnosa/estimasi</button>
-        </div>`;
-    } else if (s.status === 'dikerjakan') {
+    if (SVC_STATUS_DITERIMA_GROUP.includes(s.status)) {
       if (!s.parts || !s.parts.length) s.parts = [blankSvcPart()];
       actionHtml = `
         <div class="bk-field"><label>Biaya final service</label><input class="svc-biaya-final" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.biayaFinal || s.estimasiBiaya)}" placeholder="0" /></div>
@@ -5478,7 +5463,8 @@ window.storage = {
           <div class="bk-field" style="margin-bottom:0;"><label>Biaya jasa vendor (Rp)</label><input class="svc-vendor-biaya" type="number" min="0" data-id="${s.id}" value="${escapeAttr(s.vendorBiaya||'')}" placeholder="0" /></div>
         </div>
         <div class="bk-svc-actions">
-          <button class="bk-btn primary act-selesai" data-id="${s.id}">Tandai selesai dikerjakan</button>
+          ${s.status === 'diterima' ? `<button class="bk-btn ghost act-wa-diterima" data-id="${s.id}">Kirim WA konfirmasi diterima</button>` : ''}
+          <button class="bk-btn primary act-selesai" data-id="${s.id}">Service selesai</button>
         </div>`;
     } else if (s.status === 'selesai') {
       const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
@@ -5492,7 +5478,7 @@ window.storage = {
         <div class="bk-svc-actions">
           ${!isLunas ? `<button class="bk-btn ghost svc-mark-lunas" data-id="${s.id}" data-txn="${s.linkedTxnId||''}">Tandai lunas</button>` : ''}
           ${!isEditingTxn ? `<button class="bk-btn ghost svc-edit-txn-btn" data-id="${s.id}">Edit transaksi</button>` : ''}
-          <button class="bk-btn primary act-diambil" data-id="${s.id}">Sudah diambil pelanggan</button>
+          <button class="bk-btn primary act-diambil" data-id="${s.id}">Selesai &amp; cetak nota</button>
         </div>`;
     } else if (s.status === 'diambil') {
       const sisa = Math.max(0, (Number(s.biayaFinal)||0) - (Number(s.dpAmount)||0));
@@ -5501,6 +5487,7 @@ window.storage = {
         ${svcProfitBreakdownHtml(s, hppData)}
         ${isEditingTxn ? svcEditTxnFormHtml(s) : ''}
         <div class="bk-svc-actions">
+          ${s.paid === false ? `<button class="bk-btn ghost svc-mark-lunas" data-id="${s.id}" data-txn="${s.linkedTxnId||''}">Tandai lunas</button>` : ''}
           <button class="bk-btn ghost act-print-nota" data-id="${s.id}">Cetak nota</button>
           ${!isEditingTxn ? `<button class="bk-btn ghost svc-edit-txn-btn" data-id="${s.id}">Edit transaksi</button>` : ''}
         </div>`;
@@ -5786,7 +5773,7 @@ window.storage = {
 
       const partsInfo = validParts.length ? ` Sparepart yang dipakai (${validParts.map(p=>p.name).join(', ')}) akan otomatis mengurangi Stok.` : '';
       const vendorInfo = vendorBiaya > 0 ? ` Biaya jasa vendor ${rupiah(vendorBiaya)}${vendorNama ? ' ('+vendorNama+')' : ''} akan tercatat sebagai Beban Operasional.` : '';
-      showConfirm(`Tandai service "${s.customerName}" (${s.device}) selesai dikerjakan dengan biaya final ${rupiah(biaya)}?${partsInfo}${vendorInfo}`, async () => {
+      showConfirm(`Tandai service "${s.customerName}" (${s.device}) selesai dengan biaya final ${rupiah(biaya)}?${partsInfo}${vendorInfo}`, async () => {
       showLoadingModal('Menyelesaikan service...');
       let serviceItemName = s.serviceItemName;
       if (validParts.length) {
@@ -5838,9 +5825,12 @@ window.storage = {
       await updateService(id, { biayaFinal: biaya, parts: s.parts, serviceItemName, vendorNama, vendorBiaya, vendorBebanId });
       await advanceServiceStatus(id, 'selesai', false);
       await recordServiceTagihanAtSelesai(id);
+      // Alur 2 langkah: begitu "Service selesai", langsung berstatus Selesai (masuk Riwayat service) dan nota ditampilkan.
+      await advanceServiceStatus(id, 'diambil', false);
       closeLoadingModal();
       renderService();
-      sendServiceWhatsapp(id, 'selesai');
+      const sDone = services.find(x => x.id === id);
+      if (sDone) showServiceReceipt(sDone);
       });
     }));
 
