@@ -365,6 +365,12 @@ body {
 #bk-root .bk-svc-detail .lbl { color:var(--ink-soft); font-weight: 600; }
 #bk-root .bk-svc-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
 #bk-root .bk-svc-row-actions { display:flex; gap:4px; flex-shrink:0; }
+#bk-root { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+#bk-root details.bk-svc-more { margin-top:10px; border-top:1px dashed var(--line); padding-top:8px; }
+#bk-root details.bk-svc-more > summary { cursor:pointer; list-style:none; font-size:12.5px; font-weight:700; color:var(--accent-ink); padding:8px 2px; user-select:none; display:flex; align-items:center; gap:6px; }
+#bk-root details.bk-svc-more > summary::-webkit-details-marker { display:none; }
+#bk-root details.bk-svc-more > summary::after { content:"\25BE"; font-size:13px; transition:transform .15s; }
+#bk-root details.bk-svc-more[open] > summary::after { transform:rotate(180deg); }
 #bk-root .bk-svc-timeline { font-size:10.5px; color:var(--ink-soft); margin-top:8px; border-top:1px dashed var(--line); padding-top:8px; }
 #bk-root .bk-svc-dp-box { background: var(--accent2-bg); border: 1px solid var(--accent2); border-radius: 8px; padding: 12px 14px; margin: 10px 0; font-size: 13px; }
 
@@ -844,6 +850,7 @@ window.storage = {
   let services = [];
   let svcFilter = 'semua';
   let svcView = 'aktif';
+  const svcOpenIds = new Set(); // kartu service (Sedang berjalan) yang dropdown detailnya sedang dibuka
   let svcRiwayatMonth = 'semua';
   let svcSearchQuery = '';
   let svcAktifSearchQuery = '';
@@ -5661,11 +5668,18 @@ window.storage = {
           </div>
         </div>
       </div>
+      ${(() => {
+        // Yang tampil di kartu hanya: kode, nama, jenis laptop, kerusakan, tanggal, akun penerima.
+        // Uang muka ke bawah (DP, biaya, sparepart, vendor, tombol, timeline) disembunyikan di dropdown (khusus yang masih berjalan).
+        const inner = `
       ${s.catatanDiagnosa && s.status !== 'diagnosa' ? `<div class="bk-svc-detail"><span class="lbl">Catatan diagnosa:</span> ${s.catatanDiagnosa}</div>` : ''}
       ${svcDpBlockHtml(s)}
       ${actionHtml}
       ${waBtn ? `<div class="bk-svc-actions">${waBtn}</div>` : ''}
-      <div class="bk-svc-timeline">${(s.history||[]).map(h => `${serviceStatusLabel(h.status)} &middot; ${new Date(h.at).toLocaleString('id-ID')}`).join(' &rarr; ')}</div>
+      <div class="bk-svc-timeline">${(s.history||[]).map(h => `${serviceStatusLabel(h.status)} &middot; ${new Date(h.at).toLocaleString('id-ID')}`).join(' &rarr; ')}</div>`;
+        if (s.status === 'diambil') return inner;
+        return `<details class="bk-svc-more" data-id="${s.id}" ${svcOpenIds.has(s.id) ? 'open' : ''}><summary>Uang muka, biaya &amp; proses service</summary>${inner}</details>`;
+      })()}
     </div>`;
   }
 
@@ -5705,6 +5719,9 @@ window.storage = {
     const list = document.getElementById('bk-svc-list');
     if (!list) return;
 
+    list.querySelectorAll('details.bk-svc-more').forEach(d => d.addEventListener('toggle', () => {
+      if (d.open) svcOpenIds.add(d.dataset.id); else svcOpenIds.delete(d.dataset.id);
+    }));
     list.querySelectorAll('.svc-edit-detail-btn').forEach(b => b.addEventListener('click', () => {
       editingServiceDetailId = b.dataset.id;
       renderService();
