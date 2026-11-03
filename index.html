@@ -1915,6 +1915,7 @@ window.storage = {
   // SPP (sparepart), ACC (aksesoris: adaptor, mouse, flashdisk, dll). Kode lama tetap berlaku.
   const ITEM_KATEGORI = [
     { prefix: 'LPSTK', label: 'Laptop' },
+    { prefix: 'LPMTOKO', label: 'Barang Laptop Toko' },
     { prefix: 'LPSRV', label: 'Barang Servis Customer' },
     { prefix: 'SPP', label: 'Sparepart' },
     { prefix: 'ACC', label: 'Aksesoris (adaptor, mouse, flashdisk, dll)' },
@@ -1993,12 +1994,12 @@ window.storage = {
     rows = rows.filter(r => r.qty > 0 || r.code === selectedVal);
     if (!rows.length) return '<option value="">-- belum ada stok tersedia --</option>';
     rows.sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
-    const laptopRows = rows.filter(r => /^LPSTK/i.test(r.code));
-    const onderdilRows = rows.filter(r => !/^LPSTK/i.test(r.code));
     const optHtml = (list) => list.map(r => `<option value="${escapeAttr(r.code)}" ${selectedVal===r.code?'selected':''}>${escapeAttr(r.code)} - ${escapeAttr(r.name)} (${r.qty > 0 ? 'sisa '+r.qty.toLocaleString('id-ID') : 'stok habis'})</option>`).join('');
     let html = `<option value="">-- pilih kode barang dari Stok --</option>`;
-    if (laptopRows.length) html += `<optgroup label="Stock Laptop">${optHtml(laptopRows)}</optgroup>`;
-    if (onderdilRows.length) html += `<optgroup label="Stock Onderdil">${optHtml(onderdilRows)}</optgroup>`;
+    STOK_KAT.forEach(k => {
+      const list = rows.filter(r => stokKategoriOf(r.code) === k.key);
+      if (list.length) html += `<optgroup label="${escapeAttr(k.label)}">${optHtml(list)}</optgroup>`;
+    });
     return html;
   }
 
@@ -3207,8 +3208,10 @@ window.storage = {
         if (isPenyesuaianStokTxn(t)) {
           // stok tetap berkurang (removeStock di atas), tapi nilainya dicatat terpisah, bukan HPP penjualan
           hppByTxn[t.id] = 0;
-          penyesuaianHppByTxn[t.id] = txnHpp;
-          totalPenyesuaianHpp += txnHpp;
+          if (!t.revaluasiHpp) { // revaluasi HPP (edit HPP/unit di Stok) bukan penyesuaian/kerugian stok
+            penyesuaianHppByTxn[t.id] = txnHpp;
+            totalPenyesuaianHpp += txnHpp;
+          }
         } else {
           hppByTxn[t.id] = txnHpp;
           totalHPP += txnHpp;
@@ -3295,7 +3298,25 @@ window.storage = {
   }
 
 
-  let stokView = 'laptop'; // laptop | onderdil
+  let stokView = 'laptop'; // laptop | mtoko | spp | acc | servis
+  // Tab Stok berdasarkan awalan kode barang: LPSTK (laptop), LPMTOKO (barang laptop toko), SPP (sparepart),
+  // ACC (aksesoris), dan LPSRV (barang servis versi lama) supaya barang berkode lama tetap punya tempat.
+  const STOK_KAT = [
+    { key: 'laptop', label: 'Stock Laptop (LPSTK)', short: 'Stock Laptop' },
+    { key: 'mtoko', label: 'Barang Laptop Toko (LPMTOKO)', short: 'Barang Laptop Toko' },
+    { key: 'spp', label: 'Sparepart (SPP)', short: 'Sparepart' },
+    { key: 'acc', label: 'Aksesoris (ACC)', short: 'Aksesoris' },
+    { key: 'servis', label: 'Barang Servis Lama (LPSRV)', short: 'Barang Servis Lama' },
+  ];
+  function stokKategoriOf(code) {
+    const c = (code || '').trim().toUpperCase();
+    if (c.startsWith('LPMTOKO')) return 'mtoko';
+    if (c.startsWith('SPP')) return 'spp';
+    if (c.startsWith('ACC')) return 'acc';
+    if (c.startsWith('LPSRV')) return 'servis';
+    return 'laptop'; // LPSTK, LPPRD, dan tanpa kode
+  }
+  function stokKatLabel(key) { const k = STOK_KAT.find(x => x.key === key); return k ? k.label : key; }
   let stokStatusFilter = 'semua'; // semua | ready | habis - Ready = sisa stok > 0, Habis = sisa stok <= 0
   let stokSortKey = 'no'; // no | nama | satuan | sisa | status | hpp | nilai
   let stokSortDir = 'asc'; // asc | desc
@@ -3400,9 +3421,9 @@ window.storage = {
           kategoriFixPreviewCache = null;
           kategoriFixSelectedNames = new Set();
           closeLoadingModal();
-          stokView = 'onderdil';
+          stokView = 'spp';
           renderStok();
-          showToast(`${list.length} barang berhasil dipindah ke Stock Onderdil.`);
+          showToast(`${list.length} barang berhasil dipindah ke Stock Sparepart/Aksesoris.`);
         } catch (err) {
           closeLoadingModal();
           console.error(err);
@@ -3419,10 +3440,12 @@ window.storage = {
     const allRows = Object.values(stockMap).filter(r => !/^Jasa Service Laptop/i.test(r.name) && !deletedStokNames.has(r.name.trim().toLowerCase())).sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
     const rowsWithKategori = allRows.map(r => {
       const code = codeReg.byName[r.name.trim().toLowerCase()] || '';
-      return { r, code, kategori: pricelistCategoryOf(code) === 'barang' ? 'laptop' : 'onderdil' };
+      return { r, code, kategori: stokKategoriOf(code) };
     });
-    const countLaptop = rowsWithKategori.filter(x => x.kategori === 'laptop').length;
-    const countOnderdil = rowsWithKategori.filter(x => x.kategori === 'onderdil').length;
+    const countByKat = {};
+    STOK_KAT.forEach(k => { countByKat[k.key] = rowsWithKategori.filter(x => x.kategori === k.key).length; });
+    if (stokView === 'servis' && !countByKat.servis) stokView = 'laptop';
+    if (!STOK_KAT.some(k => k.key === stokView)) stokView = 'laptop';
     const rowsInView = rowsWithKategori.filter(x => x.kategori === stokView);
     const rowsWithCode = rowsInView.filter(x => searchMatch(stokSearchQuery, x.r.name, x.code));
     const rows = rowsWithCode.map(x => x.r);
@@ -3521,7 +3544,7 @@ window.storage = {
                 </td>` : ''}
                 <td style="padding:9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; color:var(--ink-soft);">${rupiah(unitCost)}</td>
                 ${showNilai ? `<td style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:right; font-family:'IBM Plex Mono',monospace; font-weight:700;">${rupiah(totalNilai)}</td>` : ''}
-                ${isOwner() ? `<td style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:center;"><div class="bk-icon-btn danger stok-hapus-btn" data-name="${escapeAttr(r.name)}" data-qty="${r.qty}" data-unit="${escapeAttr(r.unit||'')}" title="Hapus stok (penyesuaian jadi 0)">&times;</div></td>` : ''}
+                ${isOwner() ? `<td style="padding:9px 0 9px 10px; border-bottom:1px solid var(--line); text-align:center; white-space:nowrap;"><div class="bk-icon-btn stok-edit-btn" data-name="${escapeAttr(r.name)}" title="Edit nama, kode, satuan, sisa stok, HPP/unit" style="display:inline-flex; margin-right:4px;">&#9998;</div><div class="bk-icon-btn danger stok-hapus-btn" data-name="${escapeAttr(r.name)}" data-qty="${r.qty}" data-unit="${escapeAttr(r.unit||'')}" title="Hapus stok (penyesuaian jadi 0)">&times;</div></td>` : ''}
               </tr>`;
             }).join('')}
           </tbody>
@@ -3536,7 +3559,7 @@ window.storage = {
     bodyEl.innerHTML = `
       ${showNilai ? `
       <div class="bk-stats" style="margin-bottom:16px;">
-        <div class="bk-stat"><div class="lbl">Total nilai ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'} saat ini (HPP)</div><div class="val">${rupiah(totalNilaiView)}</div></div>
+        <div class="bk-stat"><div class="lbl">Total nilai ${stokKatLabel(stokView)} saat ini (HPP)</div><div class="val">${rupiah(totalNilaiView)}</div></div>
         <div class="bk-stat"><div class="lbl">Nilai Ready</div><div class="val" style="color:var(--money-in);">${rupiah(totalNilaiReady)}</div></div>
         <div class="bk-stat"><div class="lbl">Nilai Not Ready (masih diservice)</div><div class="val" style="color:var(--accent-ink,var(--accent));">${rupiah(totalNilaiNotReady)}</div></div>
         <div class="bk-stat"><div class="lbl">Nilai Terjual Habis</div><div class="val" style="color:var(--money-out);">${rupiah(totalNilaiHabis)}</div></div>
@@ -3574,8 +3597,7 @@ window.storage = {
         ` : ''}
       </div>` : ''}
       <div class="bk-filter" style="margin-bottom:10px;">
-        <div class="bk-chip ${stokView==='laptop'?'active':''}" data-sv="laptop">Stock Laptop (${countLaptop})</div>
-        <div class="bk-chip ${stokView==='onderdil'?'active':''}" data-sv="onderdil">Stock Onderdil (${countOnderdil})</div>
+        ${STOK_KAT.filter(k => k.key !== 'servis' || countByKat.servis > 0).map(k => `<div class="bk-chip ${stokView===k.key?'active':''}" data-sv="${k.key}">${k.label} (${countByKat[k.key]})</div>`).join('')}
       </div>
       <div class="bk-filter" style="margin-bottom:14px;">
         <div class="bk-chip ${stokStatusFilter==='semua'?'active':''}" data-ss="semua">Semua Status (${rows.length})</div>
@@ -3586,7 +3608,7 @@ window.storage = {
       <div style="margin:-4px 0 14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
         <button class="bk-btn" id="bk-stok-xls-btn" type="button">Unduh Excel</button>
         <button class="bk-btn ghost" id="bk-stok-pdf-btn" type="button">Unduh PDF</button>
-        <span style="font-size:12px; color:var(--ink-soft);">${stokView==='laptop'?'Stock Laptop':'Stock Onderdil'} &middot; ${stokStatusFilter==='semua'?'Semua Status':STOK_STATUS_LABEL[stokStatusFilter]} (${rowsSorted.length} barang), sesuai urutan di tabel.</span>
+        <span style="font-size:12px; color:var(--ink-soft);">${stokKatLabel(stokView)} &middot; ${stokStatusFilter==='semua'?'Semua Status':STOK_STATUS_LABEL[stokStatusFilter]} (${rowsSorted.length} barang), sesuai urutan di tabel.</span>
       </div>
       ${searchBoxHtml('bk-stok-list-search', stokSearchQuery, 'Cari nama atau kode barang...')}
       <div class="bk-stok-note">Stok dihitung dari pembelian (menambah), penjualan (mengurangi), dan produksi (bahan baku berkurang, produk jadi bertambah sesuai jumlah nyata yang dicatat). Ditandai merah kalau sisa stok di bawah ${STOK_AMBANG_DEFAULT}. Di <strong>Stock Laptop</strong>, kolom <strong>Status</strong> (Ready / Not Ready) bisa diubah lewat dropdown dan tersimpan per barang; barang yang namanya diawali <strong>"*NR"</strong> otomatis Not Ready sampai statusnya kamu ubah. Chip <strong>Terjual Habis</strong> menampilkan barang yang sisa stoknya 0 atau minus.${isOwner() ? ' Kolom "Sisa stok" bisa diketik ulang langsung untuk koreksi manual (otomatis dicatat sebagai penyesuaian, riwayat lama tidak berubah).' : ''} Kode barang (kalau ada) diambil dari kode yang diisi saat pembelian, dan otomatis dipakai lagi saat item ini dijual. HPP/unit dihitung otomatis pakai rata-rata bergerak (sudah termasuk ongkos kirim kalau ada).${adaProduksi ? '' : ' Belum ada catatan produksi &mdash; kalau kamu mengolah bahan baku jadi produk lain sebelum dijual (misal ikan mentah jadi fillet), catat dulu di tab "Produksi".'}</div>
@@ -3617,7 +3639,7 @@ window.storage = {
         </div>
         `}
       </div>` : ''}
-      ${rows.length ? stokListSectionsHtml : `<div class="bk-empty">Belum ada barang di kategori ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'}.</div>`}
+      ${rows.length ? stokListSectionsHtml : `<div class="bk-empty">Belum ada barang di kategori ${stokKatLabel(stokView)}.</div>`}
     `;
     document.getElementById('bk-stok-goto-migrasi').addEventListener('click', () => {
       activeTab = 'migrasi';
@@ -3728,7 +3750,7 @@ window.storage = {
     function exportStok(kind) {
       if (!rowsSorted.length) { showToast('Tidak ada data stok pada filter ini.'); return; }
       const storeName = (document.getElementById('bk-storename') && document.getElementById('bk-storename').value) || 'Toko Saya';
-      const kat = stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil';
+      const kat = stokKatLabel(stokView);
       const stLabel = stokStatusFilter === 'semua' ? 'Semua Status' : STOK_STATUS_LABEL[stokStatusFilter];
       const head = ['No', 'Nama item', 'Kode barang', 'Satuan', 'Sisa stok', 'HPP/unit', 'Total nilai'];
       let totNilai = 0;
@@ -3806,6 +3828,7 @@ window.storage = {
       stokListSearchInput.addEventListener('input', (e) => { stokSearchQuery = e.target.value; renderStok(); });
       restoreSearchFocus(stokListSearchInput);
     }
+    bodyEl.querySelectorAll('.stok-edit-btn').forEach(btn => btn.addEventListener('click', () => openStokEditModal(btn.dataset.name)));
     bodyEl.querySelectorAll('.stok-hapus-btn').forEach(btn => btn.addEventListener('click', () => {
       hapusStokItem(btn.dataset.name, Number(btn.dataset.qty), btn.dataset.unit);
     }));
@@ -3915,6 +3938,168 @@ window.storage = {
     }, () => renderStok());
   }
 
+
+  // ---------- EDIT ITEM STOK: nama, kode barang, satuan, sisa stok, HPP/unit ----------
+  // Nama/kode/satuan ditulis ulang di SEMUA riwayat transaksi barang itu (stok & HPP diturunkan dari riwayat),
+  // sisa stok lewat transaksi penyesuaian (seperti edit sisa stok biasa), dan HPP/unit lewat revaluasi:
+  // stok dikeluarkan lalu dimasukkan lagi pada HPP baru lewat dua transaksi penyesuaian Rp0 (tanpa efek ke kas).
+  async function stokSetChecked(key, obj) {
+    const ok = await window.storage.set(key, JSON.stringify(obj), true);
+    if (!ok) throw new Error('Server menolak simpan ' + key);
+  }
+  function openStokEditModal(name) {
+    if (!isOwner()) { showToast('Hanya pemilik yang bisa mengedit stok.'); return; }
+    const key = (name || '').trim().toLowerCase();
+    const row = computeStock()[key];
+    if (!row) return;
+    const code = getItemCodeRegistry().byName[key] || '';
+    const cost = Math.round(computeHPP().getCurrentUnitCost(row.name));
+    const fld = (id, label, val, type, extra) => `<div style="margin-bottom:10px; text-align:left;"><label for="${id}" style="display:block; font-size:11.5px; font-weight:600; color:var(--ink-soft); margin-bottom:4px;">${label}</label><input id="${id}" type="${type}" ${type === 'number' ? 'step="any" min="0"' : ''} value="${escapeAttr(String(val))}" ${extra || ''} style="width:100%; border:1.5px solid var(--line); border-radius:10px; padding:9px 11px; font-size:14px; font-family:'Inter',sans-serif; background:#fff; box-sizing:border-box;" /></div>`;
+    modalSlot.innerHTML = `
+      <div class="bk-overlay" id="bk-stok-edit-overlay">
+        <div style="background:var(--paper); border-radius:12px; padding:20px; max-width:380px; width:100%; max-height:88vh; overflow-y:auto;">
+          <div style="font-size:15px; font-weight:700; margin-bottom:14px; color:var(--ink);">Edit item stok</div>
+          ${fld('se-name', 'Nama item', row.name, 'text')}
+          ${fld('se-code', 'Kode barang', code, 'text', 'autocapitalize="characters"')}
+          ${fld('se-unit', 'Satuan', row.unit || '', 'text')}
+          ${fld('se-qty', 'Sisa stok', row.qty, 'number')}
+          ${fld('se-hpp', 'HPP/unit (Rp)', cost, 'number')}
+          <div class="bk-stok-note" style="margin:0 0 10px;">Mengubah nama, kode, atau satuan akan ikut memperbarui semua riwayat transaksi barang ini. Mengubah sisa stok atau HPP dicatat sebagai transaksi penyesuaian (tidak mengubah kas).</div>
+          <div id="se-err" class="bk-err" style="display:none; margin-bottom:10px;"></div>
+          <div style="display:flex; gap:10px;">
+            <button class="bk-btn ghost" id="se-cancel" style="flex:1;">Batal</button>
+            <button class="bk-btn primary" id="se-save" style="flex:1;">Simpan</button>
+          </div>
+        </div>
+      </div>`;
+    const errEl = document.getElementById('se-err');
+    const fail = (m) => { errEl.style.display = 'block'; errEl.textContent = m; };
+    document.getElementById('se-cancel').addEventListener('click', () => { modalSlot.innerHTML = ''; });
+    document.getElementById('bk-stok-edit-overlay').addEventListener('click', e => { if (e.target.id === 'bk-stok-edit-overlay') modalSlot.innerHTML = ''; });
+    document.getElementById('se-save').addEventListener('click', () => {
+      const newName = document.getElementById('se-name').value.trim().replace(/\s+/g, ' ');
+      const newCode = document.getElementById('se-code').value.trim().toUpperCase();
+      const newUnit = document.getElementById('se-unit').value.trim();
+      const newQty = Number(document.getElementById('se-qty').value);
+      const newHpp = Math.round(Number(document.getElementById('se-hpp').value));
+      if (!newName) return fail('Nama item tidak boleh kosong.');
+      if (!newUnit) return fail('Satuan tidak boleh kosong.');
+      if (!Number.isFinite(newQty) || newQty < 0) return fail('Sisa stok harus angka 0 atau lebih.');
+      if (!Number.isFinite(newHpp) || newHpp < 0) return fail('HPP/unit harus angka 0 atau lebih.');
+      if (code && !newCode) return fail('Kode barang tidak boleh dikosongkan.');
+      const newKey = newName.toLowerCase();
+      if (newKey !== key) {
+        if (computeStock()[newKey]) return fail('Nama itu sudah dipakai item lain. Pakai nama yang berbeda.');
+        if (deletedStokNames.has(newKey)) return fail('Nama itu pernah dihapus dari Stok. Pakai nama yang berbeda.');
+      }
+      if (newCode && newCode.toLowerCase() !== (code || '').toLowerCase()) {
+        const other = getItemCodeRegistry().byCode[newCode.toLowerCase()];
+        if (other && (other.name || '').trim().toLowerCase() !== key) return fail(`Kode ${newCode} sudah dipakai "${other.name}". Pakai kode yang berbeda.`);
+      }
+      const hppChanged = newHpp !== cost;
+      if (hppChanged && !(newQty > 0)) return fail('HPP/unit hanya bisa diubah kalau sisa stok lebih dari 0.');
+      const ch = { oldName: row.name, newName, oldCode: code, newCode, oldUnit: row.unit || '', newUnit, oldQty: row.qty, newQty, oldHpp: cost, newHpp, hppChanged };
+      const diff = [];
+      if (ch.newName !== ch.oldName) diff.push(`Nama: ${escapeAttr(ch.oldName)} &rarr; ${escapeAttr(ch.newName)}`);
+      if (ch.newCode !== ch.oldCode) diff.push(`Kode: ${escapeAttr(ch.oldCode || '-')} &rarr; ${escapeAttr(ch.newCode)}`);
+      if (ch.newUnit !== ch.oldUnit) diff.push(`Satuan: ${escapeAttr(ch.oldUnit || '-')} &rarr; ${escapeAttr(ch.newUnit)}`);
+      if (ch.newQty !== ch.oldQty) diff.push(`Sisa stok: ${ch.oldQty.toLocaleString('id-ID')} &rarr; ${ch.newQty.toLocaleString('id-ID')}`);
+      if (hppChanged) diff.push(`HPP/unit: ${rupiah(ch.oldHpp)} &rarr; ${rupiah(ch.newHpp)}`);
+      if (!diff.length) { modalSlot.innerHTML = ''; showToast('Tidak ada yang diubah.'); return; }
+      modalSlot.innerHTML = '';
+      showConfirm(`Simpan perubahan item ini?<br><br><span style="font-size:12.5px; color:var(--ink-soft); text-align:left; display:block;">${diff.join('<br>')}</span>`, () => applyStokItemEdit(ch), () => openStokEditModal(ch.oldName));
+    });
+  }
+
+  async function applyStokItemEdit(ch) {
+    const oldKey = ch.oldName.trim().toLowerCase();
+    const nameChanged = ch.newName !== ch.oldName;
+    const codeChanged = (ch.newCode || '') !== (ch.oldCode || '');
+    const unitChanged = ch.newUnit !== ch.oldUnit;
+    showLoadingModal(`Menyimpan perubahan "${ch.oldName}"...`);
+    try {
+      if (nameChanged || codeChanged || unitChanged) {
+        const fix = (it, allowCode) => {
+          if (!it || (it.name || '').trim().toLowerCase() !== oldKey) return false;
+          if (nameChanged) it.name = ch.newName;
+          if (unitChanged) it.unit = ch.newUnit;
+          if (codeChanged && (allowCode || it.code)) it.code = ch.newCode;
+          return true;
+        };
+        const touchedTxns = [];
+        txns.forEach(t => {
+          let hit = false;
+          if (t.type === 'pembelian') (t.items || []).forEach(i => { if (fix(i, true)) hit = true; });
+          else if (t.type === 'penjualan') (t.items || []).forEach(i => { if (fix(i, false)) hit = true; });
+          else if (t.type === 'produksi') {
+            (t.bahan || []).forEach(i => { if (fix(i, false)) hit = true; });
+            (t.hasil || []).forEach(i => { if (fix(i, true)) hit = true; });
+          }
+          if (hit) touchedTxns.push(t);
+        });
+        const touchedSvcs = [];
+        services.forEach(sv => { let hit = false; (sv.parts || []).forEach(pp => { if (fix(pp, false)) hit = true; }); if (hit) touchedSvcs.push(sv); });
+        const jobs = [
+          ...touchedTxns.map(t => () => stokSetChecked('txn:' + t.id, t)),
+          ...touchedSvcs.map(sv => () => stokSetChecked('service:' + sv.id, sv)),
+        ];
+        const res = await runJobsInChunks(jobs);
+        invalidateStockCaches();
+        if (res.some(r => r.status === 'rejected')) throw new Error('Sebagian riwayat transaksi gagal diperbarui');
+        // pindahkan harga jual (pricelist) & status Ready/Not Ready yang kuncinya kode/nama barang
+        const oldPK = pricelistKeyFor(ch.oldCode, ch.oldName), newPK = pricelistKeyFor(ch.newCode, ch.newName);
+        if (oldPK !== newPK && pricelistData[oldPK] && !pricelistData[newPK]) {
+          await savePricelistEntry(newPK, pricelistData[oldPK].hargaJual, pricelistData[oldPK].markup);
+          delete pricelistData[oldPK];
+          try { await window.storage.delete('pricelist:' + oldPK, true); } catch (e) { /* abaikan */ }
+        }
+        const oldSK = stokStatusKey(ch.oldName, ch.oldCode), newSK = stokStatusKey(ch.newName, ch.newCode);
+        if (oldSK !== newSK && stokStatusMap[oldSK] !== undefined) {
+          stokStatusMap[newSK] = stokStatusMap[oldSK];
+          delete stokStatusMap[oldSK];
+          await saveStokStatus();
+        }
+      }
+      if (ch.newQty !== ch.oldQty) {
+        const adj = buildStokAdjustmentTxn(ch.newName, ch.newUnit, ch.newCode, ch.newQty - ch.oldQty);
+        await stokSetChecked('txn:' + adj.id, adj);
+        txns.unshift(adj); invalidateStockCaches();
+      }
+      if (ch.hppChanged) {
+        const base = Date.now();
+        const mk = (type, price, offset) => ({
+          id: uid(), type, kodeTransaksi: generateTxnCode(type),
+          items: [{ name: ch.newName, qty: ch.newQty, unit: ch.newUnit, price, code: ch.newCode || ch.oldCode || '' }],
+          total: 0,
+          supplierName: type === 'pembelian' ? 'Penyesuaian Stok (Edit HPP)' : undefined,
+          customerName: type === 'penjualan' ? 'Penyesuaian Stok (Edit HPP)' : undefined,
+          customerPhone: '', paid: true, rekening: type === 'penjualan' ? BANK_ACCOUNTS[0].id : undefined,
+          revaluasiHpp: true, createdAt: base + offset, createdBy: currentUser ? currentUser.email : null,
+        });
+        const out = mk('penjualan', 0, 5);
+        await stokSetChecked('txn:' + out.id, out); txns.unshift(out); invalidateStockCaches();
+        const inn = mk('pembelian', ch.newHpp, 6);
+        await stokSetChecked('txn:' + inn.id, inn); txns.unshift(inn); invalidateStockCaches();
+      }
+      // verifikasi dari server
+      await loadTxns(); await loadServices(); invalidateStockCaches();
+      const after = computeStock()[ch.newName.trim().toLowerCase()];
+      const unitAfter = after ? Math.round(computeHPP().getCurrentUnitCost(ch.newName)) : null;
+      closeLoadingModal();
+      if (!after || after.qty !== ch.newQty || (ch.hppChanged && Math.abs(unitAfter - ch.newHpp) > 1)) {
+        showToast('Perubahan tersimpan, tapi hasil akhirnya belum sesuai target. Cek barang ini di Stok.');
+      } else {
+        showToast(`"${ch.newName}" berhasil diperbarui dan terverifikasi tersimpan.`);
+      }
+      renderStok();
+    } catch (err) {
+      console.error(err);
+      closeLoadingModal();
+      try { await loadTxns(); await loadServices(); invalidateStockCaches(); } catch (e) { /* abaikan */ }
+      showToast('Gagal menyimpan perubahan: ' + (err && err.message ? err.message : 'coba lagi') + '. Cek barang ini di Stok.');
+      renderStok();
+    }
+  }
 
   async function hapusStokItem(name, qty, unit) {
     if (!requireOwnerForDelete()) return;
@@ -4058,6 +4243,7 @@ window.storage = {
           if (katText.startsWith('laptop')) { isLaptop = true; prefixBaru = 'LPSTK'; }
           else if (katText.startsWith('sparepart') || katText === 'spp') { isLaptop = false; prefixBaru = 'SPP'; }
           else if (katText.startsWith('aksesoris') || katText.startsWith('accessor') || katText === 'acc') { isLaptop = false; prefixBaru = 'ACC'; }
+          else if (katText.startsWith('toko') || katText === 'mtoko' || katText === 'lpmtoko') { isLaptop = false; prefixBaru = 'LPMTOKO'; }
           else if (katText.startsWith('servis') || katText.startsWith('service') || katText === 'lpsrv') { isLaptop = false; prefixBaru = 'LPSRV'; }
           else if (katText.startsWith('onderdil')) { isLaptop = false; const d = detectKategoriFromName(String(nama)); prefixBaru = d === 'LPSTK' ? 'SPP' : d; }
           else if (code) { isLaptop = /^LPSTK/i.test(code); prefixBaru = null; }
