@@ -3458,6 +3458,83 @@ window.storage = {
       }
     );
   }
+  // ---------- PINDAHKAN BARANG SERVIS LAMA (LPSRV) -> SPP / ACC SEKALIGUS BERDASARKAN NAMA ----------
+  let lpsrvMoveCache = null; // null = belum discan; array {name, code, dest:'SPP'|'ACC'}
+  function scanLpsrvMove() {
+    const reg = getItemCodeRegistry();
+    const list = [];
+    Object.values(reg.byNameFull).forEach(rec => {
+      if (!rec.code || !/^LPSRV/i.test(rec.code.trim())) return;
+      if (deletedStokNames.has((rec.name || '').trim().toLowerCase())) return;
+      list.push({ name: rec.name, code: rec.code, dest: (ACC_KEYWORDS.some(k => (' ' + rec.name.toLowerCase() + ' ').includes(k)) || /\badt\b/i.test(rec.name)) ? 'ACC' : 'SPP' });
+    });
+    list.sort((a, b) => (a.dest === b.dest ? 0 : a.dest === 'ACC' ? -1 : 1) || a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }));
+    return list;
+  }
+  function renderLpsrvMoveHtml() {
+    const all = lpsrvMoveCache || [];
+    if (!all.length) return '<div class="bk-empty" style="padding:10px 0;">Tidak ada barang berkode LPSRV yang tersisa.</div>';
+    const nAcc = all.filter(x => x.dest === 'ACC').length;
+    return `<div class="bk-stok-note" style="margin-bottom:10px;"><b>${all.length}</b> barang: <b>${nAcc}</b> jadi Aksesoris (ACC), <b>${all.length - nAcc}</b> jadi Sparepart (SPP). Kalau ada yang ternyata laptop, pilih LPSTK. Cek tujuan tiap barang, ubah lewat dropdown kalau salah, baru klik Pindahkan. Belum ada yang berubah sampai tombol ditekan.</div>
+      <div style="max-height:360px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; padding:4px 10px;">
+        ${all.map((x, i) => `<div class="bk-list-row" style="gap:8px;">
+          <div class="bk-list-left" style="min-width:0;"><div class="nm">${escapeAttr(x.name)}</div><div class="sub">${escapeAttr(x.code)}</div></div>
+          <select class="lpsrv-dest" data-i="${i}" style="flex-shrink:0;"><option value="SPP" ${x.dest==='SPP'?'selected':''}>SPP Sparepart</option><option value="ACC" ${x.dest==='ACC'?'selected':''}>ACC Aksesoris</option><option value="LPSTK" ${x.dest==='LPSTK'?'selected':''}>LPSTK Laptop</option></select>
+        </div>`).join('')}
+      </div>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="bk-btn accent" id="bk-lpsrv-apply" style="padding:7px 14px; font-size:12px;">Pindahkan ${all.length} Barang</button>
+        <button class="bk-btn ghost" id="bk-lpsrv-cancel" style="padding:7px 14px; font-size:12px;">Tutup</button>
+      </div>`;
+  }
+  async function eksekusiLpsrvMove() {
+    const list = lpsrvMoveCache || [];
+    if (!list.length) return;
+    showConfirm(`Pindahkan <strong>${list.length}</strong> barang dari kode LPSRV ke SPP/ACC? Kode lama di semua riwayat (pembelian, penjualan, service) ikut diganti. Stok dan HPP tidak berubah.`, async () => {
+      showLoadingModal('Memindahkan kode barang...');
+      try {
+        const next = makeLocalItemCodeCounter();
+        const mapNew = new Map(); // nama lowercase -> {oldCode, newCode}
+        list.forEach(x => mapNew.set(x.name.trim().toLowerCase(), { oldCode: x.code, newCode: next(x.dest), name: x.name }));
+        const touched = (it) => {
+          if (!it) return false;
+          const m = mapNew.get((it.name || '').trim().toLowerCase());
+          if (!m || !it.code || !/^LPSRV/i.test(String(it.code).trim())) return false;
+          it.code = m.newCode; return true;
+        };
+        const tTx = [], tSv = [];
+        txns.forEach(t => { let h = false; [t.items, t.bahan, t.hasil].forEach(arr => (arr || []).forEach(i => { if (touched(i)) h = true; })); if (h) tTx.push(t); });
+        services.forEach(sv => { let h = false; (sv.parts || []).forEach(p => { if (touched(p)) h = true; }); if (h) tSv.push(sv); });
+        const jobs = [...tTx.map(t => () => stokSetChecked('txn:' + t.id, t)), ...tSv.map(sv => () => stokSetChecked('service:' + sv.id, sv))];
+        const res = await runJobsInChunks(jobs, (d, n) => updateLoadingModal(`Menyimpan ${d}/${n} transaksi...`));
+        invalidateStockCaches(); _itemCodeRegistryCache = null;
+        if (res.some(r => r.status === 'rejected')) throw new Error('Sebagian transaksi gagal diperbarui');
+        for (const m of mapNew.values()) {
+          const oldPK = pricelistKeyFor(m.oldCode, m.name), newPK = pricelistKeyFor(m.newCode, m.name);
+          if (oldPK !== newPK && pricelistData[oldPK] && !pricelistData[newPK]) {
+            await savePricelistEntry(newPK, pricelistData[oldPK].hargaJual, pricelistData[oldPK].markup);
+            delete pricelistData[oldPK];
+            try { await window.storage.delete('pricelist:' + oldPK, true); } catch (e) { /* abaikan */ }
+          }
+          const oldSK = stokStatusKey(m.name, m.oldCode), newSK = stokStatusKey(m.name, m.newCode);
+          if (oldSK !== newSK && stokStatusMap[oldSK] !== undefined) { stokStatusMap[newSK] = stokStatusMap[oldSK]; delete stokStatusMap[oldSK]; }
+        }
+        await saveStokStatus();
+        await loadTxns(); await loadServices(); invalidateStockCaches(); _itemCodeRegistryCache = null;
+        const sisa = scanLpsrvMove().filter(x => mapNew.has(x.name.trim().toLowerCase())).length;
+        lpsrvMoveCache = null;
+        closeLoadingModal();
+        stokView = 'spp';
+        renderStok();
+        showToast(sisa ? `${list.length - sisa} barang dipindah, ${sisa} belum berhasil. Cek tab Barang Servis Lama.` : `${list.length} barang berhasil dipindah ke SPP/ACC dan terverifikasi.`);
+      } catch (err) {
+        console.error(err); closeLoadingModal();
+        try { await loadTxns(); await loadServices(); invalidateStockCaches(); _itemCodeRegistryCache = null; } catch (e) { /* abaikan */ }
+        lpsrvMoveCache = null; renderStok();
+        showToast('Gagal memindahkan: ' + (err && err.message ? err.message : 'coba lagi') + '. Cek tab Stok.');
+      }
+    });
+  }
   function renderStok() {
     captureSearchFocus();
     const stockMap = computeStock();
@@ -3607,6 +3684,11 @@ window.storage = {
         <div class="ai-body" style="margin-bottom:12px;">Kalau ada barang onderdil (misal "Adaptor Charger Asus", "Baterai Laptop Lenovo") yang terlanjur tercatat di kategori Stock Laptop gara-gara namanya mengandung kata merek laptop, klik tombol ini untuk menampilkan SEMUA barang di Stock Laptop dengan ceklis - yang kena tebakan kata kunci onderdil sudah otomatis tercentang sebagai saran, tapi kamu bisa ceklis/uncek manual barang mana saja sebelum diterapkan.</div>
         ${kategoriFixPreviewCache === null ? `<button class="bk-btn ghost" id="bk-kategori-fix-scan-btn" style="border-color:var(--money-out); color:var(--money-out);">Tampilkan &amp; Pilih Barang Stock Laptop</button>` : renderKategoriFixPreviewHtml()}
       </div>` : ''}
+      ${isOwner() && countByKat.servis > 0 ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--money-out);">
+        <div class="ai-head"><div class="ai-title">Pindahkan Barang Servis Lama (LPSRV) ke SPP / ACC</div></div>
+        <div class="ai-body" style="margin-bottom:12px;">Barang berkode lama LPSRV dipindah sekaligus berdasarkan namanya: adaptor, charger, mouse, flashdisk, dan sejenisnya jadi ACC (Aksesoris), sisanya SPP (Sparepart). Hasilnya ditampilkan dulu dan bisa kamu ubah per barang sebelum disimpan.</div>
+        ${lpsrvMoveCache === null ? `<button class="bk-btn ghost" id="bk-lpsrv-scan" style="border-color:var(--money-out); color:var(--money-out);">Tampilkan Rencana Pemindahan (${countByKat.servis} barang)</button>` : renderLpsrvMoveHtml()}
+      </div>` : ''}
       ${isOwner() && deletedStokNames.size > 0 ? `<div class="bk-ai-box" style="margin-bottom:18px; border-color:var(--accent); padding-bottom:${stokDeletedListOpen ? '18px' : '10px'};">
         <div class="ai-head" id="bk-stok-deleted-toggle" style="cursor:pointer; user-select:none;">
           <div class="ai-title">Item yang Sudah Dihapus (${deletedStokNames.size})</div>
@@ -3674,6 +3756,13 @@ window.storage = {
     });
     const fixDupBtn = document.getElementById('bk-stok-fix-duplicate-btn');
     if (fixDupBtn) fixDupBtn.addEventListener('click', perbaikiKodeDuplikat);
+    const lpsrvScan = document.getElementById('bk-lpsrv-scan');
+    if (lpsrvScan) lpsrvScan.addEventListener('click', () => { lpsrvMoveCache = scanLpsrvMove(); renderStok(); });
+    document.querySelectorAll('.lpsrv-dest').forEach(sel => sel.addEventListener('change', () => { lpsrvMoveCache[Number(sel.dataset.i)].dest = sel.value; }));
+    const lpsrvApply = document.getElementById('bk-lpsrv-apply');
+    if (lpsrvApply) lpsrvApply.addEventListener('click', eksekusiLpsrvMove);
+    const lpsrvCancel = document.getElementById('bk-lpsrv-cancel');
+    if (lpsrvCancel) lpsrvCancel.addEventListener('click', () => { lpsrvMoveCache = null; renderStok(); });
     const kategoriFixScanBtn = document.getElementById('bk-kategori-fix-scan-btn');
     if (kategoriFixScanBtn) kategoriFixScanBtn.addEventListener('click', siapkanPreviewKategoriFix);
     const kategoriFixSearchInput = document.getElementById('bk-kategori-fix-search');
