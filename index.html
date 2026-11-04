@@ -1160,7 +1160,9 @@ window.storage = {
   // Dipanggil setiap kali data transaksi berubah (simpan/hapus) supaya cache Stok & Kode Barang
   // TIDAK PERNAH menampilkan data basi - sebelumnya cache ini cuma kedaluwarsa otomatis tiap 1.5 detik,
   // jadi data yang baru saja diupload/disimpan bisa terlihat "belum tercatat" untuk sesaat.
+  let _svcHppCache = null, _svcHppCacheAt = 0;
   function invalidateStockCaches() {
+    _svcHppCache = null;
     _computeStockCache = null;
     _itemCodeRegistryCache = null;
   }
@@ -3220,9 +3222,12 @@ window.storage = {
         });
       } else if (t.type === 'produksi') {
         let batchCost = 0;
+        const bahanDetail = [];
         (t.bahan || []).forEach(i => {
           const qty = Number(i.qty) || 0;
-          batchCost += qty * removeStock(i.name, qty);
+          const uc = removeStock(i.name, qty);
+          batchCost += qty * uc;
+          bahanDetail.push({ name: i.name, qty, unit: i.unit || '', unitCost: uc, cost: qty * uc });
         });
         const totalHasilQty = (t.hasil || []).reduce((s, i) => s + (Number(i.qty) || 0), 0) || 1;
         const hasilDetail = [];
@@ -3232,7 +3237,7 @@ window.storage = {
           addStock(i.name, qty, allocCost);
           hasilDetail.push({ name: i.name, qty, unit: i.unit || '', allocCost, unitCost: qty > 0 ? allocCost / qty : 0 });
         });
-        prodCostByTxn[t.id] = { batchCost, hasil: hasilDetail };
+        prodCostByTxn[t.id] = { batchCost, bahan: bahanDetail, hasil: hasilDetail };
       } else if (t.type === 'penjualan') {
         let txnHpp = 0, delHpp = 0, delRev = 0;
         t.items.forEach(i => {
@@ -4226,13 +4231,13 @@ window.storage = {
       } else {
         showToast(`"${ch.newName}" berhasil diperbarui dan terverifikasi tersimpan.`);
       }
-      renderStok();
+      if (activeTab === 'service') renderService(); else renderStok();
     } catch (err) {
       console.error(err);
       closeLoadingModal();
       try { await loadTxns(); await loadServices(); invalidateStockCaches(); } catch (e) { /* abaikan */ }
       showToast('Gagal menyimpan perubahan: ' + (err && err.message ? err.message : 'coba lagi') + '. Cek barang ini di Stok.');
-      renderStok();
+      if (activeTab === 'service') renderService(); else renderStok();
     }
   }
 
@@ -5869,6 +5874,11 @@ window.storage = {
 
   // Form edit transaksi service (biaya final, sparepart, vendor) untuk service yang sudah
   // "selesai" atau "diambil" - dipicu tombol "Edit transaksi".
+  function svcPartsTotalHtml(s) {
+    let tot = 0, n = 0;
+    (s.parts || []).forEach(p => { const h = svcPartHppInfo(s.id, p); if (h && p.name) { tot += h.total; n++; } });
+    return `Total HPP sparepart (${n} item): ${rupiah(tot)}`;
+  }
   function svcEditTxnFormHtml(s) {
     if (!s.parts || !s.parts.length) s.parts = [blankSvcPart()];
     return `<div style="border:1.5px dashed var(--accent); border-radius:10px; padding:12px; margin:10px 0; background:var(--accent-bg);">
@@ -5880,6 +5890,7 @@ window.storage = {
         <div class="bk-svc-part-head" style="margin-bottom:0;"><div>Kode</div><div>Nama sparepart</div><div>Jumlah</div><div>Satuan</div><div></div></div>
       </div>
       <div class="svc-parts-list" data-svc="${s.id}">${s.parts.map((p, idx) => svcPartRowHtml(s.id, p, idx)).join('')}</div>
+      <div class="svc-parts-total bk-stok-note" data-svc="${s.id}" style="margin:4px 0 6px; font-weight:600; color:var(--ink);">${svcPartsTotalHtml(s)}</div>
       <button class="bk-btn ghost svc-add-part" data-id="${s.id}" style="margin:6px 0 12px;">+ Tambah sparepart</button>
       <div class="bk-two-col" style="margin-bottom:10px;">
         <div class="bk-field" style="margin-bottom:0;"><label>Nama vendor/pihak ke-3</label><input class="svc-edittxn-vendor-nama" data-id="${s.id}" value="${escapeAttr(s.vendorNama||'')}" placeholder="Contoh: Servis Chip ABC" /></div>
@@ -6021,6 +6032,30 @@ window.storage = {
     </div>`;
   }
 
+  // HPP per sparepart di order service: kalau sparepart sudah tersimpan di transaksi produksinya, pakai HPP yang
+  // BENAR-BENAR dipakai saat itu; kalau baru diketik/diubah, tampilkan estimasi dari HPP stok sekarang.
+  function svcHppCached() {
+    const now = Date.now();
+    if (!_svcHppCache || now - _svcHppCacheAt > 1000) { _svcHppCache = computeHPP(); _svcHppCacheAt = now; }
+    return _svcHppCache;
+  }
+  function svcPartHppInfo(serviceId, item) {
+    const name = (item.name || '').trim();
+    const qty = Number(item.qty) || 0;
+    if (!name) return null;
+    const hppData = svcHppCached();
+    const sv = services.find(x => x.id === serviceId);
+    const info = sv && sv.prodTxnId ? hppData.prodCostByTxn[sv.prodTxnId] : null;
+    const saved = info && (info.bahan || []).find(b => (b.name || '').trim().toLowerCase() === name.toLowerCase());
+    if (saved && saved.qty === qty) return { unit: saved.unitCost, total: saved.cost, estimasi: false };
+    const unit = hppData.getCurrentUnitCost(name) || (saved ? saved.unitCost : 0);
+    return { unit, total: unit * qty, estimasi: true };
+  }
+  function svcPartHppLineHtml(serviceId, item) {
+    const h = svcPartHppInfo(serviceId, item);
+    if (!h) return '<span style="color:var(--ink-soft);">Pilih sparepart untuk melihat HPP.</span>';
+    return `HPP/unit <b>${rupiah(h.unit)}</b> &middot; Subtotal HPP <b>${rupiah(h.total)}</b>${h.estimasi ? ' <i>(estimasi dari HPP stok sekarang)</i>' : ''}`;
+  }
   function svcPartRowHtml(serviceId, item, idx) {
     const stockMap = computeStock();
     const stok = item.name ? (stockMap[item.name.trim().toLowerCase()] ? stockMap[item.name.trim().toLowerCase()].qty : 0) : null;
@@ -6032,6 +6067,10 @@ window.storage = {
       <input class="f-qty" type="number" min="0" step="any" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit)}" placeholder="pcs/unit" title="${stok !== null ? 'Sisa stok: ' + stok : ''}" />
       <div class="rm" title="Hapus baris">&times;</div>
+      <div class="svc-part-hpp" style="grid-column:1 / -1; font-size:11.5px; color:var(--ink-soft); display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <span class="svc-part-hpp-text">${svcPartHppLineHtml(serviceId, item)}</span>
+        ${item.name ? `<button type="button" class="bk-btn ghost svc-part-edititem" style="padding:2px 8px; font-size:11px;" title="Ubah nama, kode, satuan, atau HPP barang ini (berlaku ke semua riwayat)">&#9998; Edit item &amp; HPP</button>` : ''}
+      </div>
       </div>
     </div>`;
   }
@@ -6189,8 +6228,17 @@ window.storage = {
           showToast(`Kode otomatis terisi: ${part.code}`);
         }
       });
-      row.querySelector('.f-qty').addEventListener('input', e => part.qty = e.target.value);
+      const refreshHppLine = () => {
+        const t = row.querySelector('.svc-part-hpp-text'); if (t) t.innerHTML = svcPartHppLineHtml(sid, part);
+        const tot = document.querySelector(`.svc-parts-total[data-svc="${sid}"]`); if (tot) tot.innerHTML = svcPartsTotalHtml(s);
+      };
+      row.querySelector('.f-qty').addEventListener('input', e => { part.qty = e.target.value; refreshHppLine(); });
       row.querySelector('.f-unit').addEventListener('input', e => part.unit = e.target.value);
+      const editItemBtn = row.querySelector('.svc-part-edititem');
+      if (editItemBtn) editItemBtn.addEventListener('click', () => {
+        if (!computeStock()[(part.name || '').trim().toLowerCase()]) { showToast('Barang ini belum ada di Stok, jadi belum bisa diedit dari sini.'); return; }
+        openStokEditModal(part.name);
+      });
       row.querySelector('.rm').addEventListener('click', () => {
         s.parts = s.parts.filter(p => p.id !== pid);
         if (!s.parts.length) s.parts.push(blankSvcPart());
