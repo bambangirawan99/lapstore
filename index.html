@@ -650,6 +650,7 @@ window.storage = {
     { id: 'piutang', label: 'Piutang', ownerOnly: true },
     { id: 'riwayat', label: 'Riwayat' },
     { id: 'laporan', label: 'Laporan' },
+    { id: 'koreksikas', label: 'Koreksi Kas', ownerOnly: true },
     { id: 'migrasi', label: 'Migrasi Data' },
     { id: 'cari', label: 'Cari' },
   ];
@@ -733,6 +734,30 @@ window.storage = {
     } catch (e) { modalAwal = 0; }
   }
   async function saveModalAwal(v) { await window.storage.set('modal-awal', String(v), true); }
+
+  // ---------- KOREKSI KAS (tambah/kurangi saldo kas TANPA mempengaruhi Laba Rugi; semua jejak tersimpan) ----------
+  // Setiap koreksi disimpan sebagai 'kas-koreksi:<id>' dan TIDAK PERNAH diedit atau dihapus: kalau salah, dibatalkan
+  // (status 'dibatalkan', alasan pembatalan dicatat) lalu dicatat ulang. Tiap entri punya log berurutan (dibuat / dibatalkan)
+  // berisi waktu & akun pencatat. Efeknya: Kas, Arus Kas, Jurnal Umum, Neraca (baris terpisah, bukan laba ditahan). Laba Rugi tidak berubah.
+  let kasKoreksi = [];
+  async function loadKasKoreksi() {
+    kasKoreksi = [];
+    try {
+      const listRes = await window.storage.list('kas-koreksi:', true);
+      const keys = (listRes && listRes.keys) || [];
+      keys.forEach(k => {
+        try { const v = listRes.valueByKey[k]; if (v) kasKoreksi.push(JSON.parse(v)); } catch (e) { /* skip */ }
+      });
+      kasKoreksi.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    } catch (e) { console.error('Gagal memuat koreksi kas', e); }
+  }
+  async function saveKasKoreksi(e) {
+    const ok = await window.storage.set('kas-koreksi:' + e.id, JSON.stringify(e), true);
+    if (!ok) throw new Error('Server menolak simpan koreksi kas');
+  }
+  function kasKoreksiAktif() { return kasKoreksi.filter(k => k.status !== 'dibatalkan'); }
+  function kasKoreksiSigned(k) { const a = Number(k.nominal) || 0; return k.jenis === 'kurang' ? -a : a; }
+  function computeKoreksiKasTotal() { return kasKoreksiAktif().reduce((sum, k) => sum + kasKoreksiSigned(k), 0); }
 
   // ---------- RIWAYAT MODAL (setoran & penarikan modal bertahap, menggantikan angka modal-awal statis) ----------
   let modalEntries = [];
@@ -1212,7 +1237,7 @@ window.storage = {
   }
 
   function renderBody() {
-    if (activeTab === 'piutang' && !isOwner()) {
+    if ((activeTab === 'piutang' || activeTab === 'koreksikas') && !isOwner()) {
       activeTab = 'dashboard';
     }
     if (activeTab === 'dashboard') return renderDashboard();
@@ -1224,6 +1249,7 @@ window.storage = {
     if (activeTab === 'piutang') return renderPiutang();
     if (activeTab === 'riwayat') return renderRiwayat();
     if (activeTab === 'laporan') return renderLaporan();
+    if (activeTab === 'koreksikas') return renderKoreksiKas();
     if (activeTab === 'migrasi') return renderMigrasiData();
     if (activeTab === 'cari') return renderCari();
   }
@@ -6570,6 +6596,124 @@ window.storage = {
   }
 
   // ---------- PIUTANG ----------
+  // ---------- TAB KOREKSI KAS ----------
+  let kkForm = { jenis: 'tambah', nominal: '', alasan: '', rekening: '' };
+  let kkFilter = 'semua'; // semua | aktif | dibatalkan
+  function kkWaktu(ts) { return new Date(ts).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }); }
+  function kkRowHtml(k) {
+    const batal = k.status === 'dibatalkan';
+    const sign = k.jenis === 'kurang' ? '-' : '+';
+    const logHtml = (k.log || []).map(l => `<div class="sub">${kkWaktu(l.at)} &middot; ${escapeAttr(l.aksi)} oleh ${escapeAttr(l.oleh || '-')}${l.catatan ? ' &middot; ' + escapeAttr(l.catatan) : ''}</div>`).join('');
+    const rek = k.rekening ? ` &middot; Rek: ${escapeAttr(bankAccountLabel(k.rekening))}` : '';
+    return `<div class="bk-list-row-wrap" data-kk="${k.id}">
+      <div class="bk-list-row" ${batal ? 'style="opacity:.55"' : ''}>
+        <div class="bk-list-left">
+          <div class="nm">${batal ? '<s>' : ''}${k.jenis === 'kurang' ? 'Kurangi' : 'Tambah'} kas &mdash; ${escapeAttr(k.alasan || '-')}${batal ? '</s> (DIBATALKAN)' : ''}</div>
+          <div class="sub">${kkWaktu(k.createdAt)}${rek}</div>
+          <details><summary class="sub" style="cursor:pointer">Jejak pencatatan (${(k.log||[]).length})</summary>${logHtml}</details>
+        </div>
+        <div class="bk-list-amt ${k.jenis === 'kurang' ? 'out' : 'in'}">${sign}${rupiah(k.nominal)}</div>
+      </div>
+      ${batal ? '' : '<div class="bk-row-actions"><button class="bk-btn kk-batal-btn" type="button">Batalkan</button></div>'}
+    </div>`;
+  }
+  function renderKoreksiKas() {
+    const aktif = kasKoreksiAktif();
+    const totalKoreksi = computeKoreksiKasTotal();
+    const list = kasKoreksi.filter(k => kkFilter === 'semua' ? true : kkFilter === 'aktif' ? k.status !== 'dibatalkan' : k.status === 'dibatalkan');
+    bodyEl.innerHTML = `
+      <div class="bk-stats">
+        <div class="bk-stat in"><div class="lbl">Saldo kas saat ini</div><div class="val">${rupiah(computeKasTotal())}</div></div>
+        <div class="bk-stat ${totalKoreksi>=0?'in':'out'}"><div class="lbl">Total koreksi aktif (${aktif.length})</div><div class="val">${rupiah(totalKoreksi)}</div></div>
+      </div>
+      <div class="bk-stok-note">Tab ini hanya mengubah <b>saldo kas</b>. Laba Rugi <b>tidak berubah</b>. Koreksi tidak bisa diedit atau dihapus; kalau salah, <b>batalkan</b> lalu catat ulang. Semua pencatatan (siapa, kapan, alasan) tersimpan sebagai jejak.</div>
+      <div class="bk-card">
+        <div class="bk-field"><label>Jenis</label>
+          <select id="kk-jenis"><option value="tambah" ${kkForm.jenis==='tambah'?'selected':''}>Tambah saldo kas</option><option value="kurang" ${kkForm.jenis==='kurang'?'selected':''}>Kurangi saldo kas</option></select></div>
+        <div class="bk-field"><label>Nominal (Rp)</label><input id="kk-nominal" type="number" min="0" inputmode="numeric" value="${escapeAttr(kkForm.nominal)}"></div>
+        <div class="bk-field"><label>Rekening (opsional)</label>
+          <select id="kk-rek"><option value="">Tunai / tidak spesifik</option>${BANK_ACCOUNTS.map(a => `<option value="${a.id}" ${kkForm.rekening===a.id?'selected':''}>${escapeAttr(a.label)}</option>`).join('')}</select></div>
+        <div class="bk-field"><label>Alasan / keterangan (wajib)</label><input id="kk-alasan" type="text" value="${escapeAttr(kkForm.alasan)}" placeholder="mis. Selisih kas hasil hitung fisik"></div>
+        <div id="kk-err" class="bk-error" style="display:none"></div>
+        <button class="bk-btn primary" id="kk-save" type="button">Simpan koreksi</button>
+      </div>
+      <div class="bk-section-head" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <b>Jejak koreksi kas</b>
+        <select id="kk-filter"><option value="semua" ${kkFilter==='semua'?'selected':''}>Semua</option><option value="aktif" ${kkFilter==='aktif'?'selected':''}>Aktif</option><option value="dibatalkan" ${kkFilter==='dibatalkan'?'selected':''}>Dibatalkan</option></select>
+        <button class="bk-btn" id="kk-excel" type="button">Unduh Excel jejak</button>
+      </div>
+      <div id="kk-list">${list.length ? list.map(kkRowHtml).join('') : '<div class="bk-empty">Belum ada koreksi kas.</div>'}</div>`;
+    const $ = id => document.getElementById(id);
+    $('kk-jenis').addEventListener('change', e => kkForm.jenis = e.target.value);
+    $('kk-nominal').addEventListener('input', e => kkForm.nominal = e.target.value);
+    $('kk-rek').addEventListener('change', e => kkForm.rekening = e.target.value);
+    $('kk-alasan').addEventListener('input', e => kkForm.alasan = e.target.value);
+    $('kk-filter').addEventListener('change', e => { kkFilter = e.target.value; renderKoreksiKas(); });
+    $('kk-excel').addEventListener('click', downloadKasKoreksiExcel);
+    $('kk-save').addEventListener('click', () => {
+      const errEl = $('kk-err');
+      const nominal = Math.round(Number(kkForm.nominal) || 0);
+      const alasan = kkForm.alasan.trim();
+      if (nominal <= 0) { errEl.style.display = 'block'; errEl.textContent = 'Isi nominal yang valid.'; return; }
+      if (!alasan) { errEl.style.display = 'block'; errEl.textContent = 'Alasan wajib diisi supaya jejaknya jelas.'; return; }
+      errEl.style.display = 'none';
+      const jenis = kkForm.jenis;
+      const sebelum = computeKasTotal();
+      const sesudah = sebelum + (jenis === 'kurang' ? -nominal : nominal);
+      showConfirm(`${jenis === 'kurang' ? 'Kurangi' : 'Tambah'} saldo kas ${rupiah(nominal)}? Saldo kas ${rupiah(sebelum)} menjadi ${rupiah(sesudah)}. Laba Rugi tidak berubah.`, async () => {
+        const now = Date.now();
+        const who = currentUser ? currentUser.email : null;
+        const e = { id: uid(), jenis, nominal, alasan, rekening: kkForm.rekening || null, status: 'aktif', createdAt: now, createdBy: who,
+          saldoSebelum: sebelum, saldoSesudah: sesudah,
+          log: [{ at: now, aksi: 'Dibuat', oleh: who, catatan: `Saldo kas ${sebelum} -> ${sesudah}` }] };
+        showLoadingModal('Menyimpan koreksi kas...');
+        try {
+          await saveKasKoreksi(e);
+          kasKoreksi.unshift(e);
+          kkForm = { jenis: 'tambah', nominal: '', alasan: '', rekening: '' };
+          closeLoadingModal(); renderKoreksiKas(); showToast('Koreksi kas tercatat.');
+        } catch (err) { console.error(err); closeLoadingModal(); showToast('Gagal menyimpan, coba lagi.'); }
+      });
+    });
+    document.querySelectorAll('#kk-list .kk-batal-btn').forEach(btn => btn.addEventListener('click', () => {
+      const id = btn.closest('[data-kk]').dataset.kk;
+      const k = kasKoreksi.find(x => x.id === id);
+      if (!k) return;
+      const alasan = window.prompt('Alasan pembatalan (wajib):');
+      if (alasan === null) return;
+      if (!alasan.trim()) { showToast('Alasan pembatalan wajib diisi.'); return; }
+      showConfirm(`Batalkan koreksi ${k.jenis === 'kurang' ? '-' : '+'}${rupiah(k.nominal)}? Saldo kas akan kembali seperti sebelum koreksi ini. Catatan tetap tersimpan sebagai jejak.`, async () => {
+        const now = Date.now();
+        const baru = { ...k, status: 'dibatalkan', cancelledAt: now, cancelledBy: currentUser ? currentUser.email : null, cancelReason: alasan.trim(),
+          log: [...(k.log || []), { at: now, aksi: 'Dibatalkan', oleh: currentUser ? currentUser.email : null, catatan: alasan.trim() }] };
+        showLoadingModal('Membatalkan koreksi...');
+        try {
+          await saveKasKoreksi(baru);
+          Object.assign(k, baru);
+          closeLoadingModal(); renderKoreksiKas(); showToast('Koreksi dibatalkan, jejak tetap tersimpan.');
+        } catch (err) { console.error(err); closeLoadingModal(); showToast('Gagal membatalkan, coba lagi.'); }
+      });
+    }));
+  }
+  function downloadKasKoreksiExcel() {
+    if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
+    if (!kasKoreksi.length) { showToast('Belum ada koreksi kas.'); return; }
+    const urut = [...kasKoreksi].sort((a, b) => a.createdAt - b.createdAt);
+    const rows = urut.map((k, i) => ({
+      'No': i + 1, 'Waktu': kkWaktu(k.createdAt), 'Jenis': k.jenis === 'kurang' ? 'Kurangi' : 'Tambah',
+      'Nominal': k.nominal, 'Efek ke kas': kasKoreksiSigned(k), 'Rekening': k.rekening ? bankAccountLabel(k.rekening) : 'Tunai/umum',
+      'Alasan': k.alasan || '', 'Status': k.status === 'dibatalkan' ? 'Dibatalkan' : 'Aktif', 'Dicatat oleh': k.createdBy || '',
+      'Saldo kas sebelum': k.saldoSebelum ?? '', 'Saldo kas sesudah': k.saldoSesudah ?? '',
+      'Dibatalkan pada': k.cancelledAt ? kkWaktu(k.cancelledAt) : '', 'Dibatalkan oleh': k.cancelledBy || '', 'Alasan batal': k.cancelReason || '',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Koreksi Kas');
+    const logRows = [];
+    urut.forEach((k, i) => (k.log || []).forEach(l => logRows.push({ 'No koreksi': i + 1, 'Waktu': kkWaktu(l.at), 'Aksi': l.aksi, 'Oleh': l.oleh || '', 'Catatan': l.catatan || '' })));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(logRows), 'Log');
+    XLSX.writeFile(wb, 'jejak-koreksi-kas.xlsx');
+  }
+
   function renderPiutang() {
     const unpaidTxn = txns.filter(t => t.type === 'penjualan' && t.paid === false);
     const unpaidManual = manualTagihan.filter(m => m.paid === false);
@@ -6797,6 +6941,7 @@ window.storage = {
       [],
       ['MODAL'],
       ['Modal awal (total semua setoran)', n.modalAwal],
+      ...(n.koreksiKas ? [['Koreksi saldo kas (di luar laba rugi)', n.koreksiKas]] : []),
       ['Laba ditahan (akumulasi)', n.labaDitahan],
       ['Total Modal', n.totalModal],
       [],
@@ -7045,6 +7190,7 @@ window.storage = {
       [],
       ['MODAL'],
       ['Modal awal (total semua setoran)', n.modalAwal],
+      ...(n.koreksiKas ? [['Koreksi saldo kas (di luar laba rugi)', n.koreksiKas]] : []),
       ['Laba ditahan (akumulasi)', n.labaDitahan],
       ['Total Modal', n.totalModal],
       [],
@@ -7567,6 +7713,19 @@ window.storage = {
       });
     });
 
+    kasKoreksiAktif().forEach(k => {
+      if (!inScope(k.createdAt)) return;
+      const nominal = Number(k.nominal) || 0;
+      const akunKoreksi = 'Koreksi Saldo Kas (Ekuitas)';
+      entries.push({
+        at: k.createdAt,
+        ket: `Koreksi saldo kas (${k.jenis === 'kurang' ? 'kurang' : 'tambah'}) - ${k.alasan || '-'}`,
+        lines: k.jenis === 'kurang'
+          ? [{ akun: akunKoreksi, debit: nominal, kredit: 0 }, { akun: 'Kas', debit: 0, kredit: nominal }]
+          : [{ akun: 'Kas', debit: nominal, kredit: 0 }, { akun: akunKoreksi, debit: 0, kredit: nominal }],
+      });
+    });
+
     modalEntries.forEach(m => {
       if (!inScope(m.createdAt)) return;
       const nominal = Number(m.nominal) || 0;
@@ -7631,6 +7790,7 @@ window.storage = {
     utangList.forEach(u => { kas += Number(u.nominalAwal) || 0; });
     utangPayments.forEach(p => { kas -= Number(p.nominal) || 0; });
     modalEntries.forEach(m => { const amt = Number(m.nominal) || 0; kas += (m.jenis === 'penarikan' ? -amt : amt); });
+    kas += computeKoreksiKasTotal();
     return kas;
   }
   function computePiutangTotalLap() {
@@ -7659,8 +7819,10 @@ window.storage = {
     const modalAwalTotal = computeModalAwalTotal();
     const totalAset = kas + piutang + persediaan;
     const totalModal = totalAset - kewajiban;
-    const labaDitahan = totalModal - modalAwalTotal;
-    return { kas, piutang, persediaan, kewajiban, totalAset, modalAwal: modalAwalTotal, labaDitahan, totalModal };
+    const koreksiKas = computeKoreksiKasTotal();
+    // Koreksi saldo kas ditampilkan terpisah di Modal, jadi TIDAK ikut menggeser laba ditahan.
+    const labaDitahan = totalModal - modalAwalTotal - koreksiKas;
+    return { kas, piutang, persediaan, kewajiban, totalAset, modalAwal: modalAwalTotal, koreksiKas, labaDitahan, totalModal };
   }
 
   function computeArusKasForMonth(mKey) {
@@ -7704,6 +7866,13 @@ window.storage = {
         inflow.push({ label: `Setoran modal: ${m.keterangan || 'Tanpa keterangan'}`, amount: amt, date: m.createdAt });
       }
     });
+    kasKoreksiAktif().forEach(k => {
+      const inMonth = mKey === 'semua' ? true : monthKey(k.createdAt) === mKey;
+      if (!inMonth) return;
+      const amt = Number(k.nominal) || 0;
+      if (k.jenis === 'kurang') outflow.push({ label: `Koreksi kas (kurang): ${k.alasan || '-'}`, amount: amt, date: k.createdAt });
+      else inflow.push({ label: `Koreksi kas (tambah): ${k.alasan || '-'}`, amount: amt, date: k.createdAt });
+    });
     // Arus Kas diurutkan terbaru ke terlama (sama seperti daftar Riwayat/Service lainnya di aplikasi).
     inflow.sort((a,b)=>b.date-a.date);
     outflow.sort((a,b)=>b.date-a.date);
@@ -7724,6 +7893,7 @@ window.storage = {
     utangList.forEach(u => { if (monthKey(u.createdAt) < mKey) saldo += (Number(u.nominalAwal)||0); });
     utangPayments.forEach(p => { if (monthKey(p.createdAt) < mKey) saldo -= (Number(p.nominal)||0); });
     modalEntries.forEach(m => { if (monthKey(m.createdAt) < mKey) { const amt = Number(m.nominal) || 0; saldo += (m.jenis === 'penarikan' ? -amt : amt); } });
+    kasKoreksiAktif().forEach(k => { if (monthKey(k.createdAt) < mKey) saldo += kasKoreksiSigned(k); });
     return saldo;
   }
 
@@ -7774,6 +7944,7 @@ window.storage = {
         byAccount[t.rekening].transactions.push(t);
       }
     });
+    kasKoreksiAktif().forEach(k => { if (k.rekening && byAccount[k.rekening]) byAccount[k.rekening].total += kasKoreksiSigned(k); });
     // Terapkan efek pemindahan dana antar rekening: berkurang di rekening asal, bertambah di rekening tujuan
     transferRekening.forEach(tr => {
       const jumlah = Number(tr.jumlah) || 0;
@@ -8564,6 +8735,7 @@ window.storage = {
         await loadUtang();
         await loadUtangPayments();
         await loadModalEntries();
+        await loadKasKoreksi();
         await loadManualTagihan();
         await loadPricelistData();
         invalidateStockCaches();
@@ -8584,7 +8756,7 @@ window.storage = {
       appName: 'LAPSTORE',
       exportedAt: new Date().toISOString(),
       storeName: document.getElementById('bk-storename').value || 'Toko Saya',
-      txns, services, bebanList, closings, utangList, utangPayments, modalEntries, manualTagihan, pricelistData,
+      txns, services, bebanList, closings, utangList, utangPayments, modalEntries, kasKoreksi, manualTagihan, pricelistData,
     };
   }
 
@@ -8804,6 +8976,7 @@ window.storage = {
     (backup.utangList || []).forEach(u => jobs.push(saveUtangItem(u)));
     (backup.utangPayments || []).forEach(p => jobs.push(saveUtangPayment(p)));
     (backup.modalEntries || []).forEach(m => jobs.push(saveModalEntry(m)));
+    (backup.kasKoreksi || []).forEach(k => jobs.push(saveKasKoreksi(k)));
     (backup.manualTagihan || []).forEach(m => jobs.push(saveManualTagihanItem(m)));
     if (backup.pricelistData && typeof backup.pricelistData === 'object') {
       Object.entries(backup.pricelistData).forEach(([key, val]) => {
@@ -8882,6 +9055,7 @@ window.storage = {
     await loadUtang();
     await loadUtangPayments();
     await loadModalEntries();
+    await loadKasKoreksi();
     await loadManualTagihan();
     await loadPricelistData();
     await loadDeletedStokNames();
@@ -9021,7 +9195,8 @@ window.storage = {
 
       <div class="bk-section-title" style="margin-top:18px;">Modal</div>
       <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Modal awal (total semua setoran)</div></div><div class="bk-list-amt">${rupiah(n.modalAwal)}</div></div>
-      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Laba ditahan (akumulasi)</div><div class="sub">(Total Aset &minus; Total Kewajiban) &minus; Modal awal</div></div><div class="bk-list-amt ${n.labaDitahan>=0?'in':'out'}">${rupiah(n.labaDitahan)}</div></div>
+      ${n.koreksiKas ? `<div class="bk-list-row"><div class="bk-list-left"><div class="nm">Koreksi saldo kas (di luar laba rugi)</div><div class="sub">Dari tab Koreksi Kas, tidak mempengaruhi laba</div></div><div class="bk-list-amt ${n.koreksiKas>=0?'in':'out'}">${rupiah(n.koreksiKas)}</div></div>` : ''}
+      <div class="bk-list-row"><div class="bk-list-left"><div class="nm">Laba ditahan (akumulasi)</div><div class="sub">(Total Aset &minus; Total Kewajiban) &minus; Modal awal${n.koreksiKas ? ' &minus; Koreksi saldo kas' : ''}</div></div><div class="bk-list-amt ${n.labaDitahan>=0?'in':'out'}">${rupiah(n.labaDitahan)}</div></div>
       <div class="bk-total-line"><div class="t-lbl">Total Modal</div><div class="t-val">${rupiah(n.totalModal)}</div></div>
       <div class="bk-stok-note" style="margin-top:-10px;">Total Aset = Total Kewajiban + Total Modal.</div>
 
@@ -10122,6 +10297,7 @@ window.storage = {
       await loadUtang();
       await loadUtangPayments();
       await loadModalEntries();
+      await loadKasKoreksi();
       await loadManualTagihan();
       await loadPricelistData();
       await loadDeletedStokNames();
@@ -10263,6 +10439,7 @@ window.storage = {
       loadUtang(),
       loadUtangPayments(),
       loadModalAwal().then(() => loadModalEntries()),
+      loadKasKoreksi(),
       loadManualTagihan(),
       loadPricelistData(),
       loadDeletedStokNames(),
