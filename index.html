@@ -3167,11 +3167,18 @@ window.storage = {
     const sorted = [...txns].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     const avg = {}; // key -> { qty, cost } biaya kumulatif per item
     const keyOf = n => (n || '').trim().toLowerCase();
+    // Siklus stok terakhir per item: total qty & modal yang masuk sejak stok terakhir naik dari 0.
+    // Dipakai untuk menampilkan HPP/unit & total nilai barang yang sudah terjual habis (sisa 0).
+    const cycle = {};   // key -> { qty, cost } siklus yang sedang berjalan
+    const lastDone = {}; // key -> { qty, cost, unit } siklus yang terakhir habis
 
     function addStock(name, qty, cost) {
       const k = keyOf(name);
       if (!k || qty <= 0) return;
       if (!avg[k]) avg[k] = { name: (name || '').trim(), qty: 0, cost: 0 };
+      if (avg[k].qty <= 0.0000001) cycle[k] = { qty: 0, cost: 0 };
+      if (!cycle[k]) cycle[k] = { qty: 0, cost: 0 };
+      cycle[k].qty += qty; cycle[k].cost += cost;
       avg[k].qty += qty;
       avg[k].cost += cost;
     }
@@ -3187,7 +3194,11 @@ window.storage = {
       if (r) {
         r.qty -= qty;
         r.cost -= qty * uc;
-        if (r.qty < 0.0000001) { r.qty = 0; r.cost = 0; }
+        if (r.qty < 0.0000001) {
+          r.qty = 0; r.cost = 0;
+          const c = cycle[k];
+          if (c && c.qty > 0) lastDone[k] = { qty: c.qty, cost: c.cost, unit: c.cost / c.qty };
+        }
       }
       return uc;
     }
@@ -3246,7 +3257,7 @@ window.storage = {
       }
     });
 
-    return { hppByTxn, hppTerhapusByTxn, revTerhapusByTxn, penyesuaianHppByTxn, totalPenyesuaianHpp, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf };
+    return { hppByTxn, hppTerhapusByTxn, revTerhapusByTxn, penyesuaianHppByTxn, totalPenyesuaianHpp, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf, getLastCycle: name => lastDone[keyOf(name)] || null };
   }
 
   // Sama seperti computeHPP, tapi hanya memproses transaksi sampai tanggal cutoff tertentu.
@@ -3572,8 +3583,16 @@ window.storage = {
     // ---- Urutan tabel (klik judul kolom: No, Nama item, Satuan, Sisa stok, Status, HPP/unit, Total nilai) ----
     const baseIdx = new Map(rows.map((r, i) => [r.name, i])); // "No" = urutan bawaan (abjad nama)
     const codeOfRow = new Map(rowsWithCode.map(x => [x.r.name, x.code]));
-    const unitCostOfRow = r => hpp.getCurrentUnitCost(r.name);
-    const nilaiOfRow = r => (r.qty > 0 ? r.qty * unitCostOfRow(r) : 0);
+    // Barang yang sudah habis (sisa 0) tetap menampilkan HPP/unit terakhir dan total modal siklus stok terakhirnya,
+    // bukan Rp0. Ini hanya tampilan: ringkasan "senilai" dan Neraca tetap hanya menghitung stok yang masih ada.
+    const unitCostOfRow = r => {
+      if (r.qty > 0) return hpp.getCurrentUnitCost(r.name);
+      const c = hpp.getLastCycle(r.name); return c ? c.unit : 0;
+    };
+    const nilaiOfRow = r => {
+      if (r.qty > 0) return r.qty * hpp.getCurrentUnitCost(r.name);
+      const c = hpp.getLastCycle(r.name); return c ? c.cost : 0;
+    };
     const sortValueOf = {
       no: r => baseIdx.get(r.name),
       nama: r => (r.name || '').toLowerCase(),
@@ -3591,7 +3610,7 @@ window.storage = {
       if (c === 0) c = baseIdx.get(a.name) - baseIdx.get(b.name);
       return c * sortDirMul;
     });
-    const totalNilaiDisplayed = rowsDisplayed.reduce((s2, r) => s2 + nilaiOfRow(r), 0);
+    const totalNilaiDisplayed = rowsDisplayed.reduce((s2, r) => s2 + (r.qty > 0 ? nilaiOfRow(r) : 0), 0); // hanya stok yang masih ada
     function thSort(key, label, align, pad) {
       const active = stokSortKey === key;
       const arrow = active ? (stokSortDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
@@ -3620,8 +3639,8 @@ window.storage = {
               const code = codeReg.byName[r.name.trim().toLowerCase()];
               const specRec = codeReg.byNameFull[r.name.trim().toLowerCase()];
               const spec = specRec ? specRec.spec : '';
-              const unitCost = hpp.getCurrentUnitCost(r.name);
-              const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
+              const unitCost = unitCostOfRow(r);
+              const totalNilai = nilaiOfRow(r);
               const low = r.qty <= 0 || r.qty < STOK_AMBANG_DEFAULT;
               const checked = selectedStokNames.has(r.name) ? 'checked' : '';
               const pending = pendingStokEdits.get(r.name);
@@ -3657,6 +3676,7 @@ window.storage = {
     const STOK_STATUS_LABEL = { semua: '', ready: 'Ready', notready: 'Not Ready', habis: 'Terjual Habis' };
     const stokListSectionsHtml = !rows.length ? '' : `
       <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Menampilkan ${rowsSorted.length.toLocaleString('id-ID')} jenis barang${stokStatusFilter !== 'semua' ? ' ' + STOK_STATUS_LABEL[stokStatusFilter] : ''} di kategori ${stokView === 'laptop' ? 'Stock Laptop' : 'Stock Onderdil'}${showNilai ? ` &mdash; senilai <strong>${rupiah(totalNilaiDisplayed)}</strong> (HPP)` : ''}. Klik judul kolom untuk mengurutkan.</div>
+      ${showNilai && rowsSorted.some(r => r.qty <= 0) ? '<div class="bk-stok-note" style="margin-bottom:8px;">Barang yang sudah terjual habis menampilkan HPP/unit terakhir dan total modal siklus stok terakhirnya. Angka itu tidak dihitung dalam nilai stok yang tersisa.</div>' : ''}
       ${rowsSorted.length ? stokRowsTableHtml(rowsSorted) : `<div class="bk-empty">Tidak ada barang ${STOK_STATUS_LABEL[stokStatusFilter]} di kategori ini.</div>`}
     `;
     bodyEl.innerHTML = `
@@ -3870,13 +3890,13 @@ window.storage = {
       const head = ['No', 'Nama item', 'Kode barang', 'Satuan', 'Sisa stok', 'HPP/unit', 'Total nilai'];
       let totNilai = 0;
       const data = rowsSorted.map((r, i) => {
-        const nilai = nilaiOfRow(r); totNilai += nilai;
+        const nilai = nilaiOfRow(r); if (r.qty > 0) totNilai += nilai;
         return [i + 1, r.name, codeOfRow.get(r.name) || '', r.unit || '', r.qty, Math.round(unitCostOfRow(r)), Math.round(nilai)];
       });
       const fileBase = `stok-${stokView}-${stokStatusFilter}`;
       if (kind === 'xls') {
         if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
-        const aoa = [[storeName], [kat + ' - ' + stLabel], ['Dicetak', new Date().toLocaleString('id-ID')], [], head, ...data, ['', '', '', '', '', 'TOTAL', Math.round(totNilai)]];
+        const aoa = [[storeName], [kat + ' - ' + stLabel], ['Dicetak', new Date().toLocaleString('id-ID')], [], head, ...data, ['', '', '', '', '', 'TOTAL (stok yang masih ada)', Math.round(totNilai)]];
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         ws['!cols'] = [{wch:5},{wch:48},{wch:14},{wch:9},{wch:10},{wch:14},{wch:16}];
         const wb = XLSX.utils.book_new();
@@ -10264,8 +10284,9 @@ window.storage = {
 
   function cariStokRowHtml(r, codeReg, hppData) {
     const code = codeReg.byName[r.name.trim().toLowerCase()];
-    const unitCost = hppData.getCurrentUnitCost(r.name);
-    const totalNilai = r.qty > 0 ? r.qty * unitCost : 0;
+    const lastC = r.qty > 0 ? null : hppData.getLastCycle(r.name);
+    const unitCost = r.qty > 0 ? hppData.getCurrentUnitCost(r.name) : (lastC ? lastC.unit : 0);
+    const totalNilai = r.qty > 0 ? r.qty * unitCost : (lastC ? lastC.cost : 0);
     const isNotReady = pricelistCategoryOf(code) === 'barang' && getItemStatus(r.name, code) === 'notready';
     const statusBadge = isNotReady ? ' <span class="bk-badge belum" style="background:var(--accent-bg); color:var(--accent-ink);">Not Ready</span>' : (r.qty <= 0 ? ' <span class="bk-badge belum">Sold Out</span>' : (r.qty < STOK_AMBANG_DEFAULT ? ' <span class="bk-badge belum">Stok menipis</span>' : ''));
     return `<div class="bk-list-row-wrap">
