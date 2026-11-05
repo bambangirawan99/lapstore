@@ -3144,18 +3144,71 @@ window.storage = {
     const hppAll = computeHPP();
     function riwayatListHtml() {
       if (!filtered.length) return '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>';
-      if (riwayatFilter !== 'penjualan') return filtered.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('');
-      const lap = filtered.filter(t => kategoriTxnPenjualan(t) === 'laptop');
-      const ond = filtered.filter(t => kategoriTxnPenjualan(t) !== 'laptop');
-      const sum = l => l.reduce((s,t) => s + (Number(t.total) || 0), 0);
-      const sec = (title, dot, l, first) => `
-        <div class="bk-section-title" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:${first ? 4 : 22}px;"><span style="width:9px; height:9px; border-radius:50%; background:${dot}; display:inline-block;"></span>${title} (${l.length})${isOwner() ? ` <span style="font-weight:700; color:var(--money-in); font-size:12.5px;">&middot; Total ${rupiah(sum(l))}</span>` : ''}</div>
-        ${l.length ? l.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('') : `<div class="bk-empty">Tidak ada ${title.toLowerCase()} pada periode ini.</div>`}`;
-      return sec('Penjualan Laptop', 'var(--accent)', lap, true) + sec('Penjualan Onderdil', 'var(--accent3-ink)', ond, false)
-        + (isOwner() ? `<div class="bk-list-row" style="margin-top:16px; border:2px solid var(--ink); border-radius:10px;">
-          <div class="bk-list-left"><div class="nm">Total Penjualan (Laptop + Onderdil)</div><div class="sub">Laptop ${rupiah(sum(lap))} &middot; Onderdil ${rupiah(sum(ond))}</div></div>
-          <div class="bk-list-amt in" style="font-weight:800;">${rupiah(sum(filtered))}</div>
-        </div>` : '');
+      if (riwayatFilter === 'penjualan' || riwayatFilter === 'pembelian') return riwayatGroupedHtml(riwayatFilter === 'penjualan');
+      return filtered.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('');
+    }
+    // Tampilan per kategori kode barang (LPSTK / LPMTOKO / SPP / ACC / LPSRV): tiap baris = satu item transaksi,
+    // dengan total per kategori dan total keseluruhan. Penjualan: hasil jual, HPP, untung. Pembelian: nilai beli.
+    function riwayatGroupedHtml(isJual) {
+      const reg = getItemCodeRegistry();
+      let src = filtered.filter(t => t.type === (isJual ? 'penjualan' : 'pembelian') && !isPenyesuaianStokTxn(t));
+      if (!isJual && !riwayatSearchQuery.trim()) {
+        // pembelian barang minus yang tertaut ke pembelian laptop (uang keluar sungguhan) ikut dihitung
+        src = src.concat(byMonth.filter(t => t.type === 'pembelian' && t.linkedMinusOf));
+      }
+      const lines = [];
+      src.forEach(t => (t.items || []).forEach((it, idx) => {
+        const code = (it.code || '').trim() || reg.byName[(it.name || '').trim().toLowerCase()] || '';
+        const qty = Number(it.qty) || 0, price = Number(it.price) || 0;
+        const hasil = qty * price;
+        const hpp = isJual ? ((hppAll.hppItemsByTxn[t.id] || [])[idx] || 0) : 0;
+        lines.push({ t, it, code, kat: stokKategoriOf(code), qty, hasil, hpp, untung: hasil - hpp });
+      }));
+      if (!lines.length) return '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>';
+      const owner = isOwner();
+      const cats = STOK_KAT.filter(k => lines.some(l => l.kat === k.key));
+      const sumOf = arr => arr.reduce((a, l) => ({ qty: a.qty + l.qty, hasil: a.hasil + l.hasil, hpp: a.hpp + l.hpp, untung: a.untung + l.untung }), { qty: 0, hasil: 0, hpp: 0, untung: 0 });
+      const grand = sumOf(lines);
+      const ongkir = isJual ? 0 : src.reduce((a, t) => a + (Number(t.ongkosKirim) || 0), 0);
+      const untungColor = v => v >= 0 ? 'var(--money-in)' : 'var(--money-out)';
+      const th = 'padding:7px 8px; text-align:right; font-size:11px; color:var(--ink-soft); font-weight:600; border-bottom:2px solid var(--line);';
+      const td = 'padding:8px; text-align:right; font-family:\'IBM Plex Mono\',monospace; font-size:12.5px; border-bottom:1px solid var(--line);';
+      const showHpp = isJual && owner;
+      const summaryRow = (label, a, bold) => `<tr style="${bold ? 'font-weight:800; background:var(--paper);' : ''}">
+        <td style="padding:8px; font-size:12.5px; border-bottom:1px solid var(--line); ${bold ? 'font-weight:800;' : ''}">${label}</td>
+        <td style="${td}">${a.qty.toLocaleString('id-ID')}</td>
+        <td style="${td}">${rupiah(a.hasil)}</td>
+        ${showHpp ? `<td style="${td}">${rupiah(a.hpp)}</td><td style="${td} color:${untungColor(a.untung)};">${rupiah(a.untung)}</td>` : ''}
+      </tr>`;
+      const summary = `<div style="overflow-x:auto; margin-bottom:6px;"><table style="width:100%; border-collapse:collapse; min-width:${showHpp ? 520 : 320}px;">
+        <thead><tr><th style="${th} text-align:left;">Kategori kode barang</th><th style="${th}">Jumlah</th><th style="${th}">${isJual ? 'Hasil jual' : 'Total pembelian'}</th>${showHpp ? `<th style="${th}">Total HPP</th><th style="${th}">Total untung</th>` : ''}</tr></thead>
+        <tbody>
+          ${cats.map(k => summaryRow(escapeAttr(k.label), sumOf(lines.filter(l => l.kat === k.key)), false)).join('')}
+          ${ongkir > 0 ? `<tr><td style="padding:8px; font-size:12.5px; border-bottom:1px solid var(--line);">Ongkos kirim pembelian</td><td style="${td}"></td><td style="${td}">${rupiah(ongkir)}</td></tr>` : ''}
+          ${summaryRow('TOTAL SEMUA BARANG', { ...grand, hasil: grand.hasil + ongkir }, true)}
+        </tbody></table></div>`;
+      const lineHtml = l => {
+        const t = l.t, party = isJual ? (t.customerName || 'Penjualan') : (t.supplierName || 'Pembelian');
+        const price = Number(l.it.price) || 0;
+        return `<div class="bk-list-row" data-grp-txn="${t.id}" style="align-items:flex-start;">
+          <div class="bk-list-left">
+            <div class="nm">${escapeAttr(l.it.name)}${l.code ? ` <span class="mono" style="font-size:10px; font-weight:700; color:var(--accent3-ink); background:var(--accent3-bg); padding:2px 7px; border-radius:6px;">${escapeAttr(l.code)}</span>` : ''}${l.it.bonus ? ' <span class="bk-badge belum">Bonus</span>' : ''}</div>
+            <div class="sub">${escapeAttr(party)} &middot; ${new Date(t.createdAt).toLocaleDateString('id-ID')} &middot; ${l.qty.toLocaleString('id-ID')}${l.it.unit ? ' ' + escapeAttr(l.it.unit) : ''} &times; ${rupiah(price)}${t.kodeTransaksi ? ' &middot; ' + escapeAttr(t.kodeTransaksi) : ''}${t.linkedMinusOf ? ' &middot; barang minus laptop' : ''}</div>
+            ${showHpp ? `<div class="sub">HPP ${rupiah(l.hpp)} &middot; <span style="color:${untungColor(l.untung)}; font-weight:600;">Untung ${rupiah(l.untung)}</span></div>` : ''}
+          </div>
+          <div class="bk-list-amt ${isJual ? 'in' : 'out'}">${rupiah(l.hasil)}</div>
+          ${owner && !t.linkedMinusOf ? `<div class="bk-row-actions" style="display:flex; gap:4px;"><div class="bk-icon-btn grp-edit" data-id="${t.id}" title="Edit transaksi">&#9998;</div><div class="bk-icon-btn danger grp-del" data-id="${t.id}" title="Hapus transaksi">&times;</div></div>` : ''}
+        </div>`;
+      };
+      const sections = cats.map(k => {
+        const ls = lines.filter(l => l.kat === k.key).sort((a, b) => (b.t.createdAt || 0) - (a.t.createdAt || 0));
+        const a = sumOf(ls);
+        return `<div class="bk-section-title" style="margin-top:22px;">${escapeAttr(k.label)} <span style="font-weight:500; color:var(--ink-soft); font-size:12px;">&middot; ${ls.length} baris &middot; ${isJual ? 'hasil' : 'total'} ${rupiah(a.hasil)}${showHpp ? ` &middot; HPP ${rupiah(a.hpp)} &middot; untung ${rupiah(a.untung)}` : ''}</span></div>${ls.map(lineHtml).join('')}`;
+      }).join('');
+      const catatan = isJual
+        ? 'Tidak termasuk transaksi dari Service Laptop (lihat Service &rarr; Riwayat service) dan penyesuaian stok, jadi bisa lebih kecil dari kartu Pemasukan di atas.'
+        : 'Tidak termasuk penyesuaian stok (edit HPP/sisa stok), jadi bisa berbeda dari kartu Pengeluaran di atas.';
+      return `<div class="bk-section-title" style="margin-top:4px;">Ringkasan per kategori kode barang</div>${summary}<div class="bk-stok-note" style="margin-bottom:6px;">${catatan}</div>${sections}`;
     }
     const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total, 0);
     const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
@@ -3204,7 +3257,7 @@ window.storage = {
         <button class="bk-btn ghost" id="bk-riwayat-sortdir" style="padding:7px 12px; font-size:12px;">${riwayatSortDir==='desc' ? (riwayatSortBy==='nama' ? '&#9660; Z &rarr; A' : riwayatSortBy==='tanggal' ? '&#9660; Terbaru dulu' : '&#9660; Terbesar dulu') : (riwayatSortBy==='nama' ? '&#9650; A &rarr; Z' : riwayatSortBy==='tanggal' ? '&#9650; Terlama dulu' : '&#9650; Terkecil dulu')}</button>
       </div>
       <div class="bk-stok-note" style="margin-top:-6px;">Transaksi dari Service Laptop (jasa, DP, sparepart) tidak ditampilkan di sini karena sudah lengkap di tab <strong>Service &rarr; Riwayat service</strong>. Nilainya tetap terhitung di ringkasan &amp; laporan di atas.</div>
-      ${filtered.length && isOwner() ? `<div class="bk-select-bar">
+      ${filtered.length && isOwner() && riwayatFilter !== 'penjualan' && riwayatFilter !== 'pembelian' ? `<div class="bk-select-bar">
         <label class="bk-select-all">
           <input type="checkbox" id="bk-select-all" ${filtered.length && filtered.every(t=>selectedTxnIds.has(t.id)) ? 'checked' : ''} />
           Pilih semua (${filtered.length})
@@ -3242,6 +3295,8 @@ window.storage = {
         renderRiwayat();
       });
     });
+    bodyEl.querySelectorAll('.grp-edit').forEach(b => b.addEventListener('click', () => startEdit(b.dataset.id)));
+    bodyEl.querySelectorAll('.grp-del').forEach(b => b.addEventListener('click', () => removeTxn(b.dataset.id)));
     const selectAllBox = document.getElementById('bk-select-all');
     if (selectAllBox) selectAllBox.addEventListener('change', () => {
       if (selectAllBox.checked) filtered.forEach(t => selectedTxnIds.add(t.id));
@@ -3467,6 +3522,7 @@ window.storage = {
     const hppByTxn = {}, hppTerhapusByTxn = {}, revTerhapusByTxn = {};
     const penyesuaianHppByTxn = {}; // nilai stok yang dihapus/dikoreksi (BUKAN HPP penjualan)
     const prodCostByTxn = {};
+    const hppItemsByTxn = {}; // HPP per baris item penjualan (urutan sama dengan t.items)
     let totalRevenue = 0, totalHPP = 0, totalPenyesuaianHpp = 0;
 
     sorted.forEach(t => {
@@ -3499,9 +3555,11 @@ window.storage = {
         prodCostByTxn[t.id] = { batchCost, bahan: bahanDetail, hasil: hasilDetail };
       } else if (t.type === 'penjualan') {
         let txnHpp = 0, delHpp = 0, delRev = 0;
+        hppItemsByTxn[t.id] = [];
         t.items.forEach(i => {
           const qty = Number(i.qty) || 0;
           const c = qty * removeStock(i.name, qty);
+          hppItemsByTxn[t.id].push(c);
           txnHpp += c;
           if (isItemTerhapus(i.name)) { delHpp += c; delRev += qty * (Number(i.price) || 0); }
         });
@@ -3521,7 +3579,7 @@ window.storage = {
       }
     });
 
-    return { hppByTxn, hppTerhapusByTxn, revTerhapusByTxn, penyesuaianHppByTxn, totalPenyesuaianHpp, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf, getLastCycle: name => lastDone[keyOf(name)] || null };
+    return { hppByTxn, hppItemsByTxn, hppTerhapusByTxn, revTerhapusByTxn, penyesuaianHppByTxn, totalPenyesuaianHpp, prodCostByTxn, totalHPP, totalRevenue, labaKotor: totalRevenue - totalHPP, getCurrentUnitCost: unitCostOf, getLastCycle: name => lastDone[keyOf(name)] || null };
   }
 
   // Sama seperti computeHPP, tapi hanya memproses transaksi sampai tanggal cutoff tertentu.
