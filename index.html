@@ -1655,9 +1655,10 @@ window.storage = {
         </select>
       </div>` : ''}
       <div class="bk-stok-note" style="margin-top:-6px;">${isJual ? 'Ketik/scan Kode barang untuk otomatis mengisi nama sesuai stok yang sudah tercatat &mdash; hindari salah nama/beda kode.' : 'Isi Kode barang sekali saat pertama beli. Kode ini akan dipakai otomatis saat item ini dijual nanti (cocok untuk barcode scanner).'}</div>
-      ${!isEdit && isJual ? `<div class="bk-field" style="margin-bottom:14px;">
-        <label>Cari &amp; tambah barang dari Stok (ketik kode atau nama laptop)</label>
-        <input id="bk-stok-search" placeholder="Contoh: LPSTK-00072 atau Asus Vivobook" autocomplete="off" style="font-size:15px; padding:11px 14px;" />
+      ${!isEdit ? `<div class="bk-field" style="margin-bottom:14px;">
+        <label>Cari &amp; tambah barang dari Stok (ketik kode atau nama ${isJual ? 'laptop' : 'barang'})</label>
+        <input id="bk-stok-search" placeholder="${isJual ? 'Contoh: LPSTK-00072 atau Asus Vivobook' : 'Contoh: ssd sata 128 atau SPP-00012'}" autocomplete="off" style="font-size:15px; padding:11px 14px;" />
+        ${!isJual ? '<div style="font-size:11.5px; color:var(--ink-soft); margin-top:4px;">Untuk menambah stok barang yang sudah ada: pilih dari hasil pencarian, kodenya otomatis sama dengan yang di Stok, lalu isi jumlah &amp; harga beli. Barang baru cukup diisi manual di bawah.</div>' : ''}
         <div id="bk-stok-search-results" style="margin-top:6px;"></div>
       </div>` : ''}
       <div class="bk-numbered-row-wrap bk-item-head-wrap" style="margin-bottom:6px;">
@@ -1794,7 +1795,7 @@ window.storage = {
     });
 
     if (!isEdit) document.getElementById('bk-quick-btn').addEventListener('click', () => runQuickAi(type));
-    if (!isEdit && isJual) {
+    if (!isEdit) {
       const searchInput = document.getElementById('bk-stok-search');
       const resultsEl = document.getElementById('bk-stok-search-results');
       if (searchInput) {
@@ -1803,22 +1804,50 @@ window.storage = {
           if (!query) { resultsEl.innerHTML = ''; return; }
           const reg = getItemCodeRegistry();
           const stockMap = computeStock();
+          const tokens = query.split(/\s+/).filter(Boolean);
+          const hppNow = isJual ? null : computeHPP();
           const matches = Object.values(stockMap)
-            .filter(r => r.qty > 0 && !deletedStokNames.has(r.name.trim().toLowerCase()) && !/^Jasa Service Laptop/i.test(r.name))
+            // Penjualan: hanya yang masih ada stok. Pembelian: semua barang (termasuk yang sudah habis, karena justru mau ditambah lagi).
+            .filter(r => (isJual ? r.qty > 0 : true) && !deletedStokNames.has(r.name.trim().toLowerCase()) && !/^Jasa Service Laptop/i.test(r.name))
             .map(r => ({ name: r.name, unit: r.unit, qty: r.qty, code: reg.byName[r.name.trim().toLowerCase()] || '' }))
-            .filter(r => r.code.toLowerCase().includes(query) || r.name.toLowerCase().includes(query))
+            .filter(r => { const hay = (r.code + ' ' + r.name).toLowerCase(); return tokens.every(t => hay.includes(t)); })
             .sort((a,b) => a.name.localeCompare(b.name, 'id', { sensitivity: 'base' }))
             .slice(0, 8);
           resultsEl.innerHTML = matches.length
-            ? matches.map(m => `<div class="bk-stok-search-result" data-code="${escapeAttr(m.code)}">
+            ? matches.map(m => {
+                const last = !isJual && hppNow ? (hppNow.getCurrentUnitCost(m.name) || (hppNow.getLastCycle(m.name) || {}).unit || 0) : 0;
+                return `<div class="bk-stok-search-result" data-code="${escapeAttr(m.code)}" data-name="${escapeAttr(m.name)}">
                 <div class="ssr-code">${escapeAttr(m.code) || '(tanpa kode)'}</div>
                 <div class="ssr-name">${escapeAttr(m.name)}</div>
-                <div class="ssr-stok">Sisa stok: ${m.qty.toLocaleString('id-ID')} ${escapeAttr(m.unit||'')}</div>
-              </div>`).join('')
-            : '<div class="bk-empty" style="padding:10px 0;">Barang tidak ditemukan di Stok.</div>';
+                <div class="ssr-stok">Sisa stok: ${m.qty.toLocaleString('id-ID')} ${escapeAttr(m.unit||'')}${last ? ' &middot; HPP terakhir ' + rupiah(last) : ''}</div>
+              </div>`; }).join('')
+            : `<div class="bk-empty" style="padding:10px 0;">Barang tidak ditemukan di Stok.${isJual ? '' : ' Isi manual di bawah kalau ini barang baru.'}</div>`;
           resultsEl.querySelectorAll('.bk-stok-search-result').forEach(el => {
             el.addEventListener('click', () => {
               const code = el.dataset.code;
+              if (!isJual) {
+                // Pembelian: barang yang sudah ada di Stok dipakai ulang (kode & nama persis sama) supaya stoknya bertambah,
+                // bukan bikin kode baru. Kalau sudah ada barisnya di daftar, cukup arahkan ke baris itu.
+                const nm = el.dataset.name;
+                const dup = st.items.find(i => (i.name || '').trim().toLowerCase() === nm.trim().toLowerCase());
+                let target = dup;
+                if (!target) {
+                  target = st.items.find(i => !i.name && !i.code);
+                  if (!target) { target = blankItem(); st.items.push(target); }
+                  target.code = code || '';
+                  target.name = nm;
+                  const rec = reg.byName[nm.trim().toLowerCase()] ? reg.byNameFull[nm.trim().toLowerCase()] : null;
+                  const stRow = stockMap[nm.trim().toLowerCase()];
+                  target.unit = (rec && rec.unit) || (stRow && stRow.unit) || target.unit || 'pcs';
+                  if (rec && rec.spec) target.spec = rec.spec;
+                  target.codeManuallySet = true; // pakai kode yang sudah ada, jangan ditimpa deteksi kata kunci
+                }
+                searchInput.value = ''; resultsEl.innerHTML = '';
+                renderForm(type);
+                showToast(dup ? 'Barang ini sudah ada di daftar, tinggal isi jumlahnya.' : `Ditambahkan: ${nm}. Isi jumlah & harga beli.`);
+                setTimeout(() => { const r = document.querySelector(`#bk-items .bk-item-row[data-id="${target.id}"] .f-qty`); if (r) r.focus(); }, 30);
+                return;
+              }
               if (!code) return;
               // Isi ke baris item yang masih kosong kodenya kalau ada, kalau tidak tambah baris baru
               let target = st.items.find(i => !i.code);
@@ -1994,7 +2023,13 @@ window.storage = {
     };
   }
   function itemCodeDropdownOptionsHtml(selectedVal) {
-    return ITEM_KATEGORI.map(k => {
+    // Kode barang yang sudah ada (mis. dipilih lewat "Cari & tambah barang dari Stok") belum tentu termasuk
+    // 3 kode berikutnya per kategori, jadi ditambahkan sebagai pilihan sendiri supaya tetap tampil terpilih.
+    let extra = '';
+    if (selectedVal && !ITEM_KATEGORI.some(k => generateItemCodeSequence(k.prefix, 3).includes(selectedVal))) {
+      extra = `<optgroup label="Kode barang yang sudah ada"><option value="${escapeAttr(selectedVal)}" selected>${escapeAttr(selectedVal)}</option></optgroup>`;
+    }
+    return extra + ITEM_KATEGORI.map(k => {
       const opts = generateItemCodeSequence(k.prefix, 3);
       return `<optgroup label="${escapeAttr(k.label)} (${k.prefix})">
         ${opts.map(c => `<option value="${c}" ${selectedVal===c?'selected':''}>${c}</option>`).join('')}
