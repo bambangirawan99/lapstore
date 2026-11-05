@@ -1532,7 +1532,8 @@ window.storage = {
       </div>`;
     }
     const isIn = t.type === 'penjualan';
-    const names = t.items.map(i => i.name).join(', ');
+    const bonusItems = isIn ? t.items.filter(i => i.bonus) : [];
+    const names = t.items.filter(i => !i.bonus).map(i => i.name).join(', ') + (bonusItems.length ? ` <span style="color:var(--accent-ink);">&middot; Bonus: ${bonusItems.map(i => escapeAttr(i.name) + ' x' + i.qty).join(', ')}${t.showBonusOnNota ? '' : ' (tidak tampil di nota)'}</span>` : '') + (!isIn ? minusRiwayatHtml(t, hppData) : '');
     const badge = isIn ? `<span class="bk-badge ${t.paid===false?'belum':'lunas'}">${t.paid===false?'Belum lunas':'Lunas'}</span>` : '';
     const ongkirNote = (!isIn && Number(t.ongkosKirim) > 0) ? ` &middot; Ongkir ${rupiah(t.ongkosKirim)}` : '';
     let financialStripHtml = '';
@@ -1609,7 +1610,7 @@ window.storage = {
   }
 
   // ---------- FORM (pembelian / penjualan) ----------
-  function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '', serial: '', spec: '', codeManuallySet: false }; }
+  function blankItem() { return { id: uid(), name: '', qty: '', unit: 'pcs', price: '', code: '', serial: '', spec: '', codeManuallySet: false, bonus: false, minus: null }; }
   let formState = {
     pembelian: { items: [blankItem()], party: '', note: '', ongkosKirim: '' },
     penjualan: { items: [blankItem()], party: '', phone: '', paid: true, note: '', rekening: BANK_ACCOUNTS[0].id },
@@ -1677,6 +1678,10 @@ window.storage = {
         <div class="t-lbl">Total ${isJual ? 'penjualan' : 'pembelian'}</div>
         <div class="t-val">${rupiah(total)}</div>
       </div>
+      ${isJual && st.items.some(i => i.bonus) ? `<div class="bk-checkbox-row">
+        <input type="checkbox" id="bk-show-bonus" ${st.showBonusOnNota ? 'checked' : ''} />
+        <label for="bk-show-bonus" style="margin:0;">Tampilkan item bonus di nota (kalau tidak dicentang, bonus disembunyikan dari nota tapi tetap tercatat di Riwayat)</label>
+      </div>` : ''}
       ${isJual ? `<div class="bk-checkbox-row">
         <input type="checkbox" id="bk-paid" ${st.paid !== false ? 'checked' : ''} />
         <label for="bk-paid" style="margin:0;">Sudah dibayar lunas (kalau belum, dicatat sebagai piutang)</label>
@@ -1707,6 +1712,8 @@ window.storage = {
     if (isJual) {
       document.getElementById('bk-phone').addEventListener('input', e => st.phone = e.target.value);
       document.getElementById('bk-paid').addEventListener('change', e => st.paid = e.target.checked);
+      const showBonusChk = document.getElementById('bk-show-bonus');
+      if (showBonusChk) showBonusChk.addEventListener('change', e => st.showBonusOnNota = e.target.checked);
       document.getElementById('bk-rekening').addEventListener('change', e => st.rekening = e.target.value);
     } else {
       document.getElementById('bk-ongkir').addEventListener('input', e => { st.ongkosKirim = e.target.value; refreshTotal(type); });
@@ -1783,9 +1790,17 @@ window.storage = {
           }
         }
       });
-      row.querySelector('.f-qty').addEventListener('input', e => { item.qty = e.target.value; refreshTotal(type); });
+      row.querySelector('.f-qty').addEventListener('input', e => { item.qty = e.target.value; refreshTotal(type); updateMinusSummary(row, item); });
       row.querySelector('.f-unit') && row.querySelector('.f-unit').addEventListener('input', e => item.unit = e.target.value);
-      row.querySelector('.f-price').addEventListener('input', e => { item.price = e.target.value; refreshTotal(type); });
+      row.querySelector('.f-price').addEventListener('input', e => { item.price = e.target.value; refreshTotal(type); updateMinusSummary(row, item); });
+      const bonusChk = row.querySelector('.f-bonus');
+      if (bonusChk) bonusChk.addEventListener('change', e => {
+        item.bonus = e.target.checked;
+        if (item.bonus) { item.priceSebelumBonus = item.price; item.price = 0; }
+        else { item.price = item.priceSebelumBonus != null ? item.priceSebelumBonus : item.price; }
+        renderForm(type);
+      });
+      if (type === 'pembelian') wireMinusBlock(row, item, type);
       const rm = row.querySelector('.rm');
       if (rm) rm.addEventListener('click', () => {
         st.items = st.items.filter(i => i.id !== id);
@@ -1948,6 +1963,7 @@ window.storage = {
           }
         }
       }
+      if (item.bonus) item.price = 0;
       renderForm(type);
       showToast(`Kode ditemukan: ${match.name}`);
     }
@@ -2143,10 +2159,153 @@ window.storage = {
       ${nameField}
       <input class="f-qty" type="number" min="0" value="${escapeAttr(item.qty)}" placeholder="0" />
       <input class="f-unit" value="${escapeAttr(item.unit||'')}" placeholder="pcs/kg" ${isJual ? 'readonly style="background:var(--bg-page); color:var(--ink-soft); cursor:not-allowed;"' : ''} />
-      <input class="f-price" type="number" min="0" value="${escapeAttr(item.price)}" placeholder="0" />
+      <input class="f-price" type="number" min="0" value="${escapeAttr(item.price)}" placeholder="0" ${isJual && item.bonus ? 'readonly style="background:var(--bg-page); color:var(--ink-soft);"' : ''} />
       <div class="rm" title="Hapus item">&times;</div>
+      ${isJual ? `<label style="grid-column:1 / -1; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-soft); cursor:pointer;"><input type="checkbox" class="f-bonus" ${item.bonus ? 'checked' : ''} /> Bonus (gratis, harga Rp0, tetap mengurangi stok &amp; dihitung sebagai biaya)</label>` : ''}
+      ${type === 'pembelian' ? minusBlockHtml(item) : ''}
       </div>
     </div>`;
+  }
+
+
+  // ---------- BARANG MINUS LAPTOP (modal laptop = harga beli + barang minus yang diganti/ditambah) ----------
+  // Contoh: Asus X441U 1.300.000 + SSD 200.000 + Speaker 150.000 = MODAL 1.650.000 (HPP/unit laptop itu).
+  // Disimpan di item pembelian laptop (`minus`: kondisi + daftar barang). Supaya stok & HPP benar di semua laporan,
+  // saat disimpan dibuatkan transaksi tertaut (tersembunyi dari daftar Riwayat, dihapus bareng pembelian utamanya):
+  //  - Pembelian barang minus "Beli baru" (uang keluar, kode LPMTOKO), dan
+  //  - Produksi: laptop + barang minus -> laptop yang sama (HPP laptop naik, stok barang minus berkurang, kas tidak berubah).
+  function blankMinusLine() { return { id: uid(), source: 'stok', name: '', qty: '1', unit: 'pcs', code: '', price: '' }; }
+  function minusLineCost(l) {
+    const q = Number(l.qty) || 0;
+    if (l.source === 'beli') return q * (Number(l.price) || 0);
+    return q * (svcHppCached().getCurrentUnitCost(l.name) || 0);
+  }
+  function minusSummaryHtml(item) {
+    const lines = ((item.minus && item.minus.lines) || []).filter(l => (l.name || '').trim() && Number(l.qty) > 0);
+    const qty = Number(item.qty) || 0, price = Number(item.price) || 0;
+    const lap = qty * price;
+    const parts = lines.reduce((sum, l) => sum + minusLineCost(l), 0);
+    const modal = lap + parts;
+    const per = qty > 0 ? modal / qty : 0;
+    const rowH = (a, b, bold) => `<div style="display:flex; justify-content:space-between; gap:10px; ${bold ? 'font-weight:700; border-top:1px solid var(--line); margin-top:4px; padding-top:4px;' : ''}"><span>${a}</span><span style="font-family:'IBM Plex Mono',monospace;">${b}</span></div>`;
+    return rowH(escapeAttr(item.name || 'Laptop') + ' (harga beli)', rupiah(lap))
+      + lines.map(l => rowH('+ ' + escapeAttr(l.name) + (Number(l.qty) !== 1 ? ' x' + l.qty : '') + (l.source === 'stok' ? ' <i>(dari stok, estimasi HPP)</i>' : ''), rupiah(minusLineCost(l)))).join('')
+      + rowH('MODAL' + (qty > 1 ? ` (per unit: ${rupiah(per)})` : ' = HPP/unit'), rupiah(modal), true);
+  }
+  function minusBlockHtml(item) {
+    const m = item.minus;
+    const open = !!(m && m.open);
+    const nLines = m && m.lines ? m.lines.length : 0;
+    const lineH = l => `<div class="minus-line" data-lid="${l.id}" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; align-items:center;">
+        <select class="ml-source" style="flex:0 0 135px; border:1.5px solid var(--line); border-radius:8px; padding:7px 8px; font-size:12px; background:#fff;">
+          <option value="stok" ${l.source === 'stok' ? 'selected' : ''}>Ambil dari stok</option>
+          <option value="beli" ${l.source === 'beli' ? 'selected' : ''}>Beli baru (uang keluar)</option>
+        </select>
+        <input class="ml-name" list="bk-item-names" value="${escapeAttr(l.name)}" placeholder="Nama barang minus (mis. SSD 128)" style="flex:1 1 170px; min-width:0;" />
+        <input class="ml-qty" type="number" min="0" step="any" value="${escapeAttr(l.qty)}" placeholder="Jml" style="flex:0 0 64px;" />
+        <input class="ml-unit" value="${escapeAttr(l.unit || '')}" placeholder="Satuan" style="flex:0 0 70px;" />
+        <input class="ml-price" type="number" min="0" value="${escapeAttr(l.price)}" placeholder="${l.source === 'stok' ? 'HPP otomatis' : 'Harga beli'}" ${l.source === 'stok' ? 'disabled' : ''} style="flex:0 0 110px;" />
+        <div class="ml-rm" title="Hapus" style="cursor:pointer; color:var(--money-out); font-size:16px; padding:0 4px;">&times;</div>
+      </div>`;
+    return `<div class="minus-block" style="grid-column:1 / -1; margin-top:4px;">
+      <button type="button" class="bk-btn ghost minus-toggle" style="padding:4px 10px; font-size:12px;">${open ? '&#9662;' : '+'} Barang minus / tambahan modal${nLines ? ` (${nLines})` : ''}${m && m.kondisi ? ' &middot; ada catatan kondisi' : ''}</button>
+      ${open ? `<div class="minus-body" style="margin-top:8px; padding:10px; border:1.5px dashed var(--accent); border-radius:10px; background:var(--accent-bg);">
+        <input class="minus-kondisi" value="${escapeAttr(m.kondisi || '')}" placeholder="Kondisi / minus laptop, mis. baterai health turun, speaker mati" style="width:100%; margin-bottom:8px;" />
+        ${(m.lines || []).map(lineH).join('')}
+        <button type="button" class="bk-btn ghost minus-add" style="padding:4px 10px; font-size:12px; margin-bottom:8px;">+ Tambah barang minus</button>
+        <div class="minus-summary" style="font-size:12.5px; padding:8px 10px; background:var(--paper); border:1px solid var(--line); border-radius:8px;">${minusSummaryHtml(item)}</div>
+        <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">&bull; <b>Ambil dari stok</b>: barang minus sudah ada di Stok (mis. kode LPMTOKO), stoknya berkurang dan nilainya pindah ke modal laptop. &bull; <b>Beli baru</b>: dicatat sebagai pembelian (uang keluar) otomatis dengan kode LPMTOKO, langsung masuk modal laptop. &bull; Bisa ditambah atau diubah lagi nanti lewat tombol edit di Riwayat.</div>
+      </div>` : ''}
+    </div>`;
+  }
+  function updateMinusSummary(row, item) {
+    const el = row && row.querySelector('.minus-summary');
+    if (el) el.innerHTML = minusSummaryHtml(item);
+  }
+  function wireMinusBlock(row, item, type) {
+    const tg = row.querySelector('.minus-toggle');
+    if (!tg) return;
+    tg.addEventListener('click', () => {
+      if (!item.minus) item.minus = { open: true, kondisi: '', lines: [] };
+      else item.minus.open = !item.minus.open;
+      renderForm(type);
+    });
+    if (!item.minus || !item.minus.open) return;
+    const m = item.minus;
+    row.querySelector('.minus-kondisi').addEventListener('input', e => m.kondisi = e.target.value);
+    row.querySelector('.minus-add').addEventListener('click', () => { m.lines.push(blankMinusLine()); renderForm(type); });
+    row.querySelectorAll('.minus-line').forEach(lr => {
+      const l = m.lines.find(x => x.id === lr.dataset.lid);
+      if (!l) return;
+      lr.querySelector('.ml-source').addEventListener('change', e => { l.source = e.target.value; if (l.source === 'stok') l.price = ''; renderForm(type); });
+      lr.querySelector('.ml-name').addEventListener('input', e => { l.name = e.target.value; updateMinusSummary(row, item); });
+      lr.querySelector('.ml-name').addEventListener('change', e => {
+        l.name = e.target.value.trim();
+        const reg = getItemCodeRegistry(); const key = l.name.toLowerCase();
+        const st = computeStock()[key];
+        if (reg.byName[key]) l.code = reg.byName[key];
+        const rec = reg.byNameFull[key];
+        if (rec && rec.unit) l.unit = rec.unit; else if (st && st.unit) l.unit = st.unit;
+        renderForm(type);
+      });
+      lr.querySelector('.ml-qty').addEventListener('input', e => { l.qty = e.target.value; updateMinusSummary(row, item); });
+      lr.querySelector('.ml-unit').addEventListener('input', e => l.unit = e.target.value);
+      lr.querySelector('.ml-price').addEventListener('input', e => { l.price = e.target.value; updateMinusSummary(row, item); });
+      lr.querySelector('.ml-rm').addEventListener('click', () => { m.lines = m.lines.filter(x => x.id !== l.id); renderForm(type); });
+    });
+  }
+  function minusSigOf(items) {
+    return JSON.stringify((items || []).map(i => [String(i.name || '').trim().toLowerCase(), Number(i.qty) || 0,
+      ((i.minus && i.minus.lines) || []).map(l => [l.source, String(l.name || '').trim().toLowerCase(), Number(l.qty) || 0, l.source === 'beli' ? Number(l.price) || 0 : 0])]));
+  }
+  // Rincian modal di Riwayat pembelian: kondisi/minus + rincian + MODAL (HPP/unit hasil perhitungan sistem).
+  function minusRiwayatHtml(t, hppData) {
+    const withMinus = (t.items || []).filter(i => i.minus && ((i.minus.lines || []).length || i.minus.kondisi));
+    if (!withMinus.length) return '';
+    return withMinus.map(i => {
+      const prod = txns.find(x => x.linkedMinusOf === t.id && x.type === 'produksi' && (x.hasil || [])[0] && (x.hasil[0].name || '').trim().toLowerCase() === (i.name || '').trim().toLowerCase());
+      const info = prod && hppData ? hppData.prodCostByTxn[prod.id] : null;
+      const partsText = (i.minus.lines || []).map(l => {
+        const b = info && (info.bahan || []).find(x => (x.name || '').trim().toLowerCase() === (l.name || '').trim().toLowerCase());
+        const cost = b ? b.cost : (l.source === 'beli' ? (Number(l.qty) || 0) * (Number(l.price) || 0) : null);
+        return `${escapeAttr(l.name)}${Number(l.qty) !== 1 ? ' x' + l.qty : ''}${cost != null ? ' ' + rupiah(cost) : ''}`;
+      }).join(', ');
+      const modal = info && info.hasil && info.hasil[0] ? info.hasil[0].unitCost : null;
+      return `<div style="margin-top:3px; color:var(--accent-ink);">&#9888; ${escapeAttr(i.name)}: ${i.minus.kondisi ? escapeAttr(i.minus.kondisi) : 'barang minus'}${partsText ? ' &middot; tambahan: ' + partsText : ''}${modal != null ? ` &middot; <b>MODAL ${rupiah(modal)}/unit</b>` : ''}</div>`;
+    }).join('');
+  }
+  // Buat ulang transaksi tertaut (pembelian barang minus + produksi) dari item pembelian utama.
+  async function syncMinusTxns(mainTxn, oldLinkedIds) {
+    for (const id of oldLinkedIds) {
+      try { await deleteTxnFromStore(id); } catch (e) { /* mungkin sudah terhapus */ }
+      txns = txns.filter(x => x.id !== id);
+    }
+    let k = 0; const base = Date.now();
+    for (const it of mainTxn.items) {
+      const lines = (it.minus && it.minus.lines) || [];
+      if (!lines.length) continue;
+      const buys = lines.filter(l => l.source === 'beli');
+      if (buys.length) {
+        const buyTxn = {
+          id: uid(), type: 'pembelian', kodeTransaksi: generateTxnCode('pembelian'),
+          items: buys.map(l => ({ name: l.name, qty: Number(l.qty), unit: l.unit || '', price: Number(l.price) || 0, code: l.code || '', serial: '', spec: '' })),
+          total: buys.reduce((sum, l) => sum + (Number(l.qty) || 0) * (Number(l.price) || 0), 0),
+          customerName: '', customerPhone: '', supplierName: mainTxn.supplierName || '',
+          linkedMinusOf: mainTxn.id, minusNote: 'Barang minus untuk ' + it.name,
+          createdAt: base + (k++), createdBy: currentUser ? currentUser.email : null,
+        };
+        await saveTxn(buyTxn); txns.unshift(buyTxn);
+      }
+      const prod = {
+        id: uid(), type: 'produksi',
+        bahan: [{ name: it.name, qty: it.qty, unit: it.unit || '', code: it.code || '' }, ...lines.map(l => ({ name: l.name, qty: Number(l.qty), unit: l.unit || '', code: l.code || '' }))],
+        hasil: [{ name: it.name, qty: it.qty, unit: it.unit || '', code: it.code || '' }],
+        total: 0, linkedMinusOf: mainTxn.id, minusNote: 'Modal laptop + barang minus',
+        createdAt: base + (k++), createdBy: currentUser ? currentUser.email : null,
+      };
+      await saveTxn(prod); txns.unshift(prod);
+    }
+    invalidateStockCaches();
   }
 
   function refreshTotal(type) {
@@ -2283,6 +2442,53 @@ window.storage = {
       }
     }
 
+    // ----- Barang minus laptop (pembelian) -----
+    let minusOldLinked = [], minusChanged = false;
+    if (type === 'pembelian') {
+      const oldTxnM = isEdit ? txns.find(x => x.id === editingTxnId) : null;
+      minusOldLinked = oldTxnM ? txns.filter(x => x.linkedMinusOf === oldTxnM.id).map(x => x.id) : [];
+      const regM = getItemCodeRegistry();
+      const nextCodeM = makeLocalItemCodeCounter();
+      const errM = [];
+      validItems.forEach(it => {
+        it.minusFinal = null;
+        const m = it.minus;
+        if (!m) return;
+        const kondisi = (m.kondisi || '').trim();
+        const lines = (m.lines || []).filter(l => (l.name || '').trim() || Number(l.qty) > 0 || l.price !== '');
+        const okLines = [];
+        lines.forEach(l => {
+          const nm = (l.name || '').trim();
+          if (!nm) { errM.push(`${it.name}: ada baris barang minus yang namanya kosong.`); return; }
+          if (!(Number(l.qty) > 0)) { errM.push(`${it.name}: jumlah "${nm}" harus lebih dari 0.`); return; }
+          if (l.source === 'beli' && (l.price === '' || !(Number(l.price) >= 0))) { errM.push(`${it.name}: isi harga beli "${nm}".`); return; }
+          const key = nm.toLowerCase();
+          let code = (l.code || '').trim() || regM.byName[key] || '';
+          if (!code && l.source === 'beli') code = nextCodeM('LPMTOKO');
+          okLines.push({ source: l.source, name: nm, qty: Number(l.qty), unit: (l.unit || '').trim(), code, price: l.source === 'beli' ? Number(l.price) : undefined });
+        });
+        if (kondisi || okLines.length) it.minusFinal = { kondisi, lines: okLines };
+      });
+      if (errM.length) { errEl.style.display = 'block'; errEl.textContent = errM[0]; return; }
+      const oldSig = oldTxnM ? minusSigOf(oldTxnM.items) : '[]';
+      const newSig = minusSigOf(validItems.map(i => ({ name: i.name, qty: i.qty, minus: i.minusFinal })));
+      const hasAnyLines = validItems.some(i => i.minusFinal && i.minusFinal.lines.length);
+      minusChanged = oldSig !== newSig;
+      if (minusChanged && hasAnyLines) {
+        // Cek kecukupan stok barang minus "ambil dari stok" dan keberadaan laptopnya (belum terjual), tanpa transaksi tertaut lama.
+        const exMap = computeStockExcluding([...(isEdit ? [editingTxnId] : []), ...minusOldLinked]);
+        const need = {};
+        validItems.forEach(it => ((it.minusFinal && it.minusFinal.lines) || []).filter(l => l.source === 'stok').forEach(l => { const k2 = l.name.toLowerCase(); need[k2] = (need[k2] || 0) + l.qty; }));
+        const kurangM = [];
+        Object.keys(need).forEach(k2 => { const av = getAvailableQty(exMap, k2); if (need[k2] > av) kurangM.push(`${k2} (stok tersisa ${av}, diminta ${need[k2]})`); });
+        validItems.filter(it => it.minusFinal && it.minusFinal.lines.length).forEach(it => {
+          const sameQty = validItems.filter(x => x.name.trim().toLowerCase() === it.name.trim().toLowerCase()).reduce((a, x) => a + Number(x.qty), 0);
+          if (getAvailableQty(exMap, it.name) + sameQty < sameQty) kurangM.push(`${it.name} sudah terjual, jadi barang minusnya tidak bisa ditambah/diubah lagi`);
+        });
+        if (kurangM.length) { errEl.style.display = 'block'; errEl.textContent = `Stok tidak cukup untuk barang minus: ${kurangM.join('; ')}.`; return; }
+      }
+    }
+
     const itemsTotal = validItems.reduce((s,i) => s + Number(i.qty) * Number(i.price), 0);
     const ongkosKirim = type === 'pembelian' ? (Number(st.ongkosKirim) || 0) : 0;
     const total = itemsTotal + ongkosKirim;
@@ -2291,8 +2497,9 @@ window.storage = {
       id: isEdit ? editingTxnId : uid(),
       type,
       kodeTransaksi: isEdit && existing ? existing.kodeTransaksi : generateTxnCode(type),
-      items: validItems.map(i => ({ name: i.name, qty: Number(i.qty), unit: i.unit || '', price: Number(i.price), code: (i.code||'').trim(), serial: (i.serial||'').trim(), spec: (i.spec||'').trim() })),
+      items: validItems.map(i => { const o = { name: i.name, qty: Number(i.qty), unit: i.unit || '', price: (type === 'penjualan' && i.bonus) ? 0 : Number(i.price), code: (i.code||'').trim(), serial: (i.serial||'').trim(), spec: (i.spec||'').trim() }; if (type === 'penjualan' && i.bonus) o.bonus = true; if (type === 'pembelian' && i.minusFinal) o.minus = i.minusFinal; return o; }),
       total,
+      showBonusOnNota: (type === 'penjualan' && validItems.some(i => i.bonus) && st.showBonusOnNota) ? true : undefined,
       ongkosKirim: type === 'pembelian' ? ongkosKirim : undefined,
       customerName: type === 'penjualan' ? st.party : '',
       customerPhone: type === 'penjualan' ? st.phone : '',
@@ -2310,6 +2517,7 @@ window.storage = {
     if (otherBtn) otherBtn.disabled = true;
     try {
       await saveTxn(txn);
+      if (type === 'pembelian' && minusChanged) await syncMinusTxns(txn, minusOldLinked);
       if (type === 'pembelian') await autoReviveStokNames(validItems.map(i => i.name));
       if (isEdit) {
         const idx = txns.findIndex(x => x.id === editingTxnId);
@@ -2359,8 +2567,8 @@ window.storage = {
       return;
     }
     formState[t.type] = t.type === 'penjualan'
-      ? { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '' })), party: t.customerName || '', phone: t.customerPhone || '', paid: t.paid !== false, note: '', rekening: t.rekening || BANK_ACCOUNTS[0].id }
-      : { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '' })), party: t.supplierName || '', note: '', ongkosKirim: t.ongkosKirim || '' };
+      ? { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '', bonus: !!i.bonus })), party: t.customerName || '', phone: t.customerPhone || '', paid: t.paid !== false, note: '', rekening: t.rekening || BANK_ACCOUNTS[0].id, showBonusOnNota: !!t.showBonusOnNota }
+      : { items: t.items.map(i => ({ id: uid(), name: i.name, qty: i.qty, unit: i.unit || '', price: i.price, code: i.code || '', minus: i.minus ? { open: true, kondisi: i.minus.kondisi || '', lines: (i.minus.lines || []).map(l => ({ id: uid(), source: l.source, name: l.name, qty: l.qty, unit: l.unit || '', code: l.code || '', price: l.price != null ? l.price : '' })) } : null })), party: t.supplierName || '', note: '', ongkosKirim: t.ongkosKirim || '' };
     activeTab = t.type;
     renderTabs(); renderBody();
   }
@@ -2411,8 +2619,11 @@ window.storage = {
     if (!t) return;
     const linkedSvc = findLinkedService(id);
     const pairTxn = t.pairTxnId ? txns.find(x => x.id === t.pairTxnId) : null;
+    const minusLinked = txns.filter(x => x.linkedMinusOf === id);
     let confirmMsg;
-    if (linkedSvc) {
+    if (minusLinked.length) {
+      confirmMsg = 'Pembelian ini punya catatan barang minus. Menghapusnya juga menghapus transaksi tertaut (pembelian barang minus & konversi stok ke modal laptop). Lanjutkan?';
+    } else if (linkedSvc) {
       confirmMsg = `Transaksi ini terhubung dengan data Service Laptop atas nama "${linkedSvc.customerName}" (${linkedSvc.device}). Menghapusnya akan mengembalikan status service tersebut secara otomatis. Lanjutkan hapus?`;
     } else if (pairTxn) {
       const pairLabel = pairTxn.type === 'pembelian' ? 'Pembelian' : 'Penjualan';
@@ -2428,6 +2639,11 @@ window.storage = {
         trashEntriesCache = null;
         await deleteTxnFromStore(id);
         txns = txns.filter(x => x.id !== id);
+        for (const lk of minusLinked) {
+          try { await deleteTxnFromStore(lk.id); } catch (e) { /* mungkin sudah terhapus */ }
+          txns = txns.filter(x => x.id !== lk.id);
+        }
+        invalidateStockCaches();
         if (pairTxn) {
           try { await deleteTxnFromStore(pairTxn.id); } catch (e) { /* mungkin sudah terhapus */ }
           txns = txns.filter(x => x.id !== pairTxn.id);
@@ -2509,9 +2725,10 @@ window.storage = {
   function receiptThermalLines(t, storeName) {
     const L = [];
     L.push(...thermalCenter(storeName)); L.push(...thermalCenter('Resi penjualan')); L.push(THERMAL_LINE);
-    (t.items || []).forEach(i => {
+    notaItems(t).forEach(i => {
       L.push(...thermalWrap(i.name, THERMAL_W));
-      L.push(...thermalRow(`${i.qty}${i.unit ? ' ' + i.unit : ''} x ${rupiah(i.price)}`, rupiah(i.qty * i.price)));
+      if (i.bonus) L.push(...thermalRow(`${i.qty}${i.unit ? ' ' + i.unit : ''}`, 'BONUS'));
+      else L.push(...thermalRow(`${i.qty}${i.unit ? ' ' + i.unit : ''} x ${rupiah(i.price)}`, rupiah(i.qty * i.price)));
     });
     L.push(THERMAL_LINE);
     L.push(...thermalRow('TOTAL', rupiah(t.total)));
@@ -2565,14 +2782,17 @@ window.storage = {
     return L;
   }
 
+  // Item bonus disembunyikan dari nota kecuali transaksinya ditandai "tampilkan bonus di nota".
+  function notaItems(t) { return (t.items || []).filter(i => !i.bonus || t.showBonusOnNota); }
   function receiptText(t, storeName) {
     const lines = [];
     lines.push(storeName);
     lines.push('='.repeat(24));
     lines.push(`Hallo pelanggan ${storeName} yang berbahagia, berikut adalah resi belanja Anda:`);
     lines.push('');
-    t.items.forEach(i => {
+    notaItems(t).forEach(i => {
       const satuan = i.unit ? i.unit : 'unit';
+      if (i.bonus) { lines.push(`${i.name} x${i.qty}${i.unit?(' '+i.unit):''} = BONUS`); return; }
       lines.push(`${i.name} x${i.qty}${i.unit?(' '+i.unit):''} @ ${rupiah(i.price)}/${satuan} = ${rupiah(i.qty*i.price)}`);
     });
     lines.push('-'.repeat(24));
@@ -2599,9 +2819,9 @@ window.storage = {
             <div class="r-sub">Resi penjualan</div>
             <hr/>
             <div style="font-size:11px; line-height:1.6; margin-bottom:10px;">Hallo pelanggan ${storeName} yang berbahagia, berikut adalah resi belanja Anda:</div>
-            ${t.items.map(i => `<div class="r-item">
-              <div class="r-item-top"><span>${i.name}</span><span>${rupiah(i.qty*i.price)}</span></div>
-              <div class="r-item-sub">x${i.qty}${i.unit?(' '+i.unit):''} @ ${rupiah(i.price)}/${i.unit||'unit'}</div>
+            ${notaItems(t).map(i => `<div class="r-item">
+              <div class="r-item-top"><span>${i.name}</span><span>${i.bonus ? 'BONUS' : rupiah(i.qty*i.price)}</span></div>
+              <div class="r-item-sub">x${i.qty}${i.unit?(' '+i.unit):''}${i.bonus ? '' : ` @ ${rupiah(i.price)}/${i.unit||'unit'}`}</div>
             </div>`).join('')}
             <hr/>
             <div class="r-total"><span>Total</span><span>${rupiah(t.total)}</span></div>
@@ -2899,7 +3119,7 @@ window.storage = {
     // TIDAK ditampilkan di daftar Riwayat ini karena sudah bisa dilihat lengkap di tab
     // Service > Riwayat service. Total keuangan di atas (Pemasukan, HPP, Laba Kotor, PDF/Excel)
     // TETAP menghitung transaksi ini seperti biasa - yang disaring cuma daftar barisnya saja.
-    const filteredPreSearch = byMonth.filter(t => (riwayatFilter === 'semua' ? true : t.type === riwayatFilter) && !findLinkedService(t.id));
+    const filteredPreSearch = byMonth.filter(t => (riwayatFilter === 'semua' ? true : t.type === riwayatFilter) && !findLinkedService(t.id) && !t.linkedMinusOf);
     const filtered = filteredPreSearch.filter(t => searchMatch(riwayatSearchQuery, t.kodeTransaksi, t.customerName, t.supplierName, (t.items||[]).map(i=>i.name).join(' '), (t.bahan||[]).map(i=>i.name).join(' '), (t.hasil||[]).map(i=>i.name).join(' ')));
     // Urutan daftar: Tanggal / Hasil jual (nominal transaksi) / Nama penjual-pembeli (pelanggan atau supplier).
     const namaPihakTxn = t => ((t.type === 'penjualan' ? t.customerName : t.supplierName) || '').trim().toLowerCase();
@@ -3045,8 +3265,11 @@ window.storage = {
           idSet.add(t.pairTxnId);
         }
       });
-      const allIds = [...idsArr, ...pairIdsToAdd];
+      const minusIdsToAdd = [];
+      idsArr.forEach(id => txns.filter(x => x.linkedMinusOf === id).forEach(x => { if (!idSet.has(x.id)) { idSet.add(x.id); minusIdsToAdd.push(x.id); } }));
+      const allIds = [...idsArr, ...pairIdsToAdd, ...minusIdsToAdd];
       const pairNote = pairIdsToAdd.length ? ` Termasuk ${pairIdsToAdd.length} transaksi pasangan migrasi yang ikut dihapus otomatis supaya tetap balance.` : '';
+      if (minusIdsToAdd.length) pairIdsToAdd.push(...[]);
       const confirmMsg = anyLinked
         ? `Hapus ${idsArr.length} transaksi terpilih? Beberapa di antaranya terhubung ke data Service Laptop dan statusnya akan otomatis dikembalikan.${pairNote} Tindakan ini tidak bisa dibatalkan.`
         : `Hapus ${idsArr.length} transaksi terpilih?${pairNote} Tindakan ini tidak bisa dibatalkan.`;
@@ -3114,6 +3337,7 @@ window.storage = {
   // Sama seperti computeStock, tapi mengabaikan satu transaksi tertentu (dipakai saat validasi stok pada mode edit,
   // supaya kuantitas transaksi yang sedang diedit itu sendiri tidak ikut menghalangi/menghitung dobel).
   function computeStockExcluding(txnId) {
+    const exSet = new Set(Array.isArray(txnId) ? txnId : [txnId]);
     const stockMap = {};
     function addQty(name, unit, delta) {
       const key = (name || '').trim().toLowerCase();
@@ -3123,7 +3347,7 @@ window.storage = {
       if (unit) stockMap[key].unit = unit;
     }
     txns.forEach(t => {
-      if (t.id === txnId) return;
+      if (exSet.has(t.id)) return;
       if (t.type === 'pembelian') {
         t.items.forEach(i => addQty(i.name, i.unit, Number(i.qty) || 0));
       } else if (t.type === 'penjualan') {
@@ -7481,7 +7705,7 @@ window.storage = {
     const tgl = new Date(t.createdAt);
     const tglLabel = tgl.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) + ' ' + tgl.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const marginL = 12, marginR = pageW - 12;
-    const items = t.items || [];
+    const items = notaItems(t);
     const N = Math.max(1, items.length);
 
     // Hitung dulu berapa ruang yang PASTI dipakai bagian tetap (header, info, kepada, tabel head,
