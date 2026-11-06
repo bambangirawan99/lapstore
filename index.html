@@ -7600,6 +7600,7 @@ window.storage = {
       transferRekening.forEach(tr => aoa.push([bankAccountLabel(tr.dariRekening), bankAccountLabel(tr.keRekening), tr.jumlah, tr.keterangan || '-', new Date(tr.createdAt).toLocaleDateString('id-ID')]));
     }
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(aoa), 'Per Rekening');
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(masukRekeningAoa()), 'Masuk per Bulan');
     XLSX.writeFile(wb, 'laporan-per-rekening.xlsx');
   }
 
@@ -7760,6 +7761,7 @@ window.storage = {
       rekAoa.push([]);
     });
     XLSX.utils.book_append_sheet(wb, sheetFromAOA(rekAoa), 'Per Rekening');
+    XLSX.utils.book_append_sheet(wb, sheetFromAOA(masukRekeningAoa()), 'Masuk Rekening per Bulan');
 
     XLSX.writeFile(wb, `laporan-keuangan-lengkap-${mKey === 'semua' ? 'semua' : mKey}.xlsx`);
   }
@@ -10273,11 +10275,51 @@ window.storage = {
     if (excelBtn) excelBtn.addEventListener('click', () => downloadStokBulananExcel(excelBtn.dataset.month));
   }
 
+  // Uang masuk per rekening per bulan: penjualan & service yang sudah lunas, dikelompokkan menurut rekening tujuan
+  // pembayaran dan bulan transaksi. Yang tidak punya rekening dihitung "Tunai / tanpa rekening". Penyesuaian stok
+  // tidak dihitung; pemindahan dana antar rekening dan koreksi kas tidak termasuk (bukan uang masuk dari pelanggan).
+  function computeMasukRekeningPerBulan() {
+    const rows = {};
+    const kosong = () => { const o = { tunai: 0, total: 0, n: 0 }; BANK_ACCOUNTS.forEach(a => o[a.id] = 0); return o; };
+    txns.forEach(t => {
+      if (t.type !== 'penjualan' || t.paid === false || isPenyesuaianStokTxn(t)) return;
+      const mk = monthKey(t.createdAt);
+      if (!rows[mk]) rows[mk] = kosong();
+      const r = rows[mk], amt = Number(t.total) || 0;
+      const key = (t.rekening && r[t.rekening] !== undefined) ? t.rekening : 'tunai';
+      r[key] += amt; r.total += amt; r.n += 1;
+    });
+    const months = Object.keys(rows).sort().reverse();
+    const grand = kosong();
+    months.forEach(m => { Object.keys(grand).forEach(k => grand[k] += rows[m][k]); });
+    return { months, rows, grand };
+  }
+  function masukRekeningAoa() {
+    const d = computeMasukRekeningPerBulan();
+    const head = ['Bulan', ...BANK_ACCOUNTS.map(a => a.label), 'Tunai / tanpa rekening', 'Total uang masuk', 'Jumlah transaksi'];
+    const line = r => [...BANK_ACCOUNTS.map(a => r[a.id]), r.tunai, r.total, r.n];
+    return [['UANG MASUK PER REKENING PER BULAN'], head, ...d.months.map(m => [monthLabel(m), ...line(d.rows[m])]), ['TOTAL', ...line(d.grand)]];
+  }
+  function masukRekeningHtml() {
+    const d = computeMasukRekeningPerBulan();
+    if (!d.months.length) return '';
+    const th = 'padding:7px 8px; text-align:right; font-size:11px; color:var(--ink-soft); font-weight:600; border-bottom:2px solid var(--line); white-space:nowrap;';
+    const td = bold => `padding:8px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12.5px; border-bottom:1px solid var(--line); white-space:nowrap; ${bold ? 'font-weight:800; background:var(--paper);' : ''}`;
+    const cell = (v, bold) => `<td style="${td(bold)}">${v ? rupiah(v) : '<span style="color:var(--ink-soft);">-</span>'}</td>`;
+    const row = (label, r, bold) => `<tr><td style="padding:8px; font-size:12.5px; border-bottom:1px solid var(--line); white-space:nowrap; ${bold ? 'font-weight:800; background:var(--paper);' : 'font-weight:600;'}">${label}</td>${BANK_ACCOUNTS.map(a => cell(r[a.id], bold)).join('')}${cell(r.tunai, bold)}<td style="${td(true)}">${rupiah(r.total)}</td><td style="${td(bold)}">${r.n}</td></tr>`;
+    return `<div class="bk-section-title">Uang masuk per rekening per bulan</div>
+      <div class="bk-stok-note" style="margin-bottom:8px;">Dari penjualan &amp; service yang sudah lunas, menurut rekening tujuan pembayaran. Pemindahan dana antar rekening tidak dihitung. Geser tabel ke samping kalau tidak muat.</div>
+      <div style="overflow-x:auto; margin-bottom:22px;"><table style="width:100%; border-collapse:collapse; min-width:${200 + (BANK_ACCOUNTS.length + 3) * 110}px;">
+        <thead><tr><th style="${th} text-align:left;">Bulan</th>${BANK_ACCOUNTS.map(a => `<th style="${th}">${escapeAttr(a.label)}</th>`).join('')}<th style="${th}">Tunai / tanpa rekening</th><th style="${th}">Total masuk</th><th style="${th}">Transaksi</th></tr></thead>
+        <tbody>${d.months.map(m => row(monthLabel(m), d.rows[m], false)).join('')}${row('TOTAL', d.grand, true)}</tbody></table></div>`;
+  }
+
   function renderRekeningHtml() {
     const byAccount = computeRekeningReport();
     return `
       <div class="bk-stok-note">Saldo dihitung dari penjualan/service yang sudah lunas dan tercatat dibayar ke rekening terkait, ditambah/dikurangi pemindahan dana antar rekening di bawah.</div>
       <button class="bk-btn ghost" id="bk-rekening-excel" style="margin-bottom:16px;">Unduh Excel</button>
+      ${masukRekeningHtml()}
 
       <div class="bk-ai-box" style="margin-bottom:20px;">
         <div class="ai-head"><div class="ai-title">Catat Pemindahan Dana Antar Rekening</div></div>
