@@ -662,6 +662,7 @@ window.storage = {
   let riwayatMonth = 'semua';
   let riwayatSearchQuery = '';
   let riwayatKat = 'semua'; // sub-filter kategori kode barang di Riwayat > Penjualan
+  let riwayatKatBeli = 'semua'; // sama, untuk Riwayat > Pembelian
   let riwayatSortBy = 'tanggal'; // tanggal | hasil | nama
   let riwayatSortDir = 'desc'; // desc = terbaru/terbesar/Z-A, asc = terlama/terkecil/A-Z
   let editingTxnId = null;
@@ -3168,22 +3169,24 @@ window.storage = {
       if (!linesAll.length) return '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>';
       // Penjualan: tombol kategori (seperti halaman Stok) supaya tidak scroll panjang. LPMTOKO & LPSRV hanya muncul kalau ada datanya.
       let katBar = '';
-      if (isJual) {
+      {
         const adaKat = key => linesAll.some(l => l.kat === key);
         const tampil = [['laptop', true], ['acc', true], ['spp', true], ['mtoko', adaKat('mtoko')], ['servis', adaKat('servis')]].filter(x => x[1]).map(x => x[0]);
-        if (riwayatKat !== 'semua' && !tampil.includes(riwayatKat)) riwayatKat = 'semua';
-        const btn = (key, label) => `<div class="bk-chip ${riwayatKat === key ? 'active' : ''}" data-rk="${key}">${label}</div>`;
+        let curKat = isJual ? riwayatKat : riwayatKatBeli;
+        if (curKat !== 'semua' && !tampil.includes(curKat)) { curKat = 'semua'; if (isJual) riwayatKat = 'semua'; else riwayatKatBeli = 'semua'; }
+        const btn = (key, label) => `<div class="bk-chip ${curKat === key ? 'active' : ''}" data-rk="${key}">${label}</div>`;
         katBar = `<div class="bk-filter" style="margin-bottom:12px;">${btn('semua', 'Semua kategori (' + tampil.map(k => STOK_KAT.find(x => x.key === k).label.replace(/.*\(|\)/g, '')).join(', ') + ')')}${tampil.map(k => {
           const kk = STOK_KAT.find(x => x.key === k); return btn(k, kk.label + ' &middot; ' + linesAll.filter(l => l.kat === k).length);
         }).join('')}</div>`;
       }
-      const lines = (isJual && riwayatKat !== 'semua') ? linesAll.filter(l => l.kat === riwayatKat) : linesAll;
-      if (!lines.length) return katBar + '<div class="bk-empty">Tidak ada penjualan pada kategori ini di periode ini.</div>';
+      const selKat = isJual ? riwayatKat : riwayatKatBeli;
+      const lines = selKat !== 'semua' ? linesAll.filter(l => l.kat === selKat) : linesAll;
+      if (!lines.length) return katBar + `<div class="bk-empty">Tidak ada ${isJual ? 'penjualan' : 'pembelian'} pada kategori ini di periode ini.</div>`;
       const owner = isOwner();
       const cats = STOK_KAT.filter(k => lines.some(l => l.kat === k.key));
       const sumOf = arr => arr.reduce((a, l) => ({ qty: a.qty + l.qty, hasil: a.hasil + l.hasil, hpp: a.hpp + l.hpp, untung: a.untung + l.untung }), { qty: 0, hasil: 0, hpp: 0, untung: 0 });
       const grand = sumOf(lines);
-      const ongkir = isJual ? 0 : src.reduce((a, t) => a + (Number(t.ongkosKirim) || 0), 0);
+      const ongkir = (isJual || selKat !== 'semua') ? 0 : src.reduce((a, t) => a + (Number(t.ongkosKirim) || 0), 0);
       const untungColor = v => v >= 0 ? 'var(--money-in)' : 'var(--money-out)';
       const th = 'padding:7px 8px; text-align:right; font-size:11px; color:var(--ink-soft); font-weight:600; border-bottom:2px solid var(--line);';
       const td = 'padding:8px; text-align:right; font-family:\'IBM Plex Mono\',monospace; font-size:12.5px; border-bottom:1px solid var(--line);';
@@ -3293,7 +3296,7 @@ window.storage = {
     if (dlLrBtn) dlLrBtn.addEventListener('click', () => downloadLabaRugi(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
     const dlLrExcelBtn = document.getElementById('bk-download-lr-excel');
     if (dlLrExcelBtn) dlLrExcelBtn.addEventListener('click', () => downloadLabaRugiExcel(riwayatMonth, byMonth, masuk, keluar, hppBulan, labaKotorBulan));
-    bodyEl.querySelectorAll('.bk-chip[data-rk]').forEach(c => c.addEventListener('click', () => { riwayatKat = c.dataset.rk; renderRiwayat(); }));
+    bodyEl.querySelectorAll('.bk-chip[data-rk]').forEach(c => c.addEventListener('click', () => { if (riwayatFilter === 'pembelian') riwayatKatBeli = c.dataset.rk; else riwayatKat = c.dataset.rk; renderRiwayat(); }));
     bodyEl.querySelectorAll('.bk-chip[data-f]').forEach(c => c.addEventListener('click', () => { riwayatFilter = c.dataset.f; selectedTxnIds.clear(); renderRiwayat(); }));
     bodyEl.querySelectorAll('.bk-list-row-wrap').forEach(w => {
       const id = w.dataset.txn;
