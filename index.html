@@ -3175,7 +3175,7 @@ window.storage = {
       let katBar = '';
       {
         const adaKat = key => linesAll.some(l => l.kat === key);
-        const tampil = [['laptop', true], ['acc', true], ['spp', true], ['mtoko', !isJual && adaKat('mtoko')], ['servis', !isJual && adaKat('servis')]].filter(x => x[1]).map(x => x[0]);
+        const tampil = [['laptop', true], ['acc', true], ['spp', true], ['mtoko', !isJual], ['servis', !isJual]].filter(x => x[1]).map(x => x[0]);
         let curKat = isJual ? riwayatKat : riwayatKatBeli;
         if (curKat !== 'semua' && !tampil.includes(curKat)) { curKat = 'semua'; if (isJual) riwayatKat = 'semua'; else riwayatKatBeli = 'semua'; }
         const btn = (key, label) => `<div class="bk-chip ${curKat === key ? 'active' : ''}" data-rk="${key}">${label}</div>`;
@@ -3230,12 +3230,12 @@ window.storage = {
         ? 'Hanya kategori LPSTK, ACC, dan SPP. Tidak termasuk transaksi dari Service Laptop (lihat Service &rarr; Riwayat service), penyesuaian stok, dan barang berkode lama (LPSRV), jadi bisa lebih kecil dari kartu Pemasukan di atas.'
         : 'Tidak termasuk penyesuaian stok (edit HPP/sisa stok), jadi bisa berbeda dari kartu Pengeluaran di atas.';
       let bawah = sections;
-      if (isJual) {
-        // Penjualan: daftar transaksi memakai tampilan lama (sama seperti tab "Semua"), difilter menurut kategori yang dipilih.
+      {
+        // Penjualan & Pembelian: daftar transaksi memakai tampilan lama (sama seperti tab "Semua"), difilter menurut kategori yang dipilih.
         const idsTampil = new Set(lines.map(l => l.t.id));
         const shown = filtered.filter(t => idsTampil.has(t.id));
         penjualanShownTxns = shown;
-        bawah = `<div class="bk-stok-note" style="margin:14px 0 8px; font-weight:600; color:var(--ink);">Transaksi ditampilkan: ${shown.length.toLocaleString('id-ID')}</div>${shown.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('')}`;
+        bawah = `<div class="bk-stok-note" style="margin:14px 0 8px; font-weight:600; color:var(--ink);">${isJual ? '' : ''}Transaksi ditampilkan: ${shown.length.toLocaleString('id-ID')}</div>${shown.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('')}`;
       }
       return `${katBar}<div class="bk-section-title" style="margin-top:4px;">Ringkasan per kategori kode barang</div>${summary}<div class="bk-stok-note" style="margin-bottom:6px;">${catatan}</div>${bawah}`;
     }
@@ -3245,7 +3245,7 @@ window.storage = {
     const labaKotorBulan = masuk - hppBulan;
 
     const listHtmlPre = riwayatListHtml();
-    const selectable = (riwayatFilter === 'penjualan' && penjualanShownTxns) ? penjualanShownTxns : filtered;
+    const selectable = ((riwayatFilter === 'penjualan' || riwayatFilter === 'pembelian') && penjualanShownTxns) ? penjualanShownTxns : filtered;
     bodyEl.innerHTML = `
       <div class="bk-field" style="max-width:260px;">
         <label>Bulan</label>
@@ -3288,7 +3288,7 @@ window.storage = {
         <button class="bk-btn ghost" id="bk-riwayat-sortdir" style="padding:7px 12px; font-size:12px;">${riwayatSortDir==='desc' ? (riwayatSortBy==='nama' ? '&#9660; Z &rarr; A' : riwayatSortBy==='tanggal' ? '&#9660; Terbaru dulu' : '&#9660; Terbesar dulu') : (riwayatSortBy==='nama' ? '&#9650; A &rarr; Z' : riwayatSortBy==='tanggal' ? '&#9650; Terlama dulu' : '&#9650; Terkecil dulu')}</button>
       </div>
       <div class="bk-stok-note" style="margin-top:-6px;">Transaksi dari Service Laptop (jasa, DP, sparepart) tidak ditampilkan di sini karena sudah lengkap di tab <strong>Service &rarr; Riwayat service</strong>. Nilainya tetap terhitung di ringkasan &amp; laporan di atas.</div>
-      ${selectable.length && isOwner() && riwayatFilter !== 'pembelian' ? `<div class="bk-select-bar">
+      ${selectable.length && isOwner() ? `<div class="bk-select-bar">
         <label class="bk-select-all">
           <input type="checkbox" id="bk-select-all" ${selectable.length && selectable.every(t=>selectedTxnIds.has(t.id)) ? 'checked' : ''} />
           Pilih semua (${selectable.length})
