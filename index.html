@@ -3166,12 +3166,15 @@ window.storage = {
         const hpp = isJual ? ((hppAll.hppItemsByTxn[t.id] || [])[idx] || 0) : 0;
         linesAll.push({ t, it, code, kat: stokKategoriOf(code), qty, hasil, hpp, untung: hasil - hpp });
       }));
+      // Penjualan hanya menampilkan kategori Stock Laptop (LPSTK), Aksesoris (ACC), dan Sparepart (SPP).
+      // Barang berkode lama (LPSRV) / LPMTOKO tidak ditampilkan di ringkasan & tombol kategori penjualan.
+      if (isJual) { for (let q = linesAll.length - 1; q >= 0; q--) if (!['laptop', 'acc', 'spp'].includes(linesAll[q].kat)) linesAll.splice(q, 1); }
       if (!linesAll.length) return '<div class="bk-empty">Tidak ada transaksi pada kategori/bulan ini.</div>';
       // Penjualan: tombol kategori (seperti halaman Stok) supaya tidak scroll panjang. LPMTOKO & LPSRV hanya muncul kalau ada datanya.
       let katBar = '';
       {
         const adaKat = key => linesAll.some(l => l.kat === key);
-        const tampil = [['laptop', true], ['acc', true], ['spp', true], ['mtoko', adaKat('mtoko')], ['servis', adaKat('servis')]].filter(x => x[1]).map(x => x[0]);
+        const tampil = [['laptop', true], ['acc', true], ['spp', true], ['mtoko', !isJual && adaKat('mtoko')], ['servis', !isJual && adaKat('servis')]].filter(x => x[1]).map(x => x[0]);
         let curKat = isJual ? riwayatKat : riwayatKatBeli;
         if (curKat !== 'semua' && !tampil.includes(curKat)) { curKat = 'semua'; if (isJual) riwayatKat = 'semua'; else riwayatKatBeli = 'semua'; }
         const btn = (key, label) => `<div class="bk-chip ${curKat === key ? 'active' : ''}" data-rk="${key}">${label}</div>`;
@@ -3223,7 +3226,7 @@ window.storage = {
         return `<div class="bk-section-title" style="margin-top:22px;">${escapeAttr(k.label)} <span style="font-weight:500; color:var(--ink-soft); font-size:12px;">&middot; ${ls.length} baris &middot; ${isJual ? 'hasil' : 'total'} ${rupiah(a.hasil)}${showHpp ? ` &middot; HPP ${rupiah(a.hpp)} &middot; untung ${rupiah(a.untung)}` : ''}</span></div>${ls.map(lineHtml).join('')}`;
       }).join('');
       const catatan = isJual
-        ? 'Tidak termasuk transaksi dari Service Laptop (lihat Service &rarr; Riwayat service) dan penyesuaian stok, jadi bisa lebih kecil dari kartu Pemasukan di atas.'
+        ? 'Hanya kategori LPSTK, ACC, dan SPP. Tidak termasuk transaksi dari Service Laptop (lihat Service &rarr; Riwayat service), penyesuaian stok, dan barang berkode lama (LPSRV), jadi bisa lebih kecil dari kartu Pemasukan di atas.'
         : 'Tidak termasuk penyesuaian stok (edit HPP/sisa stok), jadi bisa berbeda dari kartu Pengeluaran di atas.';
       return `${katBar}<div class="bk-section-title" style="margin-top:4px;">Ringkasan per kategori kode barang</div>${summary}<div class="bk-stok-note" style="margin-bottom:6px;">${catatan}</div>${sections}`;
     }
