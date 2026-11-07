@@ -3241,8 +3241,50 @@ window.storage = {
     }
     const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total, 0);
     const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
-    const hppBulan = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + (hppAll.hppByTxn[t.id] || 0), 0);
-    const labaKotorBulan = masuk - hppBulan;
+    // HPP & laba kotor dihitung sama seperti di Laporan Laba Rugi (penjualan barang yang sudah dihapus dari Stok tidak dihitung).
+    const hppBulan = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + (hppAll.hppByTxn[t.id] || 0) - (hppAll.hppTerhapusByTxn[t.id] || 0), 0);
+    const masukLaba = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + (Number(t.total) || 0) - (hppAll.revTerhapusByTxn[t.id] || 0), 0);
+    const labaKotorBulan = masukLaba - hppBulan;
+
+    // Rekap per bulan (semua bulan): penjualan, HPP, laba kotor, beban, laba bersih, pembelian. Klik baris untuk memilih bulan.
+    function rekapBulananHtml() {
+      if (!isOwner()) return '';
+      const agg = {};
+      const ensure = mk => agg[mk] || (agg[mk] = { jual: 0, hpp: 0, beli: 0, beban: 0, nJual: 0, nBeli: 0 });
+      txns.forEach(t => {
+        const mk = monthKey(t.createdAt);
+        if (t.type === 'penjualan') {
+          const a = ensure(mk);
+          a.jual += (Number(t.total) || 0) - (hppAll.revTerhapusByTxn[t.id] || 0);
+          a.hpp += (hppAll.hppByTxn[t.id] || 0) - (hppAll.hppTerhapusByTxn[t.id] || 0);
+          if (!isPenyesuaianStokTxn(t)) a.nJual++;
+        } else if (t.type === 'pembelian') {
+          const a = ensure(mk); a.beli += Number(t.total) || 0; if (!isPenyesuaianStokTxn(t) && !t.linkedMinusOf) a.nBeli++;
+        }
+      });
+      bebanList.forEach(b => { ensure(monthKey(b.createdAt)).beban += Number(b.nominal) || 0; });
+      const mks = Object.keys(agg).sort().reverse();
+      if (!mks.length) return '';
+      const tot = mks.reduce((a, m) => ({ jual: a.jual + agg[m].jual, hpp: a.hpp + agg[m].hpp, beli: a.beli + agg[m].beli, beban: a.beban + agg[m].beban, nJual: a.nJual + agg[m].nJual, nBeli: a.nBeli + agg[m].nBeli }), { jual: 0, hpp: 0, beli: 0, beban: 0, nJual: 0, nBeli: 0 });
+      const th = 'padding:7px 8px; text-align:right; font-size:11px; color:var(--ink-soft); font-weight:600; border-bottom:2px solid var(--line); white-space:nowrap;';
+      const cl = v => v >= 0 ? 'var(--money-in)' : 'var(--money-out)';
+      const row = (label, a, extra, bold) => {
+        const lk = a.jual - a.hpp, lb = lk - a.beban;
+        const td = `padding:8px; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12px; border-bottom:1px solid var(--line); white-space:nowrap; ${bold ? 'font-weight:800; background:var(--paper);' : ''}`;
+        return `<tr ${extra}><td style="padding:8px; font-size:12.5px; border-bottom:1px solid var(--line); white-space:nowrap; font-weight:${bold ? 800 : 600}; ${bold ? 'background:var(--paper);' : ''}">${label}</td>
+          <td style="${td}">${rupiah(a.jual)}<div style="font-size:10px; color:var(--ink-soft); font-weight:400;">${a.nJual} transaksi</div></td>
+          <td style="${td}">${rupiah(a.hpp)}</td>
+          <td style="${td} color:${cl(lk)}; font-weight:700;">${rupiah(lk)}</td>
+          <td style="${td}">${rupiah(a.beban)}</td>
+          <td style="${td} color:${cl(lb)}; font-weight:800;">${rupiah(lb)}</td>
+          <td style="${td}">${rupiah(a.beli)}<div style="font-size:10px; color:var(--ink-soft); font-weight:400;">${a.nBeli} transaksi</div></td></tr>`;
+      };
+      return `<details open style="margin-bottom:16px;"><summary style="cursor:pointer; font-weight:700; font-size:14px; margin-bottom:8px;">Rekap per bulan &middot; total laba</summary>
+        <div class="bk-stok-note" style="margin-bottom:8px;">Klik satu bulan untuk menampilkan transaksinya di bawah. Laba dihitung sama seperti Laporan Laba Rugi: laba kotor = penjualan &minus; HPP; laba bersih = laba kotor &minus; beban operasional.</div>
+        <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; min-width:760px;">
+        <thead><tr><th style="${th} text-align:left;">Bulan</th><th style="${th}">Penjualan</th><th style="${th}">HPP</th><th style="${th}">Laba kotor</th><th style="${th}">Beban</th><th style="${th}">Laba bersih</th><th style="${th}">Pembelian</th></tr></thead>
+        <tbody>${mks.map(m => row(monthLabel(m), agg[m], `class="rk-month-row" data-m="${m}" style="cursor:pointer; ${riwayatMonth === m ? 'background:var(--accent-bg);' : ''}"`, false)).join('')}${row('TOTAL', tot, `class="rk-month-row" data-m="semua" style="cursor:pointer;"`, true)}</tbody></table></div></details>`;
+    }
 
     const listHtmlPre = riwayatListHtml();
     const selectable = ((riwayatFilter === 'penjualan' || riwayatFilter === 'pembelian') && penjualanShownTxns) ? penjualanShownTxns : filtered;
@@ -3254,6 +3296,7 @@ window.storage = {
           ${months.map(m => `<option value="${m}" ${riwayatMonth===m?'selected':''}>${monthLabel(m)}</option>`).join('')}
         </select>
       </div>
+      ${rekapBulananHtml()}
       ${isOwner() ? `
       <div class="bk-stats" style="margin-bottom:16px;">
         <div class="bk-stat in"><div class="lbl">Pemasukan ${riwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(riwayatMonth))}</div><div class="val">${rupiah(masuk)}</div></div>
@@ -3298,6 +3341,7 @@ window.storage = {
       <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${filtered.length.toLocaleString('id-ID')} transaksi ditampilkan${riwayatFilter!=='semua' ? ` (kategori ${riwayatFilter})` : ''}.</div>
       <div id="bk-riwayat-list">${listHtmlPre}</div>
     `;
+    bodyEl.querySelectorAll('.rk-month-row').forEach(r => r.addEventListener('click', () => { riwayatMonth = r.dataset.m; selectedTxnIds.clear(); renderRiwayat(); }));
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
     document.getElementById('bk-riwayat-sortby').addEventListener('change', (e) => { riwayatSortBy = e.target.value; riwayatSortDir = (riwayatSortBy === 'nama') ? 'asc' : 'desc'; renderRiwayat(); });
     document.getElementById('bk-riwayat-sortdir').addEventListener('click', () => { riwayatSortDir = riwayatSortDir === 'desc' ? 'asc' : 'desc'; renderRiwayat(); });
