@@ -3286,6 +3286,67 @@ window.storage = {
         <tbody>${mks.map(m => row(monthLabel(m), agg[m], `class="rk-month-row" data-m="${m}" style="cursor:pointer; ${riwayatMonth === m ? 'background:var(--accent-bg);' : ''}"`, false)).join('')}${row('TOTAL', tot, `class="rk-month-row" data-m="semua" style="cursor:pointer;"`, true)}</tbody></table></div></details>`;
     }
 
+
+    // Target harian vs realisasi laba kotor untuk bulan terpilih (atau bulan berjalan jika "Semua bulan").
+    const targetBulanCache = (window.__targetBulanCache = window.__targetBulanCache || {});
+    function targetHarianHtml() {
+      if (!isOwner()) return '';
+      const mk = riwayatMonth !== 'semua' ? riwayatMonth : monthKey(Date.now());
+      const [Y, M] = mk.split('-').map(Number);
+      const lastDay = new Date(Y, M, 0).getDate();
+      if (targetBulanCache[mk] === undefined) {
+        targetBulanCache[mk] = null;
+        (async () => {
+          try { const r = await window.storage.get('target-bulan:' + mk, true); if (r && r.value) targetBulanCache[mk] = Number(r.value) || null; } catch (e) {}
+          targetBulanCache[mk] = targetBulanCache[mk] || 0;
+          if (activeTab === 'riwayat') renderRiwayat();
+        })();
+      }
+      const target = Number(targetBulanCache[mk]) || 0;
+      const perDay = {};
+      txns.forEach(t => {
+        if (t.type !== 'penjualan' || monthKey(t.createdAt) !== mk) return;
+        const dd = new Date(t.createdAt).getDate();
+        perDay[dd] = (perDay[dd] || 0) + ((Number(t.total) || 0) - (hppAll.revTerhapusByTxn[t.id] || 0)) - ((hppAll.hppByTxn[t.id] || 0) - (hppAll.hppTerhapusByTxn[t.id] || 0));
+      });
+      const now = new Date();
+      const isCur = now.getFullYear() === Y && now.getMonth() + 1 === M;
+      const isPast = new Date(Y, M - 1, 1) < new Date(now.getFullYear(), now.getMonth(), 1);
+      const today = isCur ? now.getDate() : (isPast ? lastDay : 0);
+      const real = Object.values(perDay).reduce((a, b) => a + b, 0);
+      const sisaTarget = Math.max(0, target - real);
+      const sisaHari = Math.max(0, lastDay - today);
+      const perluPerHari = sisaHari > 0 ? sisaTarget / sisaHari : 0;
+      const paceHarian = today > 0 ? real / today : 0;
+      const proyeksi = today > 0 ? real + paceHarian * sisaHari : 0;
+      const tgtHari = target / lastDay;
+      const cl = v => v >= 0 ? 'var(--money-in)' : 'var(--money-out)';
+      const th = 'padding:7px 8px; text-align:right; font-size:11px; color:var(--ink-soft); font-weight:600; border-bottom:2px solid var(--line); white-space:nowrap;';
+      const td = 'padding:6px 8px; text-align:right; font-family:\'IBM Plex Mono\',monospace; font-size:12px; border-bottom:1px solid var(--line); white-space:nowrap;';
+      let cumR = 0, cumT = 0, rows = '';
+      for (let d = 1; d <= lastDay; d++) {
+        const r = perDay[d] || 0; cumR += r; cumT += tgtHari;
+        const future = d > today;
+        const sel = r - tgtHari;
+        const status = future ? '<span style="color:var(--ink-soft);">&ndash;</span>' : (r >= tgtHari ? '<span style="color:var(--money-in); font-weight:700;">Tercapai</span>' : '<span style="color:var(--money-out); font-weight:700;">Kurang</span>');
+        rows += `<tr style="${future ? 'opacity:.55;' : ''}${d === today && isCur ? 'background:var(--accent-bg);' : ''}"><td style="${td} text-align:left; font-family:inherit;">${d} ${monthLabel(mk).split(' ')[0].slice(0,3)}</td><td style="${td}">${future ? '&ndash;' : rupiah(r)}</td><td style="${td}">${target ? rupiah(Math.round(tgtHari)) : '&ndash;'}</td><td style="${td} color:${future ? 'inherit' : cl(sel)};">${future || !target ? '&ndash;' : rupiah(Math.round(sel))}</td><td style="${td}">${future ? '&ndash;' : rupiah(cumR)}</td><td style="${td}">${target ? rupiah(Math.round(cumT)) : '&ndash;'}</td><td style="${td} text-align:center; font-family:inherit;">${target ? status : '&ndash;'}</td></tr>`;
+      }
+      const card = (lbl, val, color) => `<div style="flex:1; min-width:150px; border:1px solid var(--line); border-radius:12px; padding:10px 12px;"><div style="font-size:11px; color:var(--ink-soft);">${lbl}</div><div style="font-weight:800; font-size:14px; font-family:'IBM Plex Mono',monospace; ${color ? 'color:' + color + ';' : ''}">${val}</div></div>`;
+      return `<details open style="margin-bottom:16px;"><summary style="cursor:pointer; font-weight:700; font-size:14px; margin-bottom:8px;">Target harian vs realisasi &middot; laba kotor ${monthLabel(mk)}</summary>
+        <div class="bk-stok-note" style="margin-bottom:8px;">Isi target laba kotor satu bulan (mis. total beban + gaji yang harus tertutup). Target harian = target &divide; ${lastDay} hari. Laba kotor harian dihitung sama seperti Laporan Laba Rugi.</div>
+        <div class="bk-field" style="max-width:300px;"><label>Target laba kotor bulan ini (Rp)</label><input id="rk-target-input" inputmode="numeric" value="${target ? target.toLocaleString('id-ID') : ''}" placeholder="mis. 64.200.000" style="width:100%; border:1.5px solid var(--line); border-radius:12px; padding:9px 11px; font-size:13.5px;" /></div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;">
+          ${card('Realisasi s/d hari ini', rupiah(real))}
+          ${card('Sisa target', target ? rupiah(sisaTarget) : '&ndash;', target && sisaTarget === 0 ? 'var(--money-in)' : '')}
+          ${card('Perlu per hari (' + sisaHari + ' hari lagi)', target && sisaHari ? rupiah(Math.round(perluPerHari)) : '&ndash;')}
+          ${card('Laju sekarang / hari', today ? rupiah(Math.round(paceHarian)) : '&ndash;')}
+          ${card('Proyeksi akhir bulan', today ? rupiah(Math.round(proyeksi)) : '&ndash;', target ? cl(proyeksi - target) : '')}
+        </div>
+        <div style="overflow-x:auto; max-height:420px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse; min-width:640px;">
+        <thead><tr><th style="${th} text-align:left;">Tanggal</th><th style="${th}">Laba kotor</th><th style="${th}">Target</th><th style="${th}">Selisih</th><th style="${th}">Kumulatif</th><th style="${th}">Kumulatif target</th><th style="${th} text-align:center;">Status</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></details>`;
+    }
+
     const listHtmlPre = riwayatListHtml();
     const selectable = ((riwayatFilter === 'penjualan' || riwayatFilter === 'pembelian') && penjualanShownTxns) ? penjualanShownTxns : filtered;
     bodyEl.innerHTML = `
@@ -3297,6 +3358,7 @@ window.storage = {
         </select>
       </div>
       ${rekapBulananHtml()}
+      ${targetHarianHtml()}
       ${isOwner() ? `
       <div class="bk-stats" style="margin-bottom:16px;">
         <div class="bk-stat in"><div class="lbl">Pemasukan ${riwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(riwayatMonth))}</div><div class="val">${rupiah(masuk)}</div></div>
@@ -3341,6 +3403,14 @@ window.storage = {
       <div class="bk-stok-note" style="margin-bottom:8px; font-weight:600; color:var(--ink);">Total: ${filtered.length.toLocaleString('id-ID')} transaksi ditampilkan${riwayatFilter!=='semua' ? ` (kategori ${riwayatFilter})` : ''}.</div>
       <div id="bk-riwayat-list">${listHtmlPre}</div>
     `;
+    const tgtInp = bodyEl.querySelector('#rk-target-input');
+    if (tgtInp) tgtInp.addEventListener('change', async () => {
+      const mk = riwayatMonth !== 'semua' ? riwayatMonth : monthKey(Date.now());
+      const v = Number(String(tgtInp.value).replace(/[^0-9]/g, '')) || 0;
+      targetBulanCache[mk] = v;
+      try { await window.storage.set('target-bulan:' + mk, String(v), true); } catch (e) { console.error(e); }
+      renderRiwayat();
+    });
     bodyEl.querySelectorAll('.rk-month-row').forEach(r => r.addEventListener('click', () => { riwayatMonth = r.dataset.m; selectedTxnIds.clear(); renderRiwayat(); }));
     document.getElementById('bk-month-select').addEventListener('change', (e) => { riwayatMonth = e.target.value; selectedTxnIds.clear(); renderRiwayat(); });
     document.getElementById('bk-riwayat-sortby').addEventListener('change', (e) => { riwayatSortBy = e.target.value; riwayatSortDir = (riwayatSortBy === 'nama') ? 'asc' : 'desc'; renderRiwayat(); });
