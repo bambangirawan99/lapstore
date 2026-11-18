@@ -8589,7 +8589,88 @@ window.storage = {
     return byAccount;
   }
 
-  const LAPORAN_OWNER_ONLY_VIEWS = ['labarugi', 'jurnal', 'neraca', 'utang', 'stokbulanan', 'rekening', 'backup'];
+
+  // ===== Cek Data otomatis: mendeteksi data yang janggal / kemungkinan bug =====
+  let cekDbInfo = null; // { dbCount, loaded, at } hasil perbandingan jumlah txn di database vs yang termuat
+  async function cekJumlahDbTxn() {
+    try {
+      const { count, error } = await sbClient.from('kv_store').select('key', { count: 'exact', head: true }).like('key', 'txn:%');
+      if (error) throw error;
+      cekDbInfo = { dbCount: count, loaded: txns.length, at: Date.now() };
+    } catch (e) { cekDbInfo = { error: String(e && e.message || e), at: Date.now() }; }
+    return cekDbInfo;
+  }
+  const isJasaItem = name => /^\s*jasa\b/i.test(name || '');
+  function jalankanCekData() {
+    const hppAll = computeHPP();
+    const issues = []; // { level: 'high'|'warn'|'info', judul, detail, contoh: [] }
+    const rp = n => rupiah(Math.round(Number(n) || 0));
+    const tgl = ms => new Date(ms).toLocaleDateString('id-ID');
+    const add = (level, judul, detail, contoh) => { if (contoh === null || (Array.isArray(contoh) && contoh.length)) issues.push({ level, judul, detail, contoh: contoh || [] }); };
+    const nonAdj = txns.filter(t => !isPenyesuaianStokTxn(t) && !t.revaluasiHpp);
+
+    // 1. Jumlah di database vs termuat
+    if (cekDbInfo && cekDbInfo.dbCount != null && cekDbInfo.dbCount !== cekDbInfo.loaded) {
+      add('high', 'Data transaksi tidak lengkap dimuat', `Database punya ${cekDbInfo.dbCount} transaksi, tetapi aplikasi hanya memuat ${cekDbInfo.loaded}. Laporan bisa salah. Muat ulang halaman; kalau tetap berbeda, hubungi pengembang.`, null);
+    }
+    // 2. Tanggal mencurigakan
+    const batasAwal = new Date(2026, 8, 1).getTime(), batasAkhir = Date.now() + 36 * 3600 * 1000;
+    const tanggalAneh = [];
+    txns.forEach(t => { if (t.createdAt < batasAwal || t.createdAt > batasAkhir) tanggalAneh.push(`Transaksi ${t.type} ${tgl(t.createdAt)} ${t.customerName || t.supplierName || ''} ${rp(t.total)}`); });
+    services.forEach(x => { if (x.createdAt < batasAwal || x.createdAt > batasAkhir) tanggalAneh.push(`Servis ${x.kodeService || ''} ${tgl(x.createdAt)} ${x.customerName || ''}`); });
+    bebanList.forEach(b => { if (b.createdAt < batasAwal || b.createdAt > batasAkhir) tanggalAneh.push(`Beban ${tgl(b.createdAt)} ${rp(b.nominal)} ${(b.keterangan || '').slice(0, 40)}`); });
+    add('high', 'Tanggal mencurigakan (sebelum 1 Sep 2026 atau di masa depan)', 'Sistem mulai dipakai September 2026. Biasanya ini hari/bulan yang tertukar saat input atau impor.', tanggalAneh);
+    // 3. Stok minus
+    const stok = computeStock();
+    add('high', 'Stok minus', 'Barang terjual/terpakai lebih banyak dari yang dibeli. Biasanya ada pembelian yang belum dicatat atau nama barang beda.', Object.values(stok).filter(r => r.qty < 0 && !isItemTerhapus(r.name) && !isJasaItem(r.name)).map(r => `${r.name}: ${r.qty}`));
+    // 4. Penjualan HPP 0 / rugi
+    const hpp0 = [], rugi = [];
+    nonAdj.filter(t => t.type === 'penjualan').forEach(t => {
+      const total = (Number(t.total) || 0) - (hppAll.revTerhapusByTxn[t.id] || 0), hpp = (hppAll.hppByTxn[t.id] || 0) - (hppAll.hppTerhapusByTxn[t.id] || 0);
+      const nm = `${tgl(t.createdAt)} ${t.customerName || ''} - ${(t.items || []).map(i => i.name).join(', ').slice(0, 50)}`;
+      if ((t.items || []).length && (t.items || []).every(i => isJasaItem(i.name))) return; // murni jasa servis: HPP Rp0 wajar
+      if (total > 0 && hpp <= 0 && !(t.items || []).every(i => i.bonus)) hpp0.push(`${nm} (jual ${rp(total)}, HPP ${rp(hpp)})`);
+      else if (total > 0 && hpp > total * 1.0001 && !(t.items || []).some(i => i.bonus)) rugi.push(`${nm} (jual ${rp(total)}, HPP ${rp(hpp)})`);
+    });
+    add('warn', 'Penjualan dengan HPP Rp0', 'Laba kotor jadi terlalu besar. Cek apakah barang sudah dibeli/dicatat di Catat Pembelian.', hpp0);
+    add('warn', 'Penjualan dengan harga di bawah HPP (rugi)', 'Bisa wajar (cuci gudang), tapi cek juga kemungkinan salah input harga atau HPP.', rugi);
+    // 5. Beban besar
+    add('warn', 'Beban sangat besar (>= Rp20.000.000)', 'Satu catatan besar sulit dilacak. Pecah per kategori (gaji, iklan, sewa) supaya laporan jelas.', bebanList.filter(b => (Number(b.nominal) || 0) >= 20000000).map(b => `${tgl(b.createdAt)} ${rp(b.nominal)} ${(b.kategoriCustom || b.kategori || '')} - ${(b.keterangan || '').slice(0, 50)}`));
+    // 6. Transaksi kembar
+    const seen = {}, kembar = [];
+    nonAdj.filter(t => t.type !== 'produksi').slice().sort((a, b) => a.createdAt - b.createdAt).forEach(t => {
+      const sig = [t.type, t.customerName || t.supplierName || '', Number(t.total) || 0, (t.items || []).map(i => (i.name || '') + 'x' + i.qty).join('|')].join('~');
+      if ((Number(t.total) || 0) > 0 && seen[sig] && t.createdAt - seen[sig] < 10 * 60 * 1000) kembar.push(`${tgl(t.createdAt)} ${t.type} ${t.customerName || t.supplierName || ''} ${rp(t.total)}`);
+      seen[sig] = t.createdAt;
+    });
+    add('warn', 'Kemungkinan transaksi kembar (sama persis, selisih < 10 menit)', 'Mungkin tersimpan dua kali karena tombol ditekan berulang. Cek dan hapus yang dobel.', kembar);
+    // 7. Transaksi bernilai 0 / kosong
+    add('info', 'Penjualan/pembelian bernilai Rp0 (bukan penyesuaian stok)', 'Bisa wajar untuk bonus/transfer, tapi cek bila tidak sengaja.', nonAdj.filter(t => (t.type === 'penjualan' || t.type === 'pembelian') && !(Number(t.total) > 0) && !t.linkedMinusOf).map(t => `${tgl(t.createdAt)} ${t.type} ${t.customerName || t.supplierName || ''} ${(t.items || []).map(i => i.name).join(', ').slice(0, 50)}`));
+    // 8. Kas negatif
+    let kas = 0; try { kas = computeKasTotal() + (typeof computeKoreksiKasTotal === 'function' ? computeKoreksiKasTotal() : 0); } catch (e) { kas = 0; }
+    if (kas < 0) add('high', 'Saldo kas negatif', `Saldo kas terhitung ${rp(kas)}. Ada pemasukan yang belum dicatat, atau modal awal/koreksi kas belum diisi.`, null);
+    // 9. Banyak revaluasi
+    const rev = txns.filter(t => t.revaluasiHpp);
+    if (rev.length >= 20) add('info', 'Banyak transaksi revaluasi HPP', `Ada ${rev.length} transaksi revaluasi HPP (hasil edit HPP/sisa stok). Normal bila memang edit stok massal; HPP periode berikutnya ikut berubah.`, null);
+    return issues;
+  }
+  function renderCekDataHtml() {
+    if (!cekDbInfo || Date.now() - cekDbInfo.at > 60000) { cekJumlahDbTxn().then(() => { if (activeTab === 'laporan' && laporanView === 'cekdata') renderLaporan(); }); }
+    const issues = jalankanCekData();
+    const warna = { high: 'var(--money-out)', warn: '#B7791F', info: 'var(--ink-soft)' };
+    const label = { high: 'PENTING', warn: 'CEK', info: 'INFO' };
+    const ok = !issues.length;
+    return `<div class="bk-section-title" style="margin-top:0;">Cek Data Otomatis</div>
+      <div class="bk-stok-note" style="margin-bottom:12px;">Memeriksa data sekarang: kelengkapan data, tanggal janggal, stok minus, HPP Rp0, penjualan rugi, beban besar, transaksi kembar, dan kas negatif. Pemeriksaan berjalan setiap halaman ini dibuka. Data terakhir dimuat ${txns.length.toLocaleString('id-ID')} transaksi${cekDbInfo && cekDbInfo.dbCount != null ? ` (database: ${cekDbInfo.dbCount.toLocaleString('id-ID')})` : ''}.</div>
+      ${ok ? `<div style="border:1px solid var(--line); border-radius:12px; padding:14px; color:var(--money-in); font-weight:700;">Tidak ada data janggal yang terdeteksi.</div>` : issues.map(i => `
+        <details ${i.level === 'high' ? 'open' : ''} style="border:1px solid var(--line); border-left:4px solid ${warna[i.level]}; border-radius:10px; padding:10px 12px; margin-bottom:10px;">
+          <summary style="cursor:pointer; font-weight:700; font-size:13.5px;"><span style="color:${warna[i.level]}; font-size:11px; margin-right:6px;">${label[i.level]}</span>${i.judul}${i.contoh.length ? ` <span style="color:var(--ink-soft); font-weight:500;">&middot; ${i.contoh.length} temuan</span>` : ''}</summary>
+          <div class="bk-stok-note" style="margin:6px 0;">${i.detail}</div>
+          ${i.contoh.length ? `<ul style="margin:0; padding-left:18px; font-size:12px; line-height:1.6;">${i.contoh.slice(0, 12).map(c => `<li>${escapeAttr(c)}</li>`).join('')}${i.contoh.length > 12 ? `<li style="color:var(--ink-soft);">&hellip; dan ${i.contoh.length - 12} lainnya</li>` : ''}</ul>` : ''}
+        </details>`).join('')}`;
+  }
+
+  const LAPORAN_OWNER_ONLY_VIEWS = ['labarugi', 'jurnal', 'neraca', 'utang', 'stokbulanan', 'rekening', 'backup', 'cekdata'];
   function renderLaporan() {
     captureSearchFocus();
     if (!isOwner() && LAPORAN_OWNER_ONLY_VIEWS.includes(laporanView)) {
@@ -8605,12 +8686,14 @@ window.storage = {
       { id: 'stokbulanan', label: 'Stok Bulanan' },
       { id: 'rekening', label: 'Per Rekening' },
       { id: 'backup', label: 'Backup &amp; Restore' },
+      { id: 'cekdata', label: 'Cek Data' },
     ];
     const visibleChips = isOwner() ? allChips : allChips.filter(c => !LAPORAN_OWNER_ONLY_VIEWS.includes(c.id));
     bodyEl.innerHTML = `
       <div class="bk-filter" style="margin-bottom:14px;">
         ${visibleChips.map(c => `<div class="bk-chip ${laporanView===c.id?'active':''}" data-lv="${c.id}">${c.label}</div>`).join('')}
       </div>
+      ${isOwner() && cekDbInfo && cekDbInfo.dbCount != null && cekDbInfo.dbCount !== cekDbInfo.loaded ? `<div style="border:1.5px solid var(--money-out); background:#FBEDEB; color:#6B2620; border-radius:12px; padding:10px 12px; margin-bottom:14px; font-size:13px; font-weight:600;">Peringatan: data tidak lengkap dimuat (${cekDbInfo.loaded} dari ${cekDbInfo.dbCount} transaksi). Laporan bisa salah. Buka tab Cek Data.</div>` : ''}
       ${isOwner() ? `<button class="bk-btn primary" id="bk-download-semua-excel" style="margin-bottom:20px;">Unduh semua laporan (Excel, 1 file)</button>` : ''}
       <div id="bk-laporan-slot">${
         laporanView === 'labarugi' ? renderLabaRugiHtml() :
@@ -8621,6 +8704,7 @@ window.storage = {
         laporanView === 'utang' ? renderUtangHtml() :
         laporanView === 'stokbulanan' ? renderStokBulananHtml() :
         laporanView === 'backup' ? renderBackupRestoreHtml() :
+        laporanView === 'cekdata' ? renderCekDataHtml() :
         renderRekeningHtml()
       }</div>
     `;
@@ -11125,6 +11209,7 @@ window.storage = {
     renderBody();
     checkAndOfferDraftRestore();
     runAutoBackupHarianJikaPerlu(); // jalan di background, tidak menunggu/blocking tampilan
+    if (isOwner()) cekJumlahDbTxn().then(() => { if (activeTab === 'laporan') renderLaporan(); }); // cek kelengkapan data di background
     pruneOldTrash(); // bersihkan riwayat penghapusan yang sudah lewat masa retensi
     if (bgRefreshIntervalId) clearInterval(bgRefreshIntervalId);
     bgRefreshIntervalId = setInterval(() => refreshData(false), 20000);
