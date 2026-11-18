@@ -594,13 +594,25 @@ window.storage = {
     // (pola N+1) - kalau data sudah ratusan/ribuan baris (lazim setelah migrasi), ini jadi ratusan
     // request bersamaan ke server dan bikin proses login/muat data jadi lama. Sekarang value-nya
     // ikut diambil sekalian dalam SATU query, supaya pemanggil tidak perlu get() lagi per key.
-    let q = sbClient.from('kv_store').select('key,value');
-    if (prefix) q = q.like('key', `${prefix}%`);
-    const { data, error } = await q;
-    if (error) throw error;
+    // PENTING: Supabase/PostgREST membatasi hasil MAKSIMAL 1000 baris per permintaan. Tanpa pagination, begitu
+    // jumlah transaksi (txn:) lewat 1000, sisanya DIAM-DIAM tidak ikut dimuat (tanpa error) sehingga laba, stok,
+    // HPP, dan kas berubah-ubah. Karena itu data diambil bertahap (per 1000 baris, urut per key) sampai habis.
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      let q = sbClient.from('kv_store').select('key,value').order('key', { ascending: true }).range(from, from + PAGE - 1);
+      if (prefix) q = q.like('key', `${prefix}%`);
+      const { data, error } = await q;
+      if (error) throw error;
+      const rows = data || [];
+      const before = all.length;
+      const seen = new Set(all.map(r => r.key));
+      rows.forEach(r => { if (!seen.has(r.key)) all.push(r); });
+      if (rows.length < PAGE || all.length === before) break; // selesai, atau server mengabaikan range (cegah loop tak berujung)
+    }
     const valueByKey = {};
-    (data || []).forEach(r => { valueByKey[r.key] = r.value; });
-    return { keys: (data || []).map(r => r.key), prefix, shared: true, valueByKey };
+    all.forEach(r => { valueByKey[r.key] = r.value; });
+    return { keys: all.map(r => r.key), prefix, shared: true, valueByKey };
   },
 };
 </script>
