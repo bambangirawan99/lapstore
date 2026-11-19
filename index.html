@@ -3249,7 +3249,28 @@ window.storage = {
         penjualanShownTxns = shown;
         bawah = `<div class="bk-stok-note" style="margin:14px 0 8px; font-weight:600; color:var(--ink);">${isJual ? '' : ''}Transaksi ditampilkan: ${shown.length.toLocaleString('id-ID')}</div>${shown.map((t, idx) => riwayatRowHtml(t, hppAll, idx)).join('')}`;
       }
-      return `${katBar}<div class="bk-section-title" style="margin-top:4px;">Ringkasan per kategori kode barang</div>${summary}<div class="bk-stok-note" style="margin-bottom:6px;">${catatan}</div>${bawah}`;
+      let rekon = '';
+      if (isJual) {
+        // Jembatan ke total per transaksi (yang tampil di POS/daftar di bawah): satu transaksi bisa memuat barang kategori lain (tas, mouse, dll).
+        const ids = new Set(lines.map(l => l.t.id));
+        const tx = filtered.filter(t => ids.has(t.id));
+        const tHasil = tx.reduce((a, t) => a + (Number(t.total) || 0), 0);
+        const tHpp = tx.reduce((a, t) => a + (hppAll.hppByTxn[t.id] || 0), 0);
+        const dHasil = tHasil - grand.hasil, dHpp = tHpp - grand.hpp;
+        const bd = 'padding:6px 8px; text-align:right; font-family:\'IBM Plex Mono\',monospace; font-size:12px; border-bottom:1px solid var(--line);';
+        const bl = 'padding:6px 8px; font-size:12px; border-bottom:1px solid var(--line);';
+        const row = (lbl, h, p2, u, b) => `<tr style="${b ? 'font-weight:800; background:var(--paper);' : ''}"><td style="${bl}">${lbl}</td><td style="${bd}">${rupiah(h)}</td>${showHpp ? `<td style="${bd}">${rupiah(p2)}</td><td style="${bd} color:${untungColor(u)};">${rupiah(u)}</td>` : ''}</tr>`;
+        if (tx.length && (Math.abs(dHasil) > 0 || Math.abs(dHpp) > 0)) {
+          rekon = `<details style="margin:6px 0 10px;"><summary style="cursor:pointer; font-size:12px; font-weight:600; color:var(--accent-ink);">Cocokkan dengan total transaksi di bawah (${tx.length.toLocaleString('id-ID')} transaksi)</summary>
+          <div style="overflow-x:auto; margin-top:6px;"><table style="width:100%; border-collapse:collapse; min-width:${showHpp ? 520 : 320}px;"><tbody>
+            ${row('Ringkasan kategori di atas', grand.hasil, grand.hpp, grand.untung, false)}
+            ${row('+ Barang kategori lain di transaksi yang sama (tas, mouse, dll.)', dHasil, dHpp, dHasil - dHpp, false)}
+            ${row('= Total transaksi (sama dengan total di daftar/POS)', tHasil, tHpp, tHasil - tHpp, true)}
+          </tbody></table></div>
+          <div class="bk-stok-note" style="margin-top:4px;">Ringkasan dihitung per barang menurut kodenya, sedangkan daftar di bawah per transaksi utuh. Jumlah unit tidak berubah; selisih hanya barang lain yang dijual dalam nota yang sama.</div></details>`;
+        }
+      }
+      return `${katBar}<div class="bk-section-title" style="margin-top:4px;">Ringkasan per kategori kode barang</div>${summary}${rekon}<div class="bk-stok-note" style="margin-bottom:6px;">${catatan}</div>${bawah}`;
     }
     const masuk = byMonth.filter(t => t.type === 'penjualan').reduce((s,t) => s + t.total, 0);
     const keluar = byMonth.filter(t => t.type === 'pembelian').reduce((s,t) => s + t.total, 0);
