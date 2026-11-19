@@ -892,6 +892,7 @@ window.storage = {
   const svcOpenIds = new Set(); // kartu service (Sedang berjalan) yang dropdown detailnya sedang dibuka
   let svcRiwayatMonth = 'semua';
   let svcSearchQuery = '';
+  let svcRiwayatPay = 'semua'; // semua | lunas | belum
   let svcAktifSearchQuery = '';
   let selectedSvcIds = new Set();
   let editingServiceDetailId = null;
@@ -5779,12 +5780,24 @@ window.storage = {
     return Array.from(set).sort().reverse();
   }
 
-  function renderServiceRiwayatHtml() {
+  function svcRiwayatData() {
     const done = services.filter(s => s.status === 'diambil').sort((a,b) => svcCompletedAt(b) - svcCompletedAt(a));
-    const months = svcAvailableMonths();
-    const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
+    const byMonthAll = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
+    const isLunasS = s => s.paid !== false;
+    const nLunas = byMonthAll.filter(isLunasS).length, nBelum = byMonthAll.length - nLunas;
+    const byMonth = svcRiwayatPay === 'lunas' ? byMonthAll.filter(isLunasS) : svcRiwayatPay === 'belum' ? byMonthAll.filter(s => !isLunasS(s)) : byMonthAll;
     const q = svcSearchQuery.trim().toLowerCase();
     const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
+    return { byMonthAll, byMonth, filtered, nLunas, nBelum };
+  }
+  function svcPayChipsHtml(d) {
+    const c = (k, l, n) => `<div class="bk-chip ${svcRiwayatPay===k?'active':''}" data-svcpay="${k}">${l} &middot; ${n}</div>`;
+    return c('semua', 'Semua', d.byMonthAll.length) + c('lunas', 'Lunas', d.nLunas) + c('belum', 'Belum lunas', d.nBelum);
+  }
+
+  function renderServiceRiwayatHtml() {
+    const months = svcAvailableMonths();
+    const _d = svcRiwayatData(); const byMonth = _d.byMonth, filtered = _d.filtered;
     const hppData = computeHPP();
     const totalPendapatan = byMonth.reduce((sum,s) => sum + (Number(s.biayaFinal)||0), 0);
     const totalHppSvc = byMonth.reduce((sum,s) => sum + svcTotalHpp(s, hppData), 0);
@@ -5804,12 +5817,13 @@ window.storage = {
           <input id="bk-svc-search" value="${escapeAttr(svcSearchQuery)}" placeholder="Contoh: SVC-ABC123 / Budi / Asus A455L" />
         </div>
       </div>
+      <div class="bk-filter" id="bk-svc-pay-chips" style="margin-bottom:12px;">${svcPayChipsHtml(_d)}</div>
       <div style="margin:-6px 0 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
         <button class="bk-btn" id="bk-svc-excel-btn" type="button">Unduh Excel riwayat service</button>
-        <span style="font-size:12px; color:var(--ink-soft);">Sesuai filter bulan &amp; pencarian di atas.</span>
+        <span style="font-size:12px; color:var(--ink-soft);">Sesuai filter bulan, status lunas &amp; pencarian di atas.</span>
       </div>
       <div class="bk-stats" style="margin-bottom:16px;">
-        <div class="bk-stat"><div class="lbl" id="bk-svc-riwayat-lbl">Service selesai ${svcRiwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(svcRiwayatMonth))}</div><div class="val" id="bk-svc-riwayat-count">${byMonth.length}</div></div>
+        <div class="bk-stat"><div class="lbl" id="bk-svc-riwayat-lbl">Service selesai ${svcRiwayatMonth==='semua'?'(semua waktu)':('&middot; '+monthLabel(svcRiwayatMonth))}${svcRiwayatPay==='lunas'?' &middot; Lunas':svcRiwayatPay==='belum'?' &middot; Belum lunas':''}</div><div class="val" id="bk-svc-riwayat-count">${byMonth.length}</div></div>
         <div class="bk-stat in"><div class="lbl">Total Jasa Service ke Konsumen</div><div class="val" id="bk-svc-riwayat-total">${rupiah(totalPendapatan)}</div></div>
         <div class="bk-stat out"><div class="lbl">Total HPP (Sparepart + Vendor)</div><div class="val" id="bk-svc-riwayat-hpp">${rupiah(totalHppSvc)}</div></div>
         <div class="bk-stat in" style="border-width:2px; border-color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};"><div class="lbl">Total Keuntungan Service</div><div class="val" id="bk-svc-riwayat-untung" style="color:${totalUntungSvc>=0?'var(--money-in)':'var(--money-out)'};">${rupiah(totalUntungSvc)}</div></div>
@@ -5826,10 +5840,9 @@ window.storage = {
   }
 
   function refreshSvcRiwayatList() {
-    const done = services.filter(s => s.status === 'diambil').sort((a,b) => svcCompletedAt(b) - svcCompletedAt(a));
-    const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
-    const q = svcSearchQuery.trim().toLowerCase();
-    const filtered = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
+    const _d = svcRiwayatData(); const byMonth = _d.byMonth, filtered = _d.filtered;
+    const chipsEl = document.getElementById('bk-svc-pay-chips');
+    if (chipsEl) chipsEl.innerHTML = svcPayChipsHtml(_d);
     const hppData = computeHPP();
     const listEl = document.getElementById('bk-svc-list');
     if (listEl) listEl.innerHTML = filtered.length ? filtered.map((s, idx) => serviceCardHtml(s, idx, hppData)).join('') : '<div class="bk-empty">Belum ada riwayat service pada filter ini.</div>';
@@ -5849,7 +5862,7 @@ window.storage = {
     const totalHppSvc = byMonth.reduce((sum,s) => sum + svcTotalHpp(s, hppData), 0);
     const totalUntungSvc = totalPendapatan - totalHppSvc;
     const lblEl = document.getElementById('bk-svc-riwayat-lbl');
-    if (lblEl) lblEl.innerHTML = 'Service selesai ' + (svcRiwayatMonth==='semua' ? '(semua waktu)' : ('&middot; ' + monthLabel(svcRiwayatMonth)));
+    if (lblEl) lblEl.innerHTML = 'Service selesai ' + (svcRiwayatMonth==='semua' ? '(semua waktu)' : ('&middot; ' + monthLabel(svcRiwayatMonth))) + (svcRiwayatPay==='lunas' ? ' &middot; Lunas' : svcRiwayatPay==='belum' ? ' &middot; Belum lunas' : '');
     const hppEl = document.getElementById('bk-svc-riwayat-hpp');
     if (hppEl) hppEl.textContent = rupiah(totalHppSvc);
     const untungEl = document.getElementById('bk-svc-riwayat-untung');
@@ -5861,10 +5874,7 @@ window.storage = {
   // Unduh Excel riwayat service (mengikuti filter bulan & pencarian yang sedang aktif).
   function downloadSvcRiwayatExcel() {
     if (!window.XLSX) { showToast('Modul Excel belum siap, coba lagi sebentar.'); return; }
-    const done = services.filter(s => s.status === 'diambil').sort((a,b) => svcCompletedAt(b) - svcCompletedAt(a));
-    const byMonth = done.filter(s => svcRiwayatMonth === 'semua' ? true : svcMonthKey(svcCompletedAt(s)) === svcRiwayatMonth);
-    const q = svcSearchQuery.trim().toLowerCase();
-    const list = q ? byMonth.filter(s => (s.customerName||'').toLowerCase().includes(q) || (s.device||'').toLowerCase().includes(q) || (s.kodeService||'').toLowerCase().includes(q)) : byMonth;
+    const list = svcRiwayatData().filtered;
     if (!list.length) { showToast('Tidak ada riwayat service pada filter ini.'); return; }
     const hppData = computeHPP();
     const storeName = (document.getElementById('bk-storename') && document.getElementById('bk-storename').value) || 'Toko Saya';
@@ -5899,6 +5909,8 @@ window.storage = {
     if (xlsBtn) xlsBtn.addEventListener('click', downloadSvcRiwayatExcel);
     const monthSel = document.getElementById('bk-svc-month-select');
     if (monthSel) monthSel.addEventListener('change', e => { svcRiwayatMonth = e.target.value; selectedSvcIds.clear(); refreshSvcRiwayatList(); });
+    const payChips = document.getElementById('bk-svc-pay-chips');
+    if (payChips) payChips.addEventListener('click', e => { const c = e.target.closest('[data-svcpay]'); if (!c) return; svcRiwayatPay = c.dataset.svcpay; selectedSvcIds.clear(); refreshSvcRiwayatList(); });
     const searchInp = document.getElementById('bk-svc-search');
     if (searchInp) searchInp.addEventListener('input', e => { svcSearchQuery = e.target.value; refreshSvcRiwayatList(); });
     wireServiceCardEvents();
